@@ -1,0 +1,226 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isAdmin() {
+      return exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    function hasCreator(data) {
+      return data.keys().hasAll(["createdByUid"]) && data.createdByUid is string && data.createdByUid.size() > 0;
+    }
+    function isValidCourseData(data) {
+      return (!data.keys().hasAny(["name"]) || (data.name is string && data.name.size() > 0 && data.name.size() <= 120))
+        && (!data.keys().hasAny(["city"]) || (data.city is string && data.city.size() <= 80))
+        && (!data.keys().hasAny(["state"]) || (data.state is string && data.state.size() <= 30))
+        && (!data.keys().hasAny(["country"]) || (data.country is string && data.country.size() <= 80))
+        && (!data.keys().hasAny(["source"]) || (data.source is string && data.source.size() <= 40))
+        && (!data.keys().hasAny(["courseRating"]) || (data.courseRating is number && data.courseRating >= 55 && data.courseRating <= 80))
+        && (!data.keys().hasAny(["slopeRating"]) || (data.slopeRating is number && data.slopeRating >= 55 && data.slopeRating <= 155));
+    }
+    function isValidIssueThreadMessage(entry) {
+      return entry is map
+        && entry.keys().hasAll(["from", "message", "createdAt"])
+        && entry.from is string
+        && entry.message is string
+        && entry.message.size() > 0
+        && entry.message.size() <= 2000
+        && entry.createdAt is string;
+    }
+    function isValidReportedIssueCreate(data) {
+      return data.keys().hasAll([
+          "uid",
+          "message",
+          "createdAt",
+          "platform",
+          "status",
+          "updatedAt",
+          "thread",
+        ])
+        && data.uid is string
+        && data.uid == request.auth.uid
+        && data.message is string
+        && data.message.size() > 0
+        && data.message.size() <= 2000
+        && data.createdAt is string
+        && data.platform is string
+        && data.status == "open"
+        && data.updatedAt is string
+        && data.thread is list
+        && data.thread.size() >= 1
+        && isValidIssueThreadMessage(data.thread[0])
+        && data.thread[0].from == "user"
+        && (!data.keys().hasAny(["adminNote"]) || data.adminNote == null)
+        && (!data.keys().hasAny(["completedAt"]) || data.completedAt == null)
+        && (!data.keys().hasAny(["completedBy"]) || data.completedBy == null)
+        && (!data.keys().hasAny(["completedByEmail"]) || data.completedByEmail == null);
+    }
+    function isAllowedOwnerIssueUpdate() {
+      let changed = request.resource.data.diff(resource.data).changedKeys();
+      let allowed = ["thread", "updatedAt", "status", "completedAt", "completedBy", "completedByEmail"];
+      let thread = request.resource.data.thread;
+      return changed.hasOnly(allowed)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.status == "open"
+        && request.resource.data.completedAt == null
+        && request.resource.data.completedBy == null
+        && request.resource.data.completedByEmail == null
+        && (
+          !request.resource.data.keys().hasAny(["adminNote"])
+          || request.resource.data.adminNote == resource.data.adminNote
+        )
+        && thread is list
+        && thread.size() >= 1
+        && isValidIssueThreadMessage(thread[thread.size() - 1])
+        && thread[thread.size() - 1].from == "user";
+    }
+    function ownerWriteBlocksProtectedBillingFields() {
+      let changed = request.resource.data.diff(resource.data).changedKeys();
+      let blocked = [
+        "subscriptionState",
+        "subscription",
+        "billing",
+        "billingHistory",
+        "subscriptionHistory",
+        "trialRoundsUsed",
+        "trialRoundsTotal",
+        "isProActive",
+        "proExpiresAt",
+        "proCancelledAt",
+        "lastKnownPurchase",
+        "entitlements",
+        "isAdmin",
+        "roles",
+        "admin",
+      ];
+      return !changed.hasAny(blocked);
+    }
+    function ownerWriteBlocksProtectedProfileBillingFields() {
+      return !request.resource.data.keys().hasAny(["profile"])
+        || (
+          request.resource.data.profile is map
+          && !request.resource.data.profile.keys().hasAny([
+            "subscriptionState",
+            "subscription",
+            "billing",
+            "billingHistory",
+            "subscriptionHistory",
+            "trialRoundsUsed",
+            "trialRoundsTotal",
+            "isProActive",
+            "proExpiresAt",
+            "proCancelledAt",
+            "lastKnownPurchase",
+            "entitlements",
+            "isAdmin",
+            "roles",
+            "admin",
+          ])
+        );
+    }
+    function ownerEmailMatchesAuth() {
+      return !request.resource.data.keys().hasAny(["email"])
+        || (
+          request.resource.data.email is string
+          && request.auth.token.email is string
+          && request.resource.data.email == request.auth.token.email
+        );
+    }
+    function isValidTrialRoundsUsed(value) {
+      return value is number
+        && value >= 0
+        && value <= 3;
+    }
+
+    // Admins: store a doc at admins/{uid} for any admin user
+    match /admins/{adminId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // User profiles
+    match /user_profiles/{userId} {
+      allow read, write: if isOwner(userId);
+      allow read: if isAdmin();
+    }
+
+    // User data (profile, averages, settings)
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId)
+        && ownerWriteBlocksProtectedBillingFields()
+        && ownerWriteBlocksProtectedProfileBillingFields()
+        && ownerEmailMatchesAuth();
+      allow read, write: if isAdmin();
+
+      // Trial state is append-only for owners to prevent client-side reset.
+      match /meta/trial {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId)
+          && request.resource.data.keys().hasOnly(["roundsUsed", "updatedAt"])
+          && isValidTrialRoundsUsed(request.resource.data.roundsUsed)
+          && (!request.resource.data.keys().hasAny(["updatedAt"]) || request.resource.data.updatedAt is string);
+        allow update: if isOwner(userId)
+          && request.resource.data.keys().hasOnly(["roundsUsed", "updatedAt"])
+          && isValidTrialRoundsUsed(request.resource.data.roundsUsed)
+          && resource.data.roundsUsed is number
+          && request.resource.data.roundsUsed >= resource.data.roundsUsed
+          && (!request.resource.data.keys().hasAny(["updatedAt"]) || request.resource.data.updatedAt is string);
+        allow delete: if isAdmin();
+      }
+
+      // User subcollections (rounds and any others)
+      match /{document=**} {
+        allow read, write: if isOwner(userId) && document != "meta/trial";
+        allow read, write: if isAdmin();
+      }
+    }
+
+    // NOTE: ocr_corrections, correctionPatterns, error_patterns, visual_samples
+    // rules removed — services deleted. Collections are dormant.
+
+    // Community course catalog — intentionally public read.
+    // Any user (including unauthenticated) can read course data.
+    // Authenticated users can only edit their own contributed docs.
+    match /courses/{courseId} {
+      allow read: if true;
+      allow create: if isSignedIn()
+        && hasCreator(request.resource.data)
+        && request.resource.data.createdByUid == request.auth.uid
+        && isValidCourseData(request.resource.data);
+      allow update: if isAdmin()
+        || (
+          isSignedIn()
+          && isValidCourseData(request.resource.data)
+          && (
+            (hasCreator(resource.data)
+              && resource.data.createdByUid == request.auth.uid
+              && request.resource.data.createdByUid == resource.data.createdByUid)
+            || (!hasCreator(resource.data)
+              && hasCreator(request.resource.data)
+              && request.resource.data.createdByUid == request.auth.uid)
+          )
+        );
+      allow delete: if isAdmin();
+    }
+
+    // Reported issues (user support threads)
+    match /reportedIssues/{issueId} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == resource.data.uid);
+      allow create: if isSignedIn() && isValidReportedIssueCreate(request.resource.data);
+      allow update: if isAdmin() || (isSignedIn() && request.auth.uid == resource.data.uid && isAllowedOwnerIssueUpdate());
+      allow delete: if isAdmin();
+    }
+
+    // OCR error reports (admin review)
+    match /ocrErrors/{errorId} {
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.uid;
+      allow read: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+  }
+}

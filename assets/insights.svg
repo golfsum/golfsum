@@ -1,0 +1,9 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <g stroke="#6b7280" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Trend line -->
+    <path d="M16 38 L26 30 L36 34 L46 22"></path>
+
+    <!-- Insight point -->
+    <circle cx="46" cy="22" r="3"></circle>
+  </g>
+</svg>
