@@ -56,3 +56,11 @@ tsc-noemit-watch.pid
 
 # Build artifacts
 dist/
+
+
+# more blocks
+Add-Content .gitignore "`nbackend/scorecard_ocr/.venv/"
+Add-Content .gitignore "`nbackend/scorecard_ocr/__pycache__/"
+Add-Content .gitignore "`n*.pyc"
+Add-Content .gitignore "`n*.pyd"
+Add-Content .gitignore "`n*.dll"
