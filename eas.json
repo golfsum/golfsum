@@ -18,8 +18,11 @@
       "autoIncrement": true,
       "distribution": "store",
       "environment": "production"
+      "ios": {
+        "image": "macos-ventura-13.6-xcode-15.2"
     }
-  },
+  }
+},
   "submit": {
     "production": {}
   }
