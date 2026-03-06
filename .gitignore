@@ -66,3 +66,4 @@ Add-Content .gitignore "`n*.pyd"
 Add-Content .gitignore "`n*.dll"ios/Pods/
 ios/build/
 ios/DerivedData/
+ios/
