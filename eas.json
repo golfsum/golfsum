@@ -1,26 +1,23 @@
 {
   "cli": {
-    "version": ">= 16.28.0",
+    "version": ">= 18.1.0",
     "appVersionSource": "remote"
   },
   "build": {
     "development": {
       "developmentClient": true,
       "distribution": "store",
-      "environment": "development",
-      "prebuildCommand": "export PATH=$PATH:/opt/homebrew/bin && cd ios && pod install"
+      "environment": "development"
     },
     "preview": {
       "distribution": "store",
-      "environment": "preview",
-      "prebuildCommand": "export PATH=$PATH:/opt/homebrew/bin && cd ios && pod install"
+      "environment": "preview"
 
     },
     "production": {
       "autoIncrement": true,
       "distribution": "store",
-      "environment": "production",
-      "prebuildCommand": "export PATH=$PATH:/opt/homebrew/bin && cd ios && pod install"
+      "environment": "production"
     }
   },
   "submit": {
