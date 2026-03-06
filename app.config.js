@@ -1,6 +1,5 @@
 // Dynamic Expo config — reads iOS Google Client ID from env
 // and auto-registers the reversed client ID as a URL scheme (required for Google Sign-In on iOS).
-
 const iosGoogleClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
 const allowCleartextTraffic = process.env.EXPO_PUBLIC_ALLOW_CLEARTEXT_TRAFFIC === 'true';
 
@@ -8,13 +7,15 @@ const allowCleartextTraffic = process.env.EXPO_PUBLIC_ALLOW_CLEARTEXT_TRAFFIC ==
 // e.g. "123456-abcdef.apps.googleusercontent.com" → "com.googleusercontent.apps.123456-abcdef"
 function reversedClientId(clientId) {
   if (!clientId) return null;
-  const parts = clientId.split('.'); // ["123456-abc", "apps", "googleusercontent", "com"]
-  return parts.reverse().join('.');  // "com.googleusercontent.apps.123456-abc"
+  const parts = clientId.split('.');
+  return parts.reverse().join('.');
 }
 
 const iosReversedClientId = reversedClientId(iosGoogleClientId);
 
-module.exports = ({ config }) => {
+module.exports = function(env) {
+  const config = env.config;
+
   // Build the CFBundleURLTypes array
   const urlTypes = [];
   if (iosReversedClientId) {
@@ -47,14 +48,10 @@ module.exports = ({ config }) => {
         NSPhotoLibraryUsageDescription: 'GolfSum needs photo library access to upload scorecard images',
         NSLocationWhenInUseUsageDescription: 'GolfSum needs your location to find nearby golf courses',
         ITSAppUsesNonExemptEncryption: false,
-        // Google Sign-In requires the reversed iOS client ID as a URL scheme
-        ...(urlTypes.length > 0
-          ? { CFBundleURLTypes: urlTypes }
-          : {}),
+        ...(urlTypes.length > 0 ? { CFBundleURLTypes: urlTypes } : {}),
       },
     },
     android: {
-      usesCleartextTraffic: allowCleartextTraffic,
       adaptiveIcon: {
         foregroundImage: './assets/icon.png',
         backgroundColor: '#0f1419',
@@ -74,6 +71,7 @@ module.exports = ({ config }) => {
       output: 'single',
     },
     plugins: [
+      './withWatchApp',
       [
         'expo-image-picker',
         {
