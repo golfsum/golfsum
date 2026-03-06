@@ -32,7 +32,6 @@
         "backgroundColor": "#0f1419"
       },
       "package": "com.golfsum.app",
-      "usesCleartextTraffic": false,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",

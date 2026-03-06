@@ -8,18 +8,19 @@
       "developmentClient": true,
       "distribution": "store",
       "environment": "development",
-      "prebuildCommand": "cd ios && pod install"
+      "prebuildCommand": "export PATH=$PATH:/opt/homebrew/bin && cd ios && pod install"
     },
     "preview": {
       "distribution": "store",
       "environment": "preview",
-      "prebuildCommand": "cd ios && pod install"
+      "prebuildCommand": "export PATH=$PATH:/opt/homebrew/bin && cd ios && pod install"
+
     },
     "production": {
       "autoIncrement": true,
       "distribution": "store",
       "environment": "production",
-      "prebuildCommand": "cd ios && pod install"
+      "prebuildCommand": "export PATH=$PATH:/opt/homebrew/bin && cd ios && pod install"
     }
   },
   "submit": {
