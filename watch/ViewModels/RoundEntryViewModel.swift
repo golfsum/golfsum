@@ -1,8 +1,9 @@
+import Combine
 import Foundation
 
 final class RoundEntryViewModel: ObservableObject {
     @Published var roundId: String = "watch_round_local"
-    @Published var holes: [WatchHole] = Self.defaultHoles()
+    @Published var holes: [WatchHole] = []
     @Published var currentIndex: Int = 0
     @Published var syncStatusText: String = "Ready"
 
