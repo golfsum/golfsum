@@ -7,18 +7,18 @@
     "development": {
       "developmentClient": true,
       "distribution": "store",
-      "environment": "development"
+      "environment": "development",
       "prebuildCommand": "cd ios && pod install"
     },
     "preview": {
       "distribution": "store",
-      "environment": "preview"
+      "environment": "preview",
       "prebuildCommand": "cd ios && pod install"
     },
     "production": {
       "autoIncrement": true,
       "distribution": "store",
-      "environment": "production"
+      "environment": "production",
       "prebuildCommand": "cd ios && pod install"
     }
   },
