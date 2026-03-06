@@ -16,7 +16,10 @@
     "production": {
       "autoIncrement": true,
       "distribution": "store",
-      "environment": "production"
+      "environment": "production",
+      "ios": {
+        "image": "macos-sonoma-14.4-xcode-15.4"
+      }
     }
   },
   "submit": {
