@@ -28,6 +28,7 @@ import Storage from '../services/storage';
 import { ScoreEntryHeader } from './score-entry/ScoreEntryHeader';
 import { TeeSelectionModal } from './score-entry/TeeSelectionModal';
 import { StartingHolePickerModal } from './score-entry/StartingHolePickerModal';
+import { CourseRoutingModal, type CourseRouteOption } from './score-entry/CourseRoutingModal';
 import { ClubPickerModal } from './score-entry/ClubPickerModal';
 import { ApproachDistancePickerModal } from './score-entry/ApproachDistancePickerModal';
 import { PenaltySheet } from './score-entry/PenaltySheet';
@@ -88,6 +89,21 @@ const TEE_CLUB_OPTIONS = [
 ];
 
 const APPROACH_CLUB_OPTIONS = [...TEE_CLUB_OPTIONS, 'PW', 'GW', 'SW', 'LW'];
+
+const KNOWN_COURSE_NINES: Record<string, string[]> = {
+  'tubac golf resort': ['Anza', 'Rancho', 'Otero'],
+  'tubac golf resort & spa': ['Anza', 'Rancho', 'Otero'],
+  'cinnabar hills golf club': ['Canyon', 'Lake', 'Mountain'],
+};
+
+const getKnownNineNames = (courseName?: string): string[] => {
+  const normalized = (courseName || '').toLowerCase().trim();
+  if (!normalized) return [];
+  const direct = KNOWN_COURSE_NINES[normalized];
+  if (direct) return direct;
+  const fuzzyKey = Object.keys(KNOWN_COURSE_NINES).find((key) => normalized.includes(key));
+  return fuzzyKey ? KNOWN_COURSE_NINES[fuzzyKey] : [];
+};
 
 interface ManualScoreEntryProps {
   courseId: string;
@@ -180,6 +196,9 @@ export const ManualScoreEntry: React.FC<ManualScoreEntryProps> = ({
   const holeCount = holes.length;
 
   const [showApproachClubPicker, setShowApproachClubPicker] = useState(false);
+  const [showRoutingModal, setShowRoutingModal] = useState(false);
+  const [routingTeeBox, setRoutingTeeBox] = useState<TeeBox | null>(null);
+  const [routingOptions, setRoutingOptions] = useState<CourseRouteOption[]>([]);
   const [showLeaveRoundModal, setShowLeaveRoundModal] = useState(false);
   const [showEndRoundModal, setShowEndRoundModal] = useState(false);
   const [showDiscardConfirmModal, setShowDiscardConfirmModal] = useState(false);
@@ -376,7 +395,88 @@ export const ManualScoreEntry: React.FC<ManualScoreEntryProps> = ({
       Alert.alert('Error', 'Selected tee box has no hole data');
       return;
     }
-    handleTeeBoxSelected(teeBox);
+
+    const totalHoles = teeBox.holes.length;
+    if (totalHoles <= 18) {
+      handleTeeBoxSelected(teeBox);
+      return;
+    }
+
+    const chunks: Array<{ id: string; label: string; holes: typeof teeBox.holes; nineName?: string }> = [];
+    const knownNames = getKnownNineNames(course?.name);
+    for (let i = 0; i < teeBox.holes.length; i += 9) {
+      const nine = teeBox.holes.slice(i, i + 9);
+      if (nine.length === 9) {
+        const start = nine[0]?.hole ?? i + 1;
+        const end = nine[8]?.hole ?? i + 9;
+        const fromHoleData = nine
+          .map((h) => h.nineName?.trim())
+          .find((value): value is string => !!value);
+        const knownName = knownNames[Math.floor(i / 9)];
+        const nineName = fromHoleData || knownName;
+        const prefix = nineName ? `${nineName} • ` : '';
+        chunks.push({
+          id: `n-${i / 9 + 1}`,
+          label: `${prefix}9 holes: ${start}-${end}`,
+          holes: nine,
+          nineName,
+        });
+      }
+    }
+
+    const routes: CourseRouteOption[] = [];
+    chunks.forEach((chunk) => {
+      routes.push({
+        id: chunk.id,
+        label: chunk.label,
+        holes: chunk.holes,
+      });
+    });
+
+    for (let i = 0; i < chunks.length; i += 1) {
+      for (let j = i + 1; j < chunks.length; j += 1) {
+        const start = chunks[i].holes[0]?.hole ?? 1;
+        const end = chunks[j].holes[8]?.hole ?? 18;
+        const pairName =
+          chunks[i].nineName && chunks[j].nineName
+            ? `${chunks[i].nineName} + ${chunks[j].nineName} • `
+            : '';
+        routes.push({
+          id: `pair-${i + 1}-${j + 1}`,
+          label: `${pairName}18 holes: ${start}-${end}`,
+          holes: [...chunks[i].holes, ...chunks[j].holes],
+        });
+      }
+    }
+
+    if (routes.length === 0) {
+      Alert.alert('Routing unavailable', 'This course does not expose enough hole detail to choose custom 9s.');
+      handleTeeBoxSelected(teeBox);
+      return;
+    }
+
+    setRoutingTeeBox(teeBox);
+    setRoutingOptions(routes);
+    setShowRoutingModal(true);
+  };
+
+  const handleRoutingSelected = (route: CourseRouteOption) => {
+    if (!routingTeeBox) return;
+    const routedHoles = route.holes.map((hole, index) => ({
+      ...hole,
+      hole: index + 1,
+    }));
+    const routedTee: TeeBox = {
+      ...routingTeeBox,
+      name: `${routingTeeBox.name} • ${route.label}`,
+      holes: routedHoles,
+      yardage: routedHoles.reduce((sum, hole) => sum + (hole.yardage || 0), 0),
+    };
+    setShowRoutingModal(false);
+    if (startingHole > routedHoles.length) {
+      setStartingHole(1);
+    }
+    handleTeeBoxSelected(routedTee);
   };
 
 
@@ -978,6 +1078,14 @@ export const ManualScoreEntry: React.FC<ManualScoreEntryProps> = ({
         onBack={onBack}
         getTeeColor={getTeeColor}
         distanceUnit={distanceUnit}
+        styles={styles}
+      />
+      <CourseRoutingModal
+        visible={showRoutingModal}
+        teeBox={routingTeeBox}
+        routes={routingOptions}
+        onClose={() => setShowRoutingModal(false)}
+        onSelectRoute={handleRoutingSelected}
         styles={styles}
       />
 

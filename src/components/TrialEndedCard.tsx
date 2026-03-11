@@ -42,7 +42,7 @@ export const TrialEndedCard: React.FC<TrialEndedCardProps> = ({
       <Text style={styles.upgradeText}>Upgrade to Pro</Text>
     </TouchableOpacity>
 
-    <Text style={styles.pricingHint}>$49.99/year</Text>
+    <Text style={styles.pricingHint}>$69.99/year</Text>
   </View>
 );
 

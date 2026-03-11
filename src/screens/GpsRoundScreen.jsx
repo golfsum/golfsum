@@ -1,0 +1,1608 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { getCourse, saveCourse } from '../services/courseCache';
+import { fetchCourseHolesFromBackend } from '../services/golfApi';
+import { requestGpsPermission, watchUserPosition } from '../services/gps';
+import { haversineYards } from '../services/haversine';
+import { MAPBOX_PUBLIC_TOKEN } from '../config/mapbox';
+import { HoleHeader } from '../components/gps/HoleHeader';
+import { HoleDots } from '../components/gps/HoleDots';
+import { YardagePanel } from '../components/gps/YardagePanel';
+import GpsOverlay from '../components/gps/GpsOverlay';
+import { getUserProfile } from '../services/userService';
+import { getMockGpsCourse } from '../services/gpsMockCourses';
+import { getNativeHoleCameraConfig, isCoordWithinBounds } from '../services/mapFraming';
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { getElevationFeet } from '../services/weatherService';
+import { endLiveActivity, isLiveActivitySupported, upsertLiveActivity } from '../services/liveActivityService';
+import { colors, radius, spacing, typography } from '../theme/tokens';
+
+let MapboxGL = null;
+try {
+  // eslint-disable-next-line global-require
+  MapboxGL = require('@rnmapbox/maps');
+} catch {
+  MapboxGL = null;
+}
+
+function findPoi(hole, poi, location) {
+  return (hole?.pois || []).find((p) => p?.POI === poi && (!location || p?.Location === location));
+}
+
+function extractHazardFlags(hole) {
+  const pois = hole?.pois || [];
+  return {
+    water: pois.some((p) => p.POI === 'Water'),
+    fairwayBunker: pois.some((p) => p.POI === 'Fairway Bunker'),
+    greenBunker: pois.some((p) => p.POI === 'Green Bunker'),
+    dogleg: pois.some((p) => p.POI === 'Dogleg'),
+  };
+}
+
+const LIVE_LIE_DEFAULT = {
+  lie: 'Locating...',
+  color: null,
+  showDot: false,
+};
+
+function yardsToMeters(yards) {
+  return Number.isFinite(yards) ? yards * 0.9144 : Number.POSITIVE_INFINITY;
+}
+
+function distanceToPoiMeters(userPos, poi) {
+  if (!userPos || !poi) return Number.POSITIVE_INFINITY;
+  return yardsToMeters(haversineYards(userPos.lat, userPos.lng, poi.Latitude, poi.Longitude));
+}
+
+function projectMeters(origin, point) {
+  const latScale = 111_320;
+  const lngScale = Math.cos((origin.lat * Math.PI) / 180) * 111_320;
+  return {
+    x: (point.lng - origin.lng) * lngScale,
+    y: (point.lat - origin.lat) * latScale,
+  };
+}
+
+function getSegmentMetrics(userPos, teePoi, greenPoi) {
+  if (!userPos || !teePoi || !greenPoi) return null;
+  const origin = { lat: teePoi.Latitude, lng: teePoi.Longitude };
+  const a = { x: 0, y: 0 };
+  const b = projectMeters(origin, { lat: greenPoi.Latitude, lng: greenPoi.Longitude });
+  const p = projectMeters(origin, userPos);
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const apx = p.x - a.x;
+  const apy = p.y - a.y;
+  const ab2 = (abx * abx) + (aby * aby);
+  if (ab2 === 0) return null;
+  const t = Math.max(0, Math.min(1, ((apx * abx) + (apy * aby)) / ab2));
+  const proj = { x: a.x + (abx * t), y: a.y + (aby * t) };
+  const dx = p.x - proj.x;
+  const dy = p.y - proj.y;
+  const cross = (abx * apy) - (aby * apx);
+  return {
+    corridorDistance: Math.sqrt((dx * dx) + (dy * dy)),
+    alongTrackRatio: t,
+    side: cross >= 0 ? 'Left Rough' : 'Right Rough',
+  };
+}
+
+function getHazardTags(hole) {
+  const pois = hole?.pois || [];
+  const tags = [];
+  if (pois.some((poi) => poi.POI === 'Fairway Bunker')) tags.push('FW Bunker');
+  if (pois.some((poi) => poi.POI === 'Green Bunker')) tags.push('Green Bunker');
+  if (pois.some((poi) => poi.POI === 'Water')) tags.push('Water');
+  const dogleg = pois.find((poi) => poi.POI === 'Dogleg');
+  if (dogleg) {
+    const side = String(dogleg.SideOfFairway || '').toUpperCase();
+    tags.push(side === 'L' || side === 'R' ? `Dogleg ${side}` : 'Dogleg');
+  }
+  return tags;
+}
+
+function detectLiveLie(userPos, hole, teePoi, greenPoi) {
+  if (!userPos || !hole) return LIVE_LIE_DEFAULT;
+
+  const pois = hole?.pois || [];
+  const teePois = pois.filter((poi) => poi.POI === 'Tee Back' || poi.POI === 'Tee Middle' || poi.POI === 'Tee Front');
+  const bunkerPois = pois.filter((poi) => poi.POI === 'Fairway Bunker' || poi.POI === 'Green Bunker');
+  const waterPois = pois.filter((poi) => poi.POI === 'Water');
+  const treePois = pois.filter((poi) => poi.POI === 'Trees');
+
+  if (teePois.some((poi) => distanceToPoiMeters(userPos, poi) <= 15)) {
+    return { lie: 'Tee Box', color: '#60A5FA', showDot: true };
+  }
+  if (greenPoi && distanceToPoiMeters(userPos, greenPoi) <= 20) {
+    return { lie: 'Green', color: '#34D399', showDot: true };
+  }
+  if (bunkerPois.some((poi) => distanceToPoiMeters(userPos, poi) <= 12)) {
+    return { lie: 'Sand', color: '#FBBF24', showDot: true };
+  }
+  if (waterPois.some((poi) => distanceToPoiMeters(userPos, poi) <= 8)) {
+    return { lie: 'Water', color: '#60A5FA', showDot: true };
+  }
+  if (treePois.some((poi) => distanceToPoiMeters(userPos, poi) <= 10)) {
+    return { lie: 'Trees', color: '#86EFAC', showDot: true };
+  }
+
+  const metrics = getSegmentMetrics(userPos, teePoi, greenPoi);
+  if (metrics && metrics.alongTrackRatio >= 0 && metrics.alongTrackRatio <= 1 && metrics.corridorDistance <= 15) {
+    return { lie: 'Fairway', color: '#4CAF7D', showDot: true };
+  }
+  if (metrics) {
+    return { lie: metrics.side, color: '#A3E635', showDot: true };
+  }
+
+  return LIVE_LIE_DEFAULT;
+}
+
+function normalizeTeeName(name) {
+  return String(name || '').trim().toLowerCase();
+}
+
+function getWindText(speed) {
+  if (!Number.isFinite(speed)) return 'Wind --';
+  return `${Math.round(speed)} mph`;
+}
+
+function normalizeDegrees(deg) {
+  return ((deg % 360) + 360) % 360;
+}
+
+function getWindArrowRotation(degrees) {
+  if (!Number.isFinite(degrees)) return '0deg';
+  return `${normalizeDegrees(degrees - 180)}deg`;
+}
+
+function directionDelta(a, b) {
+  const delta = Math.abs(normalizeDegrees(a) - normalizeDegrees(b));
+  return Math.min(delta, 360 - delta);
+}
+
+function getPlayingAdjustment(baseYards, weather, shotBearingDeg) {
+  const tempAdj = Number.isFinite(weather?.tempF) ? Math.round((70 - weather.tempF) * 0.35) : 0;
+  let windAdj = 0;
+  if (Number.isFinite(weather?.windMph) && Number.isFinite(weather?.windDegrees) && Number.isFinite(shotBearingDeg)) {
+    const windToShot = directionDelta(weather.windDegrees, shotBearingDeg);
+    if (windToShot <= 45) windAdj = Math.round(weather.windMph * 0.6);
+    else if (windToShot >= 135) windAdj = Math.round(weather.windMph * -0.45);
+    else windAdj = Math.round(weather.windMph * 0.1);
+  }
+  return {
+    adjustedYards: Math.max(0, Math.round(baseYards + tempAdj + windAdj)),
+    tempAdj,
+    windAdj,
+  };
+}
+
+function pickSuggestedClub(targetYards, userClubs) {
+  const entries = Object.entries(userClubs || {})
+    .filter(([, yards]) => Number.isFinite(yards))
+    .map(([club, yards]) => ({ club, yards: Number(yards) }))
+    .sort((a, b) => b.yards - a.yards);
+  if (!entries.length || !Number.isFinite(targetYards)) return null;
+  return entries.reduce((best, entry) => {
+    if (!best) return entry;
+    return Math.abs(entry.yards - targetYards) < Math.abs(best.yards - targetYards) ? entry : best;
+  }, null);
+}
+
+async function getGpsWeather(lat, lng) {
+  const response = await fetchWithTimeout(
+    `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto`
+  );
+  if (!response.ok) throw new Error(`Weather lookup failed (${response.status})`);
+  const data = await response.json();
+  return {
+    tempF: Number(data?.current?.temperature_2m ?? NaN),
+    windMph: Number(data?.current?.wind_speed_10m ?? NaN),
+    windDegrees: Number(data?.current?.wind_direction_10m ?? NaN),
+    humidity: Number(data?.current?.relative_humidity_2m ?? NaN),
+  };
+}
+
+function toRadians(deg) {
+  return deg * (Math.PI / 180);
+}
+
+function toDegrees(rad) {
+  return rad * (180 / Math.PI);
+}
+
+function bearingDeg(lat1, lng1, lat2, lng2) {
+  const phi1 = toRadians(lat1);
+  const phi2 = toRadians(lat2);
+  const lambda = toRadians(lng2 - lng1);
+  const y = Math.sin(lambda) * Math.cos(phi2);
+  const x = (Math.cos(phi1) * Math.sin(phi2)) - (Math.sin(phi1) * Math.cos(phi2) * Math.cos(lambda));
+  return normalizeDegrees(toDegrees(Math.atan2(y, x)));
+}
+
+function walkBackFromGreen(greenLat, greenLng, teeLat, teeLng, yards) {
+  const bearing = bearingDeg(greenLat, greenLng, teeLat, teeLng);
+  const distanceMeters = yards * 0.9144;
+  const earthRadius = 6371000;
+  const angularDistance = distanceMeters / earthRadius;
+  const lat1 = toRadians(greenLat);
+  const lng1 = toRadians(greenLng);
+  const brng = toRadians(bearing);
+
+  const lat2 = Math.asin(
+    (Math.sin(lat1) * Math.cos(angularDistance)) +
+    (Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(brng))
+  );
+  const lng2 = lng1 + Math.atan2(
+    Math.sin(brng) * Math.sin(angularDistance) * Math.cos(lat1),
+    Math.cos(angularDistance) - (Math.sin(lat1) * Math.sin(lat2))
+  );
+
+  return { lat: toDegrees(lat2), lng: toDegrees(lng2) };
+}
+
+function getYardageMarkers(hole, teePoi, greenPoi) {
+  if (!hole || !teePoi || !greenPoi || hole.par === 3) return [];
+  const yardages = hole.par === 5 ? [100, 150, 200, 250] : [100, 150, 200];
+  const colorMap = { 100: '#F87171', 150: '#FFFFFF', 200: '#60A5FA', 250: '#F6C90E' };
+  return yardages.map((yds) => ({
+    yds,
+    color: colorMap[yds],
+    ...walkBackFromGreen(greenPoi.Latitude, greenPoi.Longitude, teePoi.Latitude, teePoi.Longitude, yds),
+  }));
+}
+
+function getHazardCarries(hole, userPos, weather, shotBearingDeg, elevationFt = 0) {
+  if (!hole || !userPos) return [];
+  const pois = hole.pois || [];
+  const candidates = [
+    ['Fairway Bunker', 'F'],
+    ['Green Bunker', 'F'],
+    ['Water', null],
+  ].map(([poiName, location]) => {
+    const matching = pois.filter((poi) => poi.POI === poiName);
+    if (!matching.length) return null;
+    return matching.find((poi) => (location ? poi.Location === location : true)) || matching[0];
+  }).filter(Boolean);
+
+  return candidates.map((poi, index) => {
+    const actual = haversineYards(userPos.lat, userPos.lng, poi.Latitude, poi.Longitude);
+    const baseAdjustment = getPlayingAdjustment(actual, weather, shotBearingDeg);
+    const elevAdj = Math.round(((elevationFt || 0) / 100) * actual * 0.01);
+    return {
+      id: `${poi.POI}-${poi.Latitude}-${poi.Longitude}-${index}`,
+      label: poi.POI === 'Water' ? 'Water' : poi.POI === 'Green Bunker' ? 'Green Bkr' : 'FW Bkr',
+      lat: poi.Latitude,
+      lng: poi.Longitude,
+      actual,
+      adj: Math.round(actual + (baseAdjustment?.windAdj ?? 0) + (baseAdjustment?.tempAdj ?? 0) + elevAdj),
+      color: poi.POI === 'Water' ? '#60A5FA' : '#FBBF24',
+    };
+  });
+}
+
+export function GpsRoundScreen({
+  courseId,
+  courseName,
+  teeColor = 'Blue',
+  startingHole = 1,
+  tournamentMode = false,
+  onBack,
+}) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [cached, setCached] = useState(false);
+  const [course, setCourse] = useState(null);
+  const [currentHoleIndex, setCurrentHoleIndex] = useState(Math.max(0, (startingHole || 1) - 1));
+  const [userPos, setUserPos] = useState(null);
+  const [yardages, setYardages] = useState({ front: '--', center: '--', back: '--' });
+  const cameraRef = useRef(null);
+  const locationSubRef = useRef(null);
+  const overlayRef = useRef(null);
+  const frameBoundsRef = useRef(null);
+  const lastMapTapRef = useRef(0);
+  const [userClubs, setUserClubs] = useState(null);
+  const [liveLie, setLiveLie] = useState(LIVE_LIE_DEFAULT);
+  const [overlayState, setOverlayState] = useState({ anySheet: false, shotFlow: 'idle', selectedClub: null });
+  const [weather, setWeather] = useState(null);
+  const [loggedShotsByHole, setLoggedShotsByHole] = useState({});
+  const [lieToast, setLieToast] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyHoleIndex, setHistoryHoleIndex] = useState(null);
+  const [elevationFt, setElevationFt] = useState(0);
+  const [liveActivityEnabled, setLiveActivityEnabled] = useState(false);
+  const lieToastTimeoutRef = useRef(null);
+
+  const currentHole = course?.holes?.[currentHoleIndex] || null;
+  const selectedTee = useMemo(() => {
+    const tees = Array.isArray(currentHole?.tees) ? currentHole.tees : [];
+    return tees.find((tee) => normalizeTeeName(tee?.name) === normalizeTeeName(teeColor)) || tees[0] || null;
+  }, [currentHole, teeColor]);
+  const hazardTags = useMemo(() => getHazardTags(currentHole), [currentHole]);
+  const teeBack = useMemo(
+    () => findPoi(currentHole, 'Tee Back', 'C') || findPoi(currentHole, 'Tee Front', 'C'),
+    [currentHole]
+  );
+  const greenCenter = useMemo(
+    () => findPoi(currentHole, 'Green', 'C'),
+    [currentHole]
+  );
+  const greenFront = useMemo(() => findPoi(currentHole, 'Green', 'F'), [currentHole]);
+  const greenBack = useMemo(() => findPoi(currentHole, 'Green', 'B'), [currentHole]);
+  const shotBearingDeg = useMemo(() => {
+    if (!userPos || !greenCenter) return null;
+    const dy = (greenCenter.Latitude - userPos.lat) * (Math.PI / 180);
+    const dx = ((greenCenter.Longitude - userPos.lng) * (Math.PI / 180)) * Math.cos(((greenCenter.Latitude + userPos.lat) / 2) * (Math.PI / 180));
+    return normalizeDegrees(Math.atan2(dx, dy) * (180 / Math.PI));
+  }, [greenCenter, userPos]);
+  const centerYards = Number.isFinite(yardages.center) ? yardages.center : null;
+  const playingDistance = useMemo(() => {
+    if (tournamentMode || !Number.isFinite(centerYards) || !Number.isFinite(shotBearingDeg)) return null;
+    const base = getPlayingAdjustment(centerYards, weather, shotBearingDeg);
+    const elevAdj = Math.round(((elevationFt || 0) / 100) * centerYards * 0.01);
+    return {
+      adjustedYards: Math.max(0, Math.round(centerYards + (base?.windAdj ?? 0) + (base?.tempAdj ?? 0) + elevAdj)),
+      tempAdj: base?.tempAdj ?? 0,
+      windAdj: base?.windAdj ?? 0,
+      elevAdj,
+    };
+  }, [centerYards, elevationFt, shotBearingDeg, tournamentMode, weather]);
+  const suggestedClub = useMemo(
+    () => pickSuggestedClub(tournamentMode ? centerYards : playingDistance?.adjustedYards, userClubs),
+    [centerYards, playingDistance?.adjustedYards, tournamentMode, userClubs]
+  );
+  const currentHoleShots = loggedShotsByHole[currentHoleIndex] || [];
+  const yardageMarkers = useMemo(() => getYardageMarkers(currentHole, teeBack, greenCenter), [currentHole, teeBack, greenCenter]);
+  const hazardCarries = useMemo(
+    () => getHazardCarries(currentHole, userPos, weather, shotBearingDeg, elevationFt),
+    [currentHole, elevationFt, shotBearingDeg, userPos, weather]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    isLiveActivitySupported()
+      .then((supported) => {
+        if (!cancelled) setLiveActivityEnabled(supported);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!liveActivityEnabled || !currentHole) return;
+    upsertLiveActivity({
+      courseName: courseName || course?.courseName || course?.name || 'GolfSum',
+      teeLabel: selectedTee?.name || teeColor || 'Tee',
+      holeNumber: currentHole.hole || currentHoleIndex + 1,
+      frontYards: String(yardages?.front ?? '--'),
+      centerYards: String(yardages?.center ?? '--'),
+      backYards: String(yardages?.back ?? '--'),
+    }).catch(() => undefined);
+  }, [
+    course?.courseName,
+    course?.name,
+    courseName,
+    currentHole,
+    currentHoleIndex,
+    liveActivityEnabled,
+    selectedTee?.name,
+    teeColor,
+    yardages?.back,
+    yardages?.center,
+    yardages?.front,
+  ]);
+
+  useEffect(() => () => {
+    endLiveActivity().catch(() => undefined);
+  }, []);
+
+  const resetHoleCamera = useCallback((includeUser = !!userPos) => {
+    if (!MapboxGL || !currentHole || !cameraRef.current) return;
+    const frame = getNativeHoleCameraConfig(currentHole, includeUser ? userPos : null, { includeUser });
+    if (!frame) return;
+    frameBoundsRef.current = frame.bounds;
+    cameraRef.current?.setCamera({
+      bounds: {
+        ne: frame.bounds.ne,
+        sw: frame.bounds.sw,
+      },
+      padding: frame.padding,
+      heading: frame.heading,
+      animationDuration: frame.animationDuration,
+      animationMode: frame.animationMode,
+    });
+  }, [currentHole, userPos]);
+
+  const loadCourse = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const local = await getCourse(courseId);
+      if (local) {
+        setCourse(local);
+        setCached(true);
+      } else {
+        try {
+          const remote = await fetchCourseHolesFromBackend(courseId);
+          await saveCourse(courseId, remote);
+          setCourse(remote);
+          setCached(false);
+        } catch (remoteErr) {
+          const mockCourse = getMockGpsCourse(courseId);
+          if (!mockCourse) throw remoteErr;
+          await saveCourse(courseId, mockCourse);
+          setCourse(mockCourse);
+          setCached(false);
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load course');
+    } finally {
+      setLoading(false);
+    }
+  }, [courseId]);
+
+  useEffect(() => {
+    loadCourse();
+  }, [loadCourse]);
+
+  useEffect(() => {
+    setCurrentHoleIndex(Math.max(0, (startingHole || 1) - 1));
+  }, [startingHole, courseId]);
+
+  useEffect(() => {
+    let active = true;
+    getUserProfile()
+      .then((profile) => {
+        if (active) {
+          setUserClubs(profile?.clubDistances ?? null);
+        }
+      })
+      .catch(() => {
+        if (active) setUserClubs(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => () => {
+    if (lieToastTimeoutRef.current) clearTimeout(lieToastTimeoutRef.current);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!userPos || tournamentMode) {
+      setWeather(null);
+      return undefined;
+    }
+    getGpsWeather(userPos.lat, userPos.lng)
+      .then((next) => {
+        if (!cancelled) setWeather(next);
+      })
+      .catch(() => {
+        if (!cancelled) setWeather(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tournamentMode, userPos]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!teeBack) {
+      setElevationFt(0);
+      return undefined;
+    }
+    getElevationFeet(teeBack.Latitude, teeBack.Longitude)
+      .then((next) => {
+        if (!cancelled) setElevationFt(next ?? 0);
+      })
+      .catch(() => {
+        if (!cancelled) setElevationFt(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [teeBack]);
+
+  useEffect(() => {
+    let mounted = true;
+    const start = async () => {
+      const granted = await requestGpsPermission();
+      if (!granted) {
+        setError('Location permission is required for live yardages.');
+        return;
+      }
+      locationSubRef.current = await watchUserPosition(
+        (position) => {
+          if (!mounted) return;
+          const nextUserPos = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          };
+          setUserPos(nextUserPos);
+        },
+        () => setError('GPS signal unavailable.')
+      );
+    };
+
+    start().catch(() => setError('Failed to start GPS.'));
+    return () => {
+      mounted = false;
+      locationSubRef.current?.remove?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!userPos || !greenFront || !greenCenter || !greenBack) {
+      setYardages({ front: '--', center: '--', back: '--' });
+      if (!userPos) setLiveLie(LIVE_LIE_DEFAULT);
+      return;
+    }
+
+    setYardages({
+      front: haversineYards(userPos.lat, userPos.lng, greenFront.Latitude, greenFront.Longitude) ?? '--',
+      center: haversineYards(userPos.lat, userPos.lng, greenCenter.Latitude, greenCenter.Longitude) ?? '--',
+      back: haversineYards(userPos.lat, userPos.lng, greenBack.Latitude, greenBack.Longitude) ?? '--',
+    });
+    setLiveLie(detectLiveLie(userPos, currentHole, teeBack, greenCenter));
+  }, [currentHole, greenBack, greenCenter, greenFront, teeBack, userPos]);
+
+  useEffect(() => {
+    resetHoleCamera(false);
+    overlayRef.current?.resetOverlay?.();
+  }, [currentHole, resetHoleCamera]);
+
+  useEffect(() => {
+    if (!MapboxGL || !currentHole || !cameraRef.current || !userPos) return;
+    const currentBounds = frameBoundsRef.current;
+    const userCoord = [userPos.lng, userPos.lat];
+    if (currentBounds && isCoordWithinBounds(userCoord, currentBounds)) return;
+    resetHoleCamera(true);
+  }, [currentHole, resetHoleCamera, userPos]);
+
+  useEffect(() => {
+    if (!MapboxGL || !MAPBOX_PUBLIC_TOKEN) return;
+    MapboxGL.setAccessToken(MAPBOX_PUBLIC_TOKEN);
+  }, []);
+
+  const geo = useMemo(() => {
+    if (!currentHole) return null;
+    const tee = teeBack;
+    const green = greenCenter;
+    if (!tee || !green) return null;
+
+    const features = [
+      {
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [tee.Longitude, tee.Latitude],
+            [green.Longitude, green.Latitude],
+          ],
+        },
+        properties: { kind: 'line' },
+      },
+      {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [tee.Longitude, tee.Latitude] },
+        properties: { kind: 'tee' },
+      },
+      {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [green.Longitude, green.Latitude] },
+        properties: { kind: 'green' },
+      },
+    ];
+
+    if (userPos) {
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [userPos.lng, userPos.lat] },
+        properties: { kind: 'user' },
+      });
+    }
+
+    return { type: 'FeatureCollection', features };
+  }, [currentHole, greenCenter, teeBack, userPos]);
+
+  const jumpToPoi = useCallback((poi) => {
+    if (!poi || !cameraRef.current) return;
+    cameraRef.current?.setCamera({
+      centerCoordinate: [poi.Longitude, poi.Latitude],
+      zoomLevel: 17,
+      animationDuration: 800,
+      animationMode: 'flyTo',
+    });
+  }, []);
+
+  const handleMapPress = useCallback(() => {
+    const now = Date.now();
+    if (now - lastMapTapRef.current <= 280) {
+      resetHoleCamera(true);
+    }
+    lastMapTapRef.current = now;
+  }, [resetHoleCamera]);
+
+  const handleSelectHole = useCallback((nextIndex) => {
+    setCurrentHoleIndex(nextIndex);
+    setLiveLie(LIVE_LIE_DEFAULT);
+    setOverlayState({ anySheet: false, shotFlow: 'idle', selectedClub: null });
+    overlayRef.current?.resetOverlay?.();
+  }, []);
+
+  if (!MapboxGL) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.fallbackCenter}>
+          <Text style={styles.errorText}>@rnmapbox/maps is not installed yet.</Text>
+          <TouchableOpacity style={styles.backBtn} onPress={onBack}>
+            <Text style={styles.backBtnText}>Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.fallbackCenter}>
+          <ActivityIndicator size="large" color="#10B981" />
+          <Text style={styles.loadingText}>Downloading course…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error || !course?.holes?.length) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.fallbackCenter}>
+          <Text style={styles.errorText}>{error || 'Course data unavailable'}</Text>
+          <TouchableOpacity style={styles.backBtn} onPress={onBack}>
+            <Text style={styles.backBtnText}>Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={onBack} style={styles.iconBtn}>
+          <Ionicons name="arrow-back" size={20} color="#E5E7EB" />
+        </TouchableOpacity>
+        <View style={styles.topBarCenter}>
+          <Text style={styles.courseName} numberOfLines={1}>{courseName || course.courseName || 'GPS Round'}</Text>
+          <Text style={styles.subMeta}>
+            {cached ? 'Cached on device' : course?.source === 'LOCAL_SAMPLE' ? 'Local sample data' : 'Downloaded now'} • {selectedTee?.name || teeColor} • {selectedTee?.yards ? `${selectedTee.yards}c` : '--'}
+          </Text>
+        </View>
+        <TouchableOpacity style={styles.iconBtn} onPress={() => setShowHistory(true)}>
+          <Ionicons name="time-outline" size={16} color="rgba(255,255,255,0.55)" />
+        </TouchableOpacity>
+        <View
+          style={[
+            styles.scorePill,
+            currentHoleShots.length > 0 ? styles.scorePillHot : styles.scorePillMuted,
+          ]}
+        >
+          <Text
+            style={[
+              styles.scorePillText,
+              currentHoleShots.length > 0 ? styles.scorePillTextHot : styles.scorePillTextMuted,
+            ]}
+          >
+            {currentHoleShots.length > 0 ? `+${currentHoleShots.length}` : 'GPS'}
+          </Text>
+        </View>
+      </View>
+
+      <HoleHeader hole={currentHole} hazardTags={hazardTags} liveLie={liveLie} />
+      <HoleDots holes={course.holes} currentHole={currentHoleIndex} onSelect={handleSelectHole} />
+
+      <View style={styles.mapWrap}>
+        <MapboxGL.MapView
+          onPress={handleMapPress}
+          onLongPress={(event) => overlayRef.current?.handleLongPress(event)}
+          style={styles.map}
+          styleURL={MapboxGL.StyleURL.SatelliteStreet}
+          logoEnabled={false}
+          attributionEnabled={false}
+          logoPosition={{ bottom: 8, left: 8 }}
+          attributionPosition={{ bottom: 8, right: 8 }}
+        >
+          <MapboxGL.Camera ref={cameraRef} zoomLevel={16.2} />
+          {geo && (
+            <MapboxGL.ShapeSource id="hole-shapes" shape={geo}>
+              <MapboxGL.LineLayer id="line" filter={['==', ['get', 'kind'], 'line']} style={stylesMap.line} />
+              <MapboxGL.CircleLayer id="tee" filter={['==', ['get', 'kind'], 'tee']} style={stylesMap.tee} />
+              <MapboxGL.CircleLayer id="green" filter={['==', ['get', 'kind'], 'green']} style={stylesMap.green} />
+              <MapboxGL.CircleLayer id="user" filter={['==', ['get', 'kind'], 'user']} style={stylesMap.user} />
+            </MapboxGL.ShapeSource>
+          )}
+          {yardageMarkers.map((marker) => (
+            <MapboxGL.PointAnnotation
+              key={`yd-${marker.yds}`}
+              id={`yd-${marker.yds}`}
+              coordinate={[marker.lng, marker.lat]}
+            >
+              <View style={styles.ydMarkerWrap}>
+                <View style={[styles.ydLine, { borderColor: marker.color }]} />
+                <View style={[styles.ydDiamond, { borderColor: marker.color, backgroundColor: `${marker.color}2E` }]} />
+                <Text style={[styles.ydNum, { color: marker.color }]}>{marker.yds}</Text>
+              </View>
+            </MapboxGL.PointAnnotation>
+          ))}
+          {hazardCarries.map((hazard) => (
+            <MapboxGL.PointAnnotation
+              key={hazard.id}
+              id={`haz-${hazard.id}`}
+              coordinate={[hazard.lng, hazard.lat]}
+            >
+              <View style={styles.carryWrap}>
+                <View style={styles.carryPill}>
+                  <Text style={[styles.carryTxt, { color: hazard.color }]}>
+                    {hazard.actual}
+                    <Text style={styles.carrySuffix}>y</Text>
+                  </Text>
+                </View>
+              </View>
+            </MapboxGL.PointAnnotation>
+          ))}
+          <GpsOverlay
+            ref={overlayRef}
+            userPos={userPos}
+            greenCenter={greenCenter}
+            teePoi={teeBack}
+            holePar={currentHole?.par}
+            userClubs={userClubs}
+            tournamentMode={tournamentMode}
+            onOverlayStateChange={setOverlayState}
+            onShotLogged={(shot) => {
+              const clubLabel = String(shot.club || '');
+              const abbr = clubLabel.length <= 3
+                ? clubLabel
+                : clubLabel.split(/\s+/).map((part) => part[0]).join('').slice(0, 3).toUpperCase();
+              const lie = detectLiveLie(userPos, currentHole, teeBack, greenCenter);
+              setLoggedShotsByHole((prev) => {
+                const existing = prev[currentHoleIndex] || [];
+                return {
+                  ...prev,
+                  [currentHoleIndex]: [
+                    ...existing,
+                    {
+                      id: shot.loggedAt || `${Date.now()}`,
+                      num: existing.length + 1,
+                      abbr,
+                      actualYards: shot.actualYards,
+                      playingYards: shot.playingYards,
+                      lie: lie.lie,
+                      lieIcon:
+                        lie.lie === 'Fairway' ? 'F'
+                          : lie.lie === 'Sand' ? 'S'
+                            : lie.lie === 'Water' ? 'W'
+                              : lie.lie === 'Trees' ? 'Tr'
+                                : lie.lie === 'Tee Box' ? 'T'
+                                  : lie.lie === 'Green' ? 'G'
+                                    : lie.lie === 'Left Rough' ? 'L←'
+                                      : lie.lie === 'Right Rough' ? 'R→'
+                                        : null,
+                      lieColor: lie.color,
+                      color: lie.color || '#FFFFFF',
+                    },
+                  ],
+                };
+              });
+              setLieToast(lie);
+              if (lieToastTimeoutRef.current) clearTimeout(lieToastTimeoutRef.current);
+              lieToastTimeoutRef.current = setTimeout(() => setLieToast(null), 2500);
+            }}
+          />
+        </MapboxGL.MapView>
+        {!overlayState.anySheet && (
+          <View style={styles.weatherStrip}>
+            {!tournamentMode ? (
+              <>
+                <Ionicons
+                  name="navigate"
+                  size={12}
+                  color="rgba(255,255,255,0.7)"
+                  style={{ transform: [{ rotate: getWindArrowRotation(weather?.windDegrees) }] }}
+                />
+                <Text style={styles.weatherText}>{getWindText(weather?.windMph)}</Text>
+                <View style={styles.weatherDivider} />
+                <Text style={styles.weatherText}>{Number.isFinite(weather?.tempF) ? `${Math.round(weather.tempF)}F` : '--'}</Text>
+                <View style={styles.weatherDivider} />
+                <Ionicons name="water-outline" size={12} color="rgba(255,255,255,0.7)" />
+                <Text style={styles.weatherText}>{Number.isFinite(weather?.humidity) ? `${Math.round(weather.humidity)}%` : '--'}</Text>
+              </>
+            ) : (
+              <Text style={styles.weatherText}>Tournament mode</Text>
+            )}
+          </View>
+        )}
+        {!overlayState.anySheet && overlayState.shotFlow === 'idle' && (
+          <>
+            <View style={styles.distanceBadge}>
+              <Text style={styles.distanceBadgeLabel}>{tournamentMode ? 'GPS' : 'PLAYING'}</Text>
+              <Text style={styles.distanceValue}>
+                {tournamentMode ? centerYards ?? '--' : playingDistance?.adjustedYards ?? centerYards ?? '--'}
+              </Text>
+              <Text style={styles.distGps}>GPS {centerYards ?? '--'}</Text>
+              <Text style={styles.distanceUnit}>yds</Text>
+              {!tournamentMode && (
+                <Text style={styles.distanceAdjust}>
+                  {`W ${(playingDistance?.windAdj ?? 0) > 0 ? '+' : ''}${playingDistance?.windAdj ?? 0} · T ${(playingDistance?.tempAdj ?? 0) > 0 ? '+' : ''}${playingDistance?.tempAdj ?? 0} · E +${playingDistance?.elevAdj ?? 0}`}
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity style={styles.suggestedChip} onPress={() => overlayRef.current?.openClubPicker?.()}>
+              <Text style={styles.suggestedLabel}>SUGGESTED</Text>
+              <Text style={styles.suggestedClub}>{suggestedClub?.club || 'Pick club'}</Text>
+              {suggestedClub?.yards ? <Text style={styles.suggestedMeta}>{suggestedClub.yards}y</Text> : null}
+              <Text style={styles.suggestedChevron}>›</Text>
+            </TouchableOpacity>
+          </>
+        )}
+        {!overlayState.anySheet && overlayState.shotFlow === 'idle' && currentHoleShots.length > 0 && !lieToast && (
+          <View style={styles.shotRow}>
+            {currentHoleShots.map((shot) => (
+              <View key={shot.id} style={[styles.shotPill, shot.color ? { borderColor: shot.color } : null]}>
+                <View style={[styles.shotNumber, shot.color ? { backgroundColor: shot.color } : null]}>
+                  <Text style={styles.shotNumberText}>{shot.num}</Text>
+                </View>
+                <Text style={styles.shotClubText}>{shot.abbr}</Text>
+                {shot.lieIcon ? (
+                  <Text style={[styles.shotLieIcon, shot.lieColor ? { color: shot.lieColor } : null]}>{shot.lieIcon}</Text>
+                ) : null}
+              </View>
+            ))}
+            <TouchableOpacity
+              style={styles.clearShotsButton}
+              onPress={() => setLoggedShotsByHole((prev) => ({ ...prev, [currentHoleIndex]: [] }))}
+            >
+              <Text style={styles.clearShotsButtonText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {lieToast ? (
+          <View style={[styles.lieToast, lieToast.color ? { borderColor: lieToast.color } : null]}>
+            <View style={[styles.lieToastDot, lieToast.color ? { backgroundColor: lieToast.color } : null]} />
+            <Text style={styles.lieToastText}>{lieToast.lie}</Text>
+            <Text style={styles.lieToastSubtext}>detected</Text>
+          </View>
+        ) : null}
+        {overlayState.shotFlow === 'mark' && !overlayState.anySheet ? (
+          <View style={styles.markBanner}>
+            <View style={styles.markBannerPulse}>
+              <View style={styles.markBannerDot} />
+            </View>
+            <View style={styles.markBannerCopy}>
+              <Text style={styles.markBannerTitle}>Tap and hold to mark the shot</Text>
+              <Text style={styles.markBannerSubtitle}>
+                {overlayState.selectedClub ? `${overlayState.selectedClub} selected` : 'Club selected'} · then long-press your landing spot
+              </Text>
+            </View>
+            <TouchableOpacity style={styles.markBannerClose} onPress={() => overlayRef.current?.resetOverlay?.()}>
+              <Text style={styles.markBannerCloseText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+        <View style={styles.bottomMapBar}>
+          <TouchableOpacity style={styles.teeJumpButton} onPress={() => jumpToPoi(teeBack)}>
+            <Text style={styles.teeJumpText}>🏌️ Tee</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.greenJumpButton} onPress={() => jumpToPoi(greenCenter)}>
+            <Text style={styles.greenJumpText}>⛳ Green</Text>
+          </TouchableOpacity>
+          <View style={styles.bottomSpacer} />
+          {!overlayState.anySheet && overlayState.shotFlow === 'idle' && (
+            <TouchableOpacity style={styles.logShotButton} onPress={() => overlayRef.current?.openClubPicker?.()}>
+              <Ionicons name="add" size={13} color="#FFFFFF" />
+              <Text style={styles.logShotButtonText}>Log Shot</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        <View pointerEvents="none" style={styles.mapboxWordmark}>
+          <Text style={styles.mapboxWordmarkText}>mapbox</Text>
+        </View>
+      </View>
+
+      <YardagePanel yardages={yardages} />
+      <View style={styles.helperBar}>
+        <Text style={styles.helperText}>Tap to refocus • Double tap to reset • Hold to measure • Log Shot to save</Text>
+      </View>
+
+      <Modal visible={showHistory} transparent animationType="fade" onRequestClose={() => setShowHistory(false)}>
+        <View style={styles.historyBackdrop}>
+          <TouchableOpacity style={styles.historyScrim} activeOpacity={1} onPress={() => setShowHistory(false)} />
+          <View style={styles.historySheet}>
+            <View style={styles.historyHandle} />
+            <View style={styles.historyHeader}>
+              <View>
+                <Text style={styles.historyTitle}>Shot History</Text>
+                <Text style={styles.historySubtitle}>
+                  {Object.values(loggedShotsByHole).reduce((sum, shots) => sum + shots.length, 0)} logged shots
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.historyClose} onPress={() => setShowHistory(false)}>
+                <Text style={styles.historyCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.historyScroll} contentContainerStyle={styles.historyScrollContent}>
+              {course.holes.map((hole, index) => {
+                const shots = loggedShotsByHole[index] || [];
+                const expanded = historyHoleIndex === index;
+                return (
+                  <View key={`hist-${hole.hole}`} style={[styles.historyHoleBlock, index === currentHoleIndex && styles.historyHoleCurrent]}>
+                    <TouchableOpacity
+                      style={styles.historyHoleRow}
+                      onPress={() => setHistoryHoleIndex(expanded ? null : index)}
+                    >
+                      <Text style={styles.historyHoleText}>Hole {hole.hole}</Text>
+                      <View style={styles.historyHoleMeta}>
+                        <Text style={shots.length ? styles.historyHoleCount : styles.historyHoleEmpty}>
+                          {shots.length ? `${shots.length} shots` : '—'}
+                        </Text>
+                        <Ionicons
+                          name={expanded ? 'chevron-up' : 'chevron-down'}
+                          size={14}
+                          color={shots.length ? '#4CAF7D' : 'rgba(255,255,255,0.25)'}
+                        />
+                      </View>
+                    </TouchableOpacity>
+                    {expanded && shots.map((shot) => (
+                      <View key={shot.id} style={styles.historyShotRow}>
+                        <View style={[styles.historyShotBadge, shot.color ? { backgroundColor: shot.color } : null]}>
+                          <Text style={styles.historyShotBadgeText}>{shot.num}</Text>
+                        </View>
+                        <View style={styles.historyShotCopy}>
+                          <Text style={styles.historyShotClub}>{shot.abbr}</Text>
+                          <Text style={styles.historyShotYards}>{shot.playingYards ? `${shot.playingYards}y` : shot.actualYards ? `${shot.actualYards}y` : '—'}</Text>
+                        </View>
+                        {shot.lie ? (
+                          <View style={styles.historyLieWrap}>
+                            <View style={[styles.historyLieDot, shot.lieColor ? { backgroundColor: shot.lieColor } : null]} />
+                            <Text style={[styles.historyLieText, shot.lieColor ? { color: shot.lieColor } : null]}>{shot.lie}</Text>
+                          </View>
+                        ) : (
+                          <Text style={styles.historyNoGps}>manual entry</Text>
+                        )}
+                      </View>
+                    ))}
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const stylesMap = {
+  line: {
+    lineColor: '#F3F4F6',
+    lineWidth: 1.5,
+    lineDasharray: [1.2, 1.2],
+  },
+  tee: {
+    circleRadius: 6,
+    circleColor: '#FFFFFF',
+    circleStrokeWidth: 2,
+    circleStrokeColor: '#111827',
+  },
+  green: {
+    circleRadius: 10,
+    circleColor: '#10B981',
+    circleStrokeWidth: 2,
+    circleStrokeColor: '#064E3B',
+  },
+  user: {
+    circleRadius: 7,
+    circleColor: '#3B82F6',
+    circleStrokeWidth: 2,
+    circleStrokeColor: '#DBEAFE',
+  },
+};
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.bg.primary },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
+    backgroundColor: colors.bg.primary,
+  },
+  topBarCenter: { flex: 1, paddingHorizontal: 10 },
+  courseName: { color: colors.text.primary, fontSize: 13, fontWeight: '600', letterSpacing: -0.2 },
+  subMeta: { color: colors.text.secondary, fontSize: 10, marginTop: 1 },
+  iconBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg.elevated,
+  },
+  scorePill: {
+    minWidth: 42,
+    height: 30,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scorePillMuted: {
+    backgroundColor: colors.bg.elevated,
+    borderColor: colors.border.subtle,
+  },
+  scorePillHot: {
+    backgroundColor: colors.bg.elevated,
+    borderColor: colors.border.subtle,
+  },
+  scorePillText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  scorePillTextMuted: {
+    color: colors.text.secondary,
+  },
+  scorePillTextHot: {
+    color: colors.semantic.error,
+  },
+  mapWrap: { flex: 1, position: 'relative' },
+  map: { flex: 1 },
+  weatherStrip: {
+    position: 'absolute',
+    top: 10,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.bg.secondary,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    borderRadius: radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    zIndex: 10,
+  },
+  weatherText: {
+    color: colors.text.primary,
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  weatherDivider: {
+    width: 1,
+    height: 10,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    marginHorizontal: 6,
+  },
+  distanceBadge: {
+    position: 'absolute',
+    right: 10,
+    top: 10,
+    backgroundColor: colors.bg.secondary,
+    borderRadius: radius.md + 1,
+    borderWidth: 1,
+    borderColor: colors.brand.primaryBorder,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    minWidth: 58,
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  distanceBadgeLabel: {
+    color: colors.text.tertiary,
+    fontSize: 8,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    marginBottom: 2,
+  },
+  distGps: {
+    color: 'rgba(255,255,255,0.30)',
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  distanceValue: {
+    color: colors.text.primary,
+    fontSize: 28,
+    fontWeight: '700',
+    lineHeight: 28,
+    letterSpacing: -0.5,
+  },
+  distanceUnit: {
+    color: colors.text.secondary,
+    fontSize: 9,
+    letterSpacing: 1,
+    marginBottom: 3,
+  },
+  distanceAdjust: {
+    color: colors.brand.primary,
+    fontSize: 8,
+    fontWeight: '600',
+    lineHeight: 11,
+    textAlign: 'center',
+  },
+  suggestedChip: {
+    position: 'absolute',
+    left: 10,
+    bottom: 92,
+    backgroundColor: colors.bg.secondary,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    paddingTop: 6,
+    paddingBottom: 6,
+    paddingLeft: 9,
+    paddingRight: 22,
+    zIndex: 10,
+  },
+  suggestedLabel: {
+    color: 'rgba(255,255,255,0.3)',
+    fontSize: 8,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    marginBottom: 1,
+  },
+  suggestedClub: {
+    color: colors.text.primary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  suggestedMeta: {
+    color: 'rgba(255,255,255,0.28)',
+    fontSize: 10,
+    marginTop: 1,
+  },
+  suggestedChevron: {
+    position: 'absolute',
+    right: 7,
+    top: 14,
+    color: 'rgba(255,255,255,0.3)',
+    fontSize: 14,
+  },
+  shotRow: {
+    position: 'absolute',
+    bottom: 54,
+    left: 10,
+    right: 84,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    zIndex: 10,
+  },
+  shotPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: colors.bg.secondary,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  shotNumber: {
+    width: 14,
+    height: 14,
+    borderRadius: 3,
+    backgroundColor: colors.brand.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shotNumberText: {
+    color: '#FFFFFF',
+    fontSize: 8,
+    fontWeight: '800',
+  },
+  shotClubText: {
+    color: '#BBBBBB',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  shotLieIcon: {
+    fontSize: 9,
+    color: colors.brand.primary,
+    marginLeft: 2,
+  },
+  clearShotsButton: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  clearShotsButtonText: {
+    color: 'rgba(255,255,255,0.2)',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  lieToast: {
+    position: 'absolute',
+    left: 50,
+    right: 50,
+    bottom: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.bg.secondary,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    zIndex: 25,
+  },
+  lieToastDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.brand.primary,
+  },
+  lieToastText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  lieToastSubtext: {
+    color: 'rgba(255,255,255,0.3)',
+    fontSize: 11,
+  },
+  markBanner: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    bottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.bg.secondary,
+    borderWidth: 1,
+    borderColor: colors.brand.primaryBorder,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    zIndex: 20,
+  },
+  markBannerPulse: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.brand.primaryMuted,
+  },
+  markBannerDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.brand.primary,
+  },
+  markBannerCopy: {
+    flex: 1,
+  },
+  markBannerTitle: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  markBannerSubtitle: {
+    color: colors.brand.primary,
+    fontSize: 10,
+    marginTop: 1,
+  },
+  markBannerClose: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markBannerCloseText: {
+    color: 'rgba(255,255,255,0.3)',
+    fontSize: 12,
+  },
+  bottomMapBar: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    bottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    zIndex: 10,
+  },
+  teeJumpButton: {
+    backgroundColor: colors.bg.secondary,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  teeJumpText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  greenJumpButton: {
+    backgroundColor: colors.brand.primaryMuted,
+    borderWidth: 1,
+    borderColor: colors.brand.primaryBorder,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  greenJumpText: {
+    color: colors.brand.primary,
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  bottomSpacer: {
+    flex: 1,
+  },
+  logShotButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.brand.primary,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    shadowColor: colors.brand.primary,
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
+  },
+  logShotButtonText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  mapboxWordmark: {
+    position: 'absolute',
+    left: 8,
+    bottom: 44,
+    paddingHorizontal: 2,
+    paddingVertical: 1,
+  },
+  mapboxWordmarkText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 8,
+    fontWeight: '500',
+    letterSpacing: 0.4,
+  },
+  loadingText: { color: '#9CA3AF', marginTop: 12, fontSize: 14 },
+  helperBar: {
+    backgroundColor: colors.bg.primary,
+    paddingTop: 4,
+    paddingBottom: 10,
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.04)',
+  },
+  helperText: {
+    color: 'rgba(255,255,255,0.20)',
+    fontSize: 10,
+    letterSpacing: 0.2,
+    textAlign: 'center',
+  },
+  ydMarkerWrap: {
+    width: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ydLine: {
+    position: 'absolute',
+    width: 28,
+    borderTopWidth: 1,
+    borderStyle: 'dashed',
+    opacity: 0.45,
+  },
+  ydDiamond: {
+    width: 12,
+    height: 12,
+    borderWidth: 1.2,
+    transform: [{ rotate: '45deg' }],
+  },
+  ydNum: {
+    position: 'absolute',
+    fontSize: 6,
+    fontWeight: '800',
+  },
+  carryWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -24,
+  },
+  carryPill: {
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    borderRadius: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  carryTxt: {
+    fontSize: 8,
+    fontWeight: '700',
+  },
+  carrySuffix: {
+    fontSize: 7,
+    color: 'rgba(255,255,255,0.70)',
+  },
+  historyBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  historyScrim: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  historySheet: {
+    backgroundColor: colors.bg.primary,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderTopWidth: 1,
+    borderColor: colors.border.subtle,
+    maxHeight: '72%',
+  },
+  historyHandle: {
+    width: 32,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    alignSelf: 'center',
+    marginTop: 10,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: 10,
+  },
+  historyTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  historySubtitle: {
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  historyClose: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.bg.elevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyCloseText: {
+    color: 'rgba(255,255,255,0.40)',
+    fontSize: 12,
+  },
+  historyScroll: {
+    flex: 1,
+  },
+  historyScrollContent: {
+    paddingHorizontal: 18,
+    paddingBottom: 24,
+  },
+  historyHoleBlock: {
+    borderLeftWidth: 2,
+    borderLeftColor: 'transparent',
+    paddingLeft: 10,
+  },
+  historyHoleCurrent: {
+    borderLeftColor: colors.brand.primary,
+  },
+  historyHoleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  historyHoleText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  historyHoleMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  historyHoleCount: {
+    color: colors.brand.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  historyHoleEmpty: {
+    color: 'rgba(255,255,255,0.25)',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  historyShotRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 24,
+    paddingBottom: 10,
+    gap: 10,
+  },
+  historyShotBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    backgroundColor: colors.brand.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyShotBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  historyShotCopy: {
+    flex: 1,
+  },
+  historyShotClub: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  historyShotYards: {
+    color: 'rgba(255,255,255,0.30)',
+    fontSize: 11,
+    marginTop: 1,
+  },
+  historyLieWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  historyLieDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.brand.primary,
+  },
+  historyLieText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.brand.primary,
+  },
+  historyNoGps: {
+    color: 'rgba(255,255,255,0.25)',
+    fontSize: 10,
+    fontStyle: 'italic',
+  },
+  fallbackCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  errorText: { color: '#FCA5A5', textAlign: 'center', lineHeight: 20, marginBottom: 14 },
+  backBtn: {
+    backgroundColor: '#1F2937',
+    borderColor: '#374151',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  backBtnText: { color: '#E5E7EB', fontWeight: '600' },
+});
+
+export default GpsRoundScreen;

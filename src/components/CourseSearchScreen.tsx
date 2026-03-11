@@ -40,11 +40,18 @@ import { logger } from '../utils/logger';
 import Storage from '../services/storage';
 import { getUserProfile, saveUserProfile } from '../services/userService';
 import { FEEDBACK_COPY } from '../constants/feedbackCopy';
+import { GpsRoundSetupModal } from './gps/GpsRoundSetupModal';
+import { loadGpsRoundSetup } from '../services/gpsRoundSetup';
 
 const PROFILE_STORAGE_KEY = '@GolfSum:UserProfile';
 
 interface CourseSearchScreenProps {
   onCourseSelected: (courseId: string) => void;
+  onGpsRoundStart?: (
+    courseId: string,
+    courseName?: string,
+    settings?: { teeName?: string; startingHole?: number; tournamentMode?: boolean }
+  ) => void;
   onBack: () => void;
   onManualCourseEntry?: () => void; // Trigger manual course entry fallback
   onUploadScorecard?: (courseSeed?: OSMGolfCourse) => void;
@@ -58,6 +65,7 @@ interface CourseSearchScreenProps {
 
 export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
   onCourseSelected,
+  onGpsRoundStart,
   onBack,
   onManualCourseEntry,
   onUploadScorecard,
@@ -83,6 +91,14 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
   const [userLocation, setUserLocation] = useState<{latitude: number; longitude: number} | null>(null);
   const [offlineSaveNotice, setOfflineSaveNotice] = useState<string | null>(null);
   const [homeCourseName, setHomeCourseName] = useState<string>('');
+  const [gpsSetupVisible, setGpsSetupVisible] = useState(false);
+  const [gpsSetupLoading, setGpsSetupLoading] = useState(false);
+  const [gpsSetupCourse, setGpsSetupCourse] = useState<{ courseId: string; courseName?: string } | null>(null);
+  const [gpsTeeOptions, setGpsTeeOptions] = useState<Array<{ name: string; color?: string; totalYards: number }>>([]);
+  const [selectedGpsTee, setSelectedGpsTee] = useState('');
+  const [gpsStartingHole, setGpsStartingHole] = useState(1);
+  const [gpsHoleCount, setGpsHoleCount] = useState(18);
+  const [gpsTournamentMode, setGpsTournamentMode] = useState(false);
 
   useEffect(() => {
     loadRecentAndFavorites();
@@ -347,6 +363,97 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
         setIsLoadingCourse(false);
       }
     });
+  };
+
+  const handleGpsRoundPress = (course: GolfCourse) => {
+    if (!onGpsRoundStart) return;
+    handleStartNewSelection(async () => {
+      setGpsSetupVisible(true);
+      setGpsSetupLoading(true);
+      setGpsSetupCourse({ courseId: course.id, courseName: course.name });
+      setGpsStartingHole(1);
+      setGpsTournamentMode(false);
+      setGpsTeeOptions([]);
+      setSelectedGpsTee('');
+
+      try {
+        const setup = await loadGpsRoundSetup(course.id);
+        const defaultTee = setup.teeOptions[0]?.name || 'Blue';
+        setGpsTeeOptions(setup.teeOptions);
+        setSelectedGpsTee(defaultTee);
+        setGpsHoleCount(setup.holeCount || 18);
+      } catch (err) {
+        setGpsSetupVisible(false);
+        logger.error('Error loading GPS round setup:', err);
+        Alert.alert('GPS Setup', err instanceof Error ? err.message : 'Unable to load tee box data.');
+      } finally {
+        setGpsSetupLoading(false);
+      }
+    });
+  };
+
+  const getMockGpsRoute = (courseName?: string) => {
+    const normalized = (courseName || '').trim().toLowerCase();
+    if (normalized.includes('pebble beach')) {
+      return {
+        courseId: '141520658891108829',
+        courseName: 'Pebble Beach Golf Links',
+      };
+    }
+    return null;
+  };
+
+  const handleOsmGpsRoundPress = (course: OSMGolfCourse) => {
+    if (!onGpsRoundStart) return;
+    const mockRoute = getMockGpsRoute(course.name);
+    if (!mockRoute) {
+      Alert.alert('GPS Preview', 'GPS preview is only mocked for Pebble Beach right now.');
+      return;
+    }
+    handleStartNewSelection(async () => {
+      setGpsSetupVisible(true);
+      setGpsSetupLoading(true);
+      setGpsSetupCourse({ courseId: mockRoute.courseId, courseName: mockRoute.courseName });
+      setGpsStartingHole(1);
+      setGpsTournamentMode(false);
+      setGpsTeeOptions([]);
+      setSelectedGpsTee('');
+
+      try {
+        const setup = await loadGpsRoundSetup(mockRoute.courseId);
+        const defaultTee = setup.teeOptions[0]?.name || 'Blue';
+        setGpsTeeOptions(setup.teeOptions);
+        setSelectedGpsTee(defaultTee);
+        setGpsHoleCount(setup.holeCount || 18);
+      } catch (err) {
+        setGpsSetupVisible(false);
+        logger.error('Error loading GPS preview setup:', err);
+        Alert.alert('GPS Setup', err instanceof Error ? err.message : 'Unable to load tee box data.');
+      } finally {
+        setGpsSetupLoading(false);
+      }
+    });
+  };
+
+  const handleCloseGpsSetup = () => {
+    setGpsSetupVisible(false);
+    setGpsSetupLoading(false);
+    setGpsSetupCourse(null);
+    setGpsTeeOptions([]);
+    setSelectedGpsTee('');
+    setGpsStartingHole(1);
+    setGpsHoleCount(18);
+    setGpsTournamentMode(false);
+  };
+
+  const handleConfirmGpsSetup = () => {
+    if (!gpsSetupCourse || !onGpsRoundStart) return;
+    onGpsRoundStart(gpsSetupCourse.courseId, gpsSetupCourse.courseName, {
+      teeName: selectedGpsTee || undefined,
+      startingHole: gpsStartingHole,
+      tournamentMode: gpsTournamentMode,
+    });
+    handleCloseGpsSetup();
   };
 
   const handleQuickStartPress = (course: GolfCourse, lastTeeName?: string) => {
@@ -723,6 +830,7 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
       style={styles.courseItem}
       onPress={() => handleStartNewSelection(() => handleOSMCourseClick(course))}
     >
+      <View style={styles.courseBody}>
       <View style={styles.courseInfo}>
         <View style={styles.courseHeader}>
           <Text style={styles.courseName}>{formatCourseName(course.name)}</Text>
@@ -739,7 +847,17 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
           </Text>
         )}
       </View>
+      {onGpsRoundStart && getMockGpsRoute(course.name) && (
+        <TouchableOpacity
+          style={styles.gpsStartButton}
+          onPress={() => handleOsmGpsRoundPress(course)}
+        >
+          <Ionicons name="navigate-circle" size={20} color="#10B981" />
+          <Text style={styles.gpsStartText}>GPS</Text>
+        </TouchableOpacity>
+      )}
       <Ionicons name="chevron-forward" size={24} color="#6B7280" />
+      </View>
     </TouchableOpacity>
   );
 
@@ -807,6 +925,15 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
             color={isCourseFavorite(course.id) ? '#FBBF24' : '#6B7280'}
           />
         </TouchableOpacity>
+        {onGpsRoundStart && (
+          <TouchableOpacity
+            style={styles.gpsStartButton}
+            onPress={() => handleGpsRoundPress(course)}
+          >
+            <Ionicons name="navigate-circle" size={20} color="#10B981" />
+            <Text style={styles.gpsStartText}>GPS</Text>
+          </TouchableOpacity>
+        )}
         <Ionicons name="chevron-forward" size={24} color="#6B7280" />
       </View>
     </TouchableOpacity>
@@ -875,6 +1002,15 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
               color={isCourseFavorite(course.id) ? '#FBBF24' : '#6B7280'}
             />
           </TouchableOpacity>
+          {onGpsRoundStart && (
+            <TouchableOpacity
+              style={styles.gpsStartButton}
+              onPress={() => handleGpsRoundPress(course)}
+            >
+              <Ionicons name="navigate-circle" size={20} color="#10B981" />
+              <Text style={styles.gpsStartText}>GPS</Text>
+            </TouchableOpacity>
+          )}
           {onQuickStart && (
             <TouchableOpacity
               style={[styles.quickStartButton, isLoadingQuickStart && styles.quickStartButtonDisabled]}
@@ -966,6 +1102,22 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
           )}
         </TouchableOpacity>
       </View>
+
+      <GpsRoundSetupModal
+        visible={gpsSetupVisible}
+        loading={gpsSetupLoading}
+        courseName={gpsSetupCourse?.courseName}
+        teeOptions={gpsTeeOptions}
+        selectedTeeName={selectedGpsTee}
+        onSelectTee={setSelectedGpsTee}
+        startingHole={gpsStartingHole}
+        maxStartingHole={gpsHoleCount}
+        onSelectStartingHole={setGpsStartingHole}
+        tournamentMode={gpsTournamentMode}
+        onToggleTournamentMode={setGpsTournamentMode}
+        onClose={handleCloseGpsSetup}
+        onConfirm={handleConfirmGpsSetup}
+      />
 
       {/* Find Nearby Button */}
       <View style={styles.nearbyContainer}>
@@ -1443,6 +1595,23 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
     marginRight: 8,
+  },
+  gpsStartButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.35)',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  gpsStartText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#10B981',
   },
   quickStartButtonDisabled: {
     opacity: 0.7,

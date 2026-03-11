@@ -90,6 +90,33 @@ Then:
 
 ---
 
+## 🛰️ GPS Round Setup (Mapbox + Firebase)
+
+This repo now includes a GPS round screen with on-device course caching.
+
+Required env vars:
+
+```bash
+EXPO_PUBLIC_MAPBOX_PUBLIC_TOKEN=pk.your_public_token
+EXPO_PUBLIC_FIREBASE_FUNCTIONS_REGION=us-central1
+```
+
+Also set Mapbox secret download token in `app.json` plugin:
+
+```json
+{
+  "plugins": [
+    ["@rnmapbox/maps", { "RNMapboxMapsDownloadToken": "sk.YOUR_SECRET_TOKEN" }]
+  ]
+}
+```
+
+During course selection, use the new `GPS` button on a course card to start GPS round mode.
+
+Backend source for GPS holes is now Firebase Cloud Functions (callable `getCourseHoles`) with shared Firestore cache (`courseCache/{courseId}`), then local AsyncStorage cache on-device.
+
+---
+
 ## 📱 How to Use
 
 ### Starting a New Round

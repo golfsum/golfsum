@@ -157,7 +157,10 @@ export interface SavedRound {
   penalties?: number; // Penalty strokes for the round
   roundSource?: 'manual' | 'import';
   entryMode?: 'basic' | 'advanced';
-  
+  roundStartedAt?: number; // Unix ms when the round session began
+  roundEndedAt?: number; // Unix ms when the round was saved/ended
+  roundDurationMinutes?: number; // Persisted elapsed play time in whole minutes
+
   // Round holes (for NDB calculation)
   holes?: RoundHole[];
 

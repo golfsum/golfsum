@@ -48,6 +48,14 @@
     "updates": {
       "url": "https://u.expo.dev/c4865044-3a6b-42c0-93b7-64f036338f22"
     },
+    "plugins": [
+      [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsDownloadToken": "sk.YOUR_SECRET_TOKEN"
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": "c4865044-3a6b-42c0-93b7-64f036338f22"

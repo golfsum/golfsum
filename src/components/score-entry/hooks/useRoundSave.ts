@@ -208,6 +208,9 @@ export function useRoundSave({
       const roundWeather = await resolveRoundWeather();
       const frontWeather = weatherFront9 || roundWeather;
       const backWeather = weatherBack9;
+      const roundStartedAt = firstSaveTimestampRef.current ?? Date.now();
+      const roundEndedAt = lastSaveTimestampRef.current ?? Date.now();
+      const roundDurationMinutes = Math.max(1, Math.round((roundEndedAt - roundStartedAt) / 60000));
 
       const savedRound = await saveRound({
         courseId: course.id,
@@ -245,6 +248,9 @@ export function useRoundSave({
         startType,
         holesPlayed: holesPlayedNumbers,
         eventTag: eventTag || undefined,
+        roundStartedAt,
+        roundEndedAt,
+        roundDurationMinutes,
       });
 
       logger.debug('Incomplete round saved', { startType, reason, holesCompleted: holesCompletedCount });
@@ -363,6 +369,9 @@ ${renderRow('GIR', [...back9.map(girLabel), '-', `${holesOverride.filter(h => h.
       const roundWeather = await resolveRoundWeather();
       const frontWeather = weatherFront9 || roundWeather;
       const backWeather = weatherBack9;
+      const roundStartedAt = firstSaveTimestampRef.current ?? Date.now();
+      const roundEndedAt = lastSaveTimestampRef.current ?? Date.now();
+      const roundDurationMinutes = Math.max(1, Math.round((roundEndedAt - roundStartedAt) / 60000));
 
       const savedRound = await saveRound({
         courseId: course.id,
@@ -406,6 +415,9 @@ ${renderRow('GIR', [...back9.map(girLabel), '-', `${holesOverride.filter(h => h.
             ? `Played ${savedHoles.length} of ${holesToUse.length} holes. Minimum ${holesToUse.length <= 9 ? 9 : 18} required for rating.`
             : undefined,
         }),
+        roundStartedAt,
+        roundEndedAt,
+        roundDurationMinutes,
       });
 
       await clearInProgressRound();

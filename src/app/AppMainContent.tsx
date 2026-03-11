@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AveragesTab } from '../components/AveragesTab';
 import { ErrorBoundary } from '../components/ErrorBoundary';
@@ -11,10 +11,11 @@ import { InsightsTab } from '../components/InsightsTab';
 import { HandicapSparkLine } from '../components/HandicapSparkLine';
 import { ManualScoreEntry } from '../components/ManualScoreEntry';
 import { ProfileTab } from '../components/ProfileTab';
-import { RoundDetailView } from '../components/RoundDetailView';
+import { RoundAnalysisScreen } from '../components/RoundAnalysisScreen';
 import { ScorecardImportScreen } from '../components/ScorecardImportScreen';
 import { ScorecardViewer } from '../components/ScorecardViewer';
 import { ProUpgradeScreen } from '../screens/ProUpgradeScreen';
+import { WebGpsRoundPreview } from '../screens/WebGpsRoundPreview';
 import { clearInProgressRound, InProgressRoundDraft } from '../services/inProgressRoundService';
 import { OSMGolfCourse } from '../services/openStreetMapService';
 import { CourseDetails } from '../services/golfCourseApiService';
@@ -71,7 +72,37 @@ type AppMainContentProps = {
   onImportCompletedScorecard: () => void;
   onUpgrade: (source: UpgradeTrigger) => void;
   onSyncSubscriptionEntitlement: () => Promise<void>;
+  gpsRoundCourse: {
+    courseId: string;
+    courseName?: string;
+    teeColor?: string;
+    startingHole?: number;
+    tournamentMode?: boolean;
+  } | null;
+  onStartGpsRound: (
+    courseId: string,
+    courseName?: string,
+    settings?: { teeName?: string; startingHole?: number; tournamentMode?: boolean }
+  ) => void;
 };
+
+let NativeGpsRoundScreen: React.ComponentType<{
+  courseId: string;
+  courseName?: string;
+  teeColor?: string;
+  startingHole?: number;
+  tournamentMode?: boolean;
+  onBack: () => void;
+}> | null = null;
+
+if (Platform.OS !== 'web') {
+  try {
+    const req = eval('require');
+    NativeGpsRoundScreen = req('../screens/GpsRoundScreen').GpsRoundScreen;
+  } catch {
+    NativeGpsRoundScreen = null;
+  }
+}
 
 export function AppMainContent(props: AppMainContentProps): React.ReactNode {
   const showCourseSearch = props.currentScreen === 'course-search';
@@ -82,6 +113,7 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
         <View style={{ display: showCourseSearch ? 'flex' : 'none', flex: 1 }}>
           <CourseSearchScreen
             onCourseSelected={props.onCourseSelected}
+            onGpsRoundStart={props.onStartGpsRound}
             onBack={props.onBack}
             onUploadScorecard={props.onUploadScorecard}
             onCommunityCourseSelected={props.onCommunityCourseSelected}
@@ -132,21 +164,11 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
   }
 
   if (props.currentScreen === 'round-detail' && props.selectedRound) {
-    logger.debug('🎬 Rendering RoundDetailView');
+    logger.debug('🎬 Rendering RoundAnalysisScreen');
     return (
-      <RoundDetailView
+      <RoundAnalysisScreen
         round={props.selectedRound}
         onBack={props.onBack}
-        onViewCourseStats={props.onCourseStatsPress}
-        onRoundUpdated={(updatedRound) => {
-          props.onSetSelectedRound(updatedRound);
-          props.onSetRefreshTrigger(prev => prev + 1);
-        }}
-        personalBests={props.personalBests}
-        onDismissPersonalBests={() => props.onSetPersonalBests([])}
-        milestoneEvent={props.milestoneEvent}
-        onDismissMilestone={props.onDismissMilestone}
-        onNavigateToProfile={() => props.onUpgrade('post_round')}
       />
     );
   }
@@ -174,6 +196,31 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
           await props.onSyncSubscriptionEntitlement();
           props.onSetRefreshTrigger(prev => prev + 1);
         }}
+      />
+    );
+  }
+
+  if (props.currentScreen === 'gps-round' && props.gpsRoundCourse) {
+    if (Platform.OS === 'web' || !NativeGpsRoundScreen) {
+      return (
+        <WebGpsRoundPreview
+          courseId={props.gpsRoundCourse.courseId}
+          courseName={props.gpsRoundCourse.courseName}
+          teeColor={props.gpsRoundCourse.teeColor}
+          startingHole={props.gpsRoundCourse.startingHole}
+          tournamentMode={props.gpsRoundCourse.tournamentMode}
+          onBack={props.onBack}
+        />
+      );
+    }
+    return (
+      <NativeGpsRoundScreen
+        courseId={props.gpsRoundCourse.courseId}
+        courseName={props.gpsRoundCourse.courseName}
+        teeColor={props.gpsRoundCourse.teeColor}
+        startingHole={props.gpsRoundCourse.startingHole}
+        tournamentMode={props.gpsRoundCourse.tournamentMode}
+        onBack={props.onBack}
       />
     );
   }

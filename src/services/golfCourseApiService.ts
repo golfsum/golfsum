@@ -30,10 +30,14 @@ const COURSE_SOURCE = 'GOLF_COURSE_API';
 const CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 let API_KEY = '';
+let AUTH_SCHEME: 'Key' | 'Bearer' = 'Key';
 
-export const setApiKey = (key: string) => {
+const getAuthHeaderValue = () => `${AUTH_SCHEME} ${API_KEY}`;
+
+export const setApiKey = (key: string, scheme: 'Key' | 'Bearer' = 'Key') => {
   API_KEY = key;
-  logger.debug('🔑 API Key set for api.golfcourseapi.com');
+  AUTH_SCHEME = scheme;
+  logger.debug(`🔑 Course API credential loaded (${scheme})`);
 };
 
 export const getApiKey = () => API_KEY;
@@ -52,7 +56,7 @@ export const testApiKey = async (): Promise<{
     const response = await fetchWithTimeout(`${GOLF_COURSE_API_URL}/search?search_query=pebble`, {
       method: 'GET',
       headers: {
-        'Authorization': `Key ${API_KEY}`,
+        'Authorization': getAuthHeaderValue(),
         'Content-Type': 'application/json'
       }
     });
@@ -106,6 +110,7 @@ export interface HoleDetail {
   yardage: number;
   handicap: number;
   handicapWomen?: number;
+  nineName?: string;
 }
 
 export interface CourseDetails extends GolfCourse {
@@ -219,7 +224,7 @@ export const searchCourses = async (query: string): Promise<GolfCourse[]> => {
     const response = await fetchWithTimeout(`${GOLF_COURSE_API_URL}/search?search_query=${encodeURIComponent(query)}`, {
       method: 'GET',
       headers: {
-        'Authorization': `Key ${API_KEY}`,
+        'Authorization': getAuthHeaderValue(),
         'Content-Type': 'application/json'
       }
     });
@@ -419,7 +424,7 @@ export const getCourseDetails = async (courseId: string): Promise<CourseDetails>
     const response = await fetchWithTimeout(`${GOLF_COURSE_API_URL}/courses/${courseId}`, {
       method: 'GET',
       headers: {
-        'Authorization': `Key ${API_KEY}`,
+        'Authorization': getAuthHeaderValue(),
         'Content-Type': 'application/json'
       }
     });
@@ -457,13 +462,18 @@ export const getCourseDetails = async (courseId: string): Promise<CourseDetails>
     // Pull top-level rating/slope from the first male tee as a fallback
     const primaryTee = teeBoxes.find(t => !t.name.includes('(Women)')) || teeBoxes[0];
 
+    const resolvedHoleCount =
+      teeBoxes[0]?.holes?.length ||
+      Math.max(...teeBoxes.map((tee) => tee.holes?.length || 0), 0) ||
+      18;
+
     const courseDetails: CourseDetails = {
       id: String(courseData.id),
       name: courseName,
       city: courseData.location?.city || '',
       state: courseData.location?.state || '',
       country: courseData.location?.country || 'United States',
-      holes: 18,
+      holes: resolvedHoleCount,
       par: par,
       rating: primaryTee?.rating || undefined,
       slope: primaryTee?.slope || undefined,
@@ -574,12 +584,26 @@ const parseHoles = (holes: any[], parTotal: number = 72): HoleDetail[] => {
   
   logger.debug(`📊 Parsing ${holes.length} holes`);
   
-  return holes.map((hole, index) => ({
-    hole: index + 1,
-    par: hole.par || 4,
-    yardage: hole.yardage || 350,
-    handicap: hole.handicap || index + 1,
-  }));
+  return holes.map((hole, index) => {
+    const nineName =
+      hole?.nine_name ||
+      hole?.nineName ||
+      hole?.course_name ||
+      hole?.courseName ||
+      hole?.loop_name ||
+      hole?.loopName ||
+      hole?.side_name ||
+      hole?.sideName ||
+      undefined;
+
+    return {
+      hole: index + 1,
+      par: hole.par || 4,
+      yardage: hole.yardage || 350,
+      handicap: hole.handicap || index + 1,
+      nineName: typeof nineName === 'string' && nineName.trim().length > 0 ? nineName.trim() : undefined,
+    };
+  });
 };
 
 // Generate default holes based on par total
@@ -713,7 +737,7 @@ const refreshCourseInBackground = async (courseId: string, cachedEntry: CachedCo
     const fresh = await fetchWithTimeout(`${GOLF_COURSE_API_URL}/courses/${courseId}`, {
       method: 'GET',
       headers: {
-        'Authorization': `Key ${API_KEY}`,
+        'Authorization': getAuthHeaderValue(),
         'Content-Type': 'application/json'
       }
     });
@@ -730,13 +754,19 @@ const refreshCourseInBackground = async (courseId: string, cachedEntry: CachedCo
     // Pull top-level rating/slope from the first male tee as a fallback
     const primaryTee = teeBoxes.find(t => !t.name.includes('(Women)')) || teeBoxes[0];
 
+    const resolvedHoleCount =
+      teeBoxes[0]?.holes?.length ||
+      Math.max(...teeBoxes.map((tee) => tee.holes?.length || 0), 0) ||
+      cachedEntry.course.holes ||
+      18;
+
     const courseDetails: CourseDetails = {
       id: String(courseData.id),
       name: normalizeCourseName(courseData.course_name || courseData.club_name || cachedEntry.course.name),
       city: courseData.location?.city || cachedEntry.course.city,
       state: courseData.location?.state || cachedEntry.course.state,
       country: courseData.location?.country || cachedEntry.course.country || 'United States',
-      holes: 18,
+      holes: resolvedHoleCount,
       par,
       rating: primaryTee?.rating || cachedEntry.course.rating,
       slope: primaryTee?.slope || cachedEntry.course.slope,

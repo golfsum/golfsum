@@ -2,6 +2,11 @@
 // and auto-registers the reversed client ID as a URL scheme (required for Google Sign-In on iOS).
 const iosGoogleClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
 const allowCleartextTraffic = process.env.EXPO_PUBLIC_ALLOW_CLEARTEXT_TRAFFIC === 'true';
+const mapboxDownloadToken = process.env.MAPBOX_DOWNLOAD_TOKEN || '';
+
+if (mapboxDownloadToken) {
+  process.env.RNMAPBOX_MAPS_DOWNLOAD_TOKEN = mapboxDownloadToken;
+}
 
 // Google requires the reversed client ID as an iOS URL scheme for OAuth redirects.
 // e.g. "123456-abcdef.apps.googleusercontent.com" → "com.googleusercontent.apps.123456-abcdef"
@@ -87,6 +92,7 @@ module.exports = function(env) {
       ],
       '@react-native-community/datetimepicker',
       'expo-apple-authentication',
+      ...(mapboxDownloadToken ? ['@rnmapbox/maps'] : []),
     ],
   };
 };

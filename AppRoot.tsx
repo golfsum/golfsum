@@ -144,6 +144,13 @@ export default function App() {
   const [selectedRound, setSelectedRound] = useState<SavedRound | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [selectedCourseData, setSelectedCourseData] = useState<CourseDetails | null>(null);
+  const [gpsRoundCourse, setGpsRoundCourse] = useState<{
+    courseId: string;
+    courseName?: string;
+    teeColor?: string;
+    startingHole?: number;
+    tournamentMode?: boolean;
+  } | null>(null);
   const [selectedScorecard, setSelectedScorecard] = useState<ScorecardResult | null>(null);
   const [scorecardCourseSeed, setScorecardCourseSeed] = useState<OSMGolfCourse | null>(null);
   const [scorecardImportMode, setScorecardImportMode] = useState<'course' | 'completed'>('course');
@@ -172,6 +179,7 @@ export default function App() {
             setSelectedRound(null);
             setSelectedCourseId(null);
             setSelectedCourseData(null);
+            setGpsRoundCourse(null);
             setSelectedScorecard(null);
             setScorecardCourseSeed(null);
             setScorecardImportMode('course');
@@ -277,10 +285,15 @@ export default function App() {
   const [upgradeReturnScreen, setUpgradeReturnScreen] = useState<AppScreen>('tabs');
 
   useEffect(() => {
-    const envKey = process.env.EXPO_PUBLIC_GOLF_COURSE_API_KEY;
-    if (envKey && envKey !== 'your-rapidapi-key-here') {
-      setApiKey(envKey);
-      logger.debug('✅ Golf Course API key loaded from environment');
+    const golfApiIoToken = process.env.EXPO_PUBLIC_GOLFAPI_IO_TOKEN;
+    const legacyKey = process.env.EXPO_PUBLIC_GOLF_COURSE_API_KEY;
+
+    if (golfApiIoToken && golfApiIoToken !== 'your-golfapi-io-token-here') {
+      setApiKey(golfApiIoToken, 'Bearer');
+      logger.debug('✅ golfapi.io bearer token loaded from environment');
+    } else if (legacyKey && legacyKey !== 'your-rapidapi-key-here') {
+      setApiKey(legacyKey, 'Key');
+      logger.debug('✅ Legacy golf course API key loaded from environment');
     }
   }, []);
 
@@ -369,7 +382,7 @@ export default function App() {
     if (!getApiKey()) {
       Alert.alert(
         'API Key Required',
-        'Set EXPO_PUBLIC_GOLF_COURSE_API_KEY to enable course search and round setup.'
+        'Set EXPO_PUBLIC_GOLFAPI_IO_TOKEN or EXPO_PUBLIC_GOLF_COURSE_API_KEY to enable course search and round setup.'
       );
       return;
     }
@@ -415,6 +428,21 @@ export default function App() {
     setQuickStartSettings({});
     setResumeDraft(null);
     setCurrentScreen('score-entry');
+  };
+
+  const handleStartGpsRound = (
+    courseId: string,
+    courseName?: string,
+    settings?: { teeName?: string; startingHole?: number; tournamentMode?: boolean }
+  ) => {
+    setGpsRoundCourse({
+      courseId,
+      courseName,
+      teeColor: settings?.teeName || 'Blue',
+      startingHole: settings?.startingHole || 1,
+      tournamentMode: settings?.tournamentMode ?? false,
+    });
+    setCurrentScreen('gps-round');
   };
 
   const handleQuickStart = (courseId: string, teeName?: string) => {
@@ -550,6 +578,9 @@ export default function App() {
       setCurrentScreen('tabs');
     } else if (currentScreen === 'pro-upgrade') {
       setCurrentScreen(upgradeReturnScreen === 'pro-upgrade' ? 'tabs' : upgradeReturnScreen);
+    } else if (currentScreen === 'gps-round') {
+      setGpsRoundCourse(null);
+      setCurrentScreen('course-search');
     } else {
       setCurrentScreen('tabs');
     }
@@ -563,6 +594,7 @@ export default function App() {
     setSelectedCourseId(null);
     setSelectedScorecard(null);
     setSelectedCourseName(null);
+    setGpsRoundCourse(null);
   };
 
   const completeOnboarding = async () => {
@@ -623,6 +655,7 @@ export default function App() {
       onSetInProgressRound={setInProgressRound}
       onSetResumeDraft={setResumeDraft}
       onCourseSelected={handleCourseSelected}
+      onStartGpsRound={handleStartGpsRound}
       onBack={handleBack}
       onUploadScorecard={handleUploadScorecard}
       onCommunityCourseSelected={handleCommunityCourseSelected}
@@ -636,6 +669,7 @@ export default function App() {
       onImportCompletedScorecard={handleImportCompletedScorecard}
       onUpgrade={handleUpgrade}
       onSyncSubscriptionEntitlement={syncSubscriptionEntitlement}
+      gpsRoundCourse={gpsRoundCourse}
     />
   );
 

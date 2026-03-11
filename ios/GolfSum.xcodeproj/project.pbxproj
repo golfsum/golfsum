@@ -8,6 +8,13 @@
 
 /* Begin PBXBuildFile section */
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
+		A10000000000000000000001 /* GolfSumLiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* GolfSumLiveActivityAttributes.swift */; };
+		A10000000000000000000002 /* GolfSumLiveActivityBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* GolfSumLiveActivityBridge.swift */; };
+		A10000000000000000000003 /* GolfSumLiveActivityBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* GolfSumLiveActivityBridge.m */; };
+		A10000000000000000000004 /* GolfSumLiveActivityBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* GolfSumLiveActivityBundle.swift */; };
+		A10000000000000000000005 /* GolfSumLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* GolfSumLiveActivityWidget.swift */; };
+		A10000000000000000000006 /* GolfSumLiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* GolfSumLiveActivityAttributes.swift */; };
+		A10000000000000000000007 /* GolfSumLiveActivity.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* GolfSumLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, CodeSignOnCopy, ); }; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
 		4FF0763E9CBC3C9DEF8B5E15 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 6E0B4477C093EFA2A0A3C84A /* PrivacyInfo.xcprivacy */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
@@ -16,10 +23,41 @@
 		F708BFEA9611B48250A35F10 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5721B89C0F299D0F69A156CB /* ExpoModulesProvider.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		A60000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A50000000000000000000001;
+			remoteInfo = GolfSumLiveActivity;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A40000000000000000000001 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A10000000000000000000007 /* GolfSumLiveActivity.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		13B07F961A680F5B00A75B9A /* GolfSum.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GolfSum.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = GolfSum/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = GolfSum/Info.plist; sourceTree = "<group>"; };
+		A20000000000000000000001 /* GolfSumLiveActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GolfSumLiveActivityAttributes.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* GolfSumLiveActivityBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GolfSumLiveActivityBridge.swift; sourceTree = "<group>"; };
+		A20000000000000000000003 /* GolfSumLiveActivityBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = GolfSumLiveActivityBridge.m; sourceTree = "<group>"; };
+		A20000000000000000000004 /* GolfSumLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GolfSumLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A20000000000000000000006 /* GolfSumLiveActivityBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GolfSumLiveActivityBundle.swift; sourceTree = "<group>"; };
+		A20000000000000000000007 /* GolfSumLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GolfSumLiveActivityWidget.swift; sourceTree = "<group>"; };
 		5721B89C0F299D0F69A156CB /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-GolfSum/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		63096C1542B7C22E33CB1566 /* libPods-GolfSum.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-GolfSum.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6986068A4AA2DA6602D1D155 /* Pods-GolfSum.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-GolfSum.release.xcconfig"; path = "Target Support Files/Pods-GolfSum/Pods-GolfSum.release.xcconfig"; sourceTree = "<group>"; };
@@ -41,6 +79,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A40000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -49,6 +94,9 @@
 			children = (
 				F11748412D0307B40044C1D9 /* AppDelegate.swift */,
 				F11748442D0722820044C1D9 /* GolfSum-Bridging-Header.h */,
+				A20000000000000000000001 /* GolfSumLiveActivityAttributes.swift */,
+				A20000000000000000000002 /* GolfSumLiveActivityBridge.swift */,
+				A20000000000000000000003 /* GolfSumLiveActivityBridge.m */,
 				BB2F792B24A3F905000567C9 /* Supporting */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
@@ -96,6 +144,7 @@
 			isa = PBXGroup;
 			children = (
 				13B07FAE1A68108700A75B9A /* GolfSum */,
+				A30000000000000000000001 /* GolfSumLiveActivity */,
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
@@ -111,8 +160,19 @@
 			isa = PBXGroup;
 			children = (
 				13B07F961A680F5B00A75B9A /* GolfSum.app */,
+				A20000000000000000000004 /* GolfSumLiveActivity.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A30000000000000000000001 /* GolfSumLiveActivity */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000005 /* Info.plist */,
+				A20000000000000000000006 /* GolfSumLiveActivityBundle.swift */,
+				A20000000000000000000007 /* GolfSumLiveActivityWidget.swift */,
+			);
+			path = GolfSumLiveActivity;
 			sourceTree = "<group>";
 		};
 		BB2F792B24A3F905000567C9 /* Supporting */ = {
@@ -143,6 +203,7 @@
 				76C64CB39132686A052F9467 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
+				A40000000000000000000001 /* Embed App Extensions */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
@@ -151,11 +212,29 @@
 			buildRules = (
 			);
 			dependencies = (
+				A60000000000000000000002 /* PBXTargetDependency */,
 			);
 			name = GolfSum;
 			productName = GolfSum;
 			productReference = 13B07F961A680F5B00A75B9A /* GolfSum.app */;
 			productType = "com.apple.product-type.application";
+		};
+		A50000000000000000000001 /* GolfSumLiveActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A70000000000000000000003 /* Build configuration list for PBXNativeTarget "GolfSumLiveActivity" */;
+			buildPhases = (
+				A40000000000000000000004 /* Sources */,
+				A40000000000000000000002 /* Frameworks */,
+				A40000000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = GolfSumLiveActivity;
+			productName = GolfSumLiveActivity;
+			productReference = A20000000000000000000004 /* GolfSumLiveActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -166,6 +245,9 @@
 				LastUpgradeCheck = 1130;
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
+						LastSwiftMigration = 1250;
+					};
+					A50000000000000000000001 = {
 						LastSwiftMigration = 1250;
 					};
 				};
@@ -184,6 +266,7 @@
 			projectRoot = "";
 			targets = (
 				13B07F861A680F5B00A75B9A /* GolfSum */,
+				A50000000000000000000001 /* GolfSumLiveActivity */,
 			);
 		};
 /* End PBXProject section */
@@ -197,6 +280,13 @@
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
 				4FF0763E9CBC3C9DEF8B5E15 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A40000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -339,12 +429,33 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000003 /* GolfSumLiveActivityBridge.m in Sources */,
+				A10000000000000000000002 /* GolfSumLiveActivityBridge.swift in Sources */,
+				A10000000000000000000001 /* GolfSumLiveActivityAttributes.swift in Sources */,
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
 				F708BFEA9611B48250A35F10 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A40000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000004 /* GolfSumLiveActivityBundle.swift in Sources */,
+				A10000000000000000000005 /* GolfSumLiveActivityWidget.swift in Sources */,
+				A10000000000000000000006 /* GolfSumLiveActivityAttributes.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A60000000000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A50000000000000000000001 /* GolfSumLiveActivity */;
+			targetProxy = A60000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
@@ -531,6 +642,53 @@
 			};
 			name = Release;
 		};
+		A70000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = GolfSumLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.golfsum.app.LiveActivity;
+				PRODUCT_NAME = GolfSumLiveActivity;
+				SKIP_INSTALL = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A70000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = GolfSumLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.golfsum.app.LiveActivity;
+				PRODUCT_NAME = GolfSumLiveActivity;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -548,6 +706,15 @@
 			buildConfigurations = (
 				83CBBA201A601CBA00E9B192 /* Debug */,
 				83CBBA211A601CBA00E9B192 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A70000000000000000000003 /* Build configuration list for PBXNativeTarget "GolfSumLiveActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A70000000000000000000001 /* Debug */,
+				A70000000000000000000002 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

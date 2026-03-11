@@ -132,13 +132,16 @@ export const useScoreEntryState = ({
   }, [course, selectedTeeBox, showTeeSelection]);
 
   const startRoundWithTee = (teeBox: TeeBox, holeNumber: number) => {
+    const holeCount = teeBox.holes.length;
+    const nextStartingHole = Math.max(1, Math.min(holeCount || 1, holeNumber));
     setSelectedTeeBox(teeBox);
     setStartType('standard');
-    setStartingHole(holeNumber);
-    setCurrentHole(holeNumber - 1);
+    setStartingHole(nextStartingHole);
     setShowTeeSelection(false);
 
     const initialHoles = createInitialHoles(teeBox);
+    const nextCurrentIndex = initialHoles.findIndex((hole) => hole.hole === nextStartingHole);
+    setCurrentHole(nextCurrentIndex >= 0 ? nextCurrentIndex : 0);
     setHoles(initialHoles);
   };
 

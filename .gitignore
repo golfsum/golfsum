@@ -57,13 +57,19 @@ tsc-noemit-watch.pid
 # Build artifacts
 dist/
 
+# Python / OCR local env
+backend/scorecard_ocr/.venv/
+backend/scorecard_ocr/__pycache__/
+*.pyc
+*.pyd
+*.dll
 
-# more blocks
-Add-Content .gitignore "`nbackend/scorecard_ocr/.venv/"
-Add-Content .gitignore "`nbackend/scorecard_ocr/__pycache__/"
-Add-Content .gitignore "`n*.pyc"
-Add-Content .gitignore "`n*.pyd"
-Add-Content .gitignore "`n*.dll"ios/Pods/
+# iOS local build artifacts
+ios/Pods/
 ios/build/
 ios/DerivedData/
-ios/
+
+# Local packaged app artifacts
+*.ipa
+*.zip
+golfsum_extracted/

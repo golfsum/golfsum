@@ -26,6 +26,7 @@ interface UpgradeSheetProps {
 }
 
 const FEATURES = [
+  'Live GPS yardages during your round',
   'Advanced scoring with directional tracking',
   'AI coaching insights from your patterns',
   'Course-specific strategy cards',
@@ -127,7 +128,7 @@ export default function UpgradeSheet({ visible, trigger, onClose }: UpgradeSheet
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.handle} />
         <Text style={styles.title}>{copy.title}</Text>
-        <Text style={styles.price}>$49.99/year</Text>
+        <Text style={styles.price}>$69.99/year</Text>
         <Text style={styles.subtitle}>{copy.subtitle}</Text>
 
         <View style={styles.featureList}>
@@ -139,7 +140,7 @@ export default function UpgradeSheet({ visible, trigger, onClose }: UpgradeSheet
           ))}
         </View>
 
-        <Text style={styles.anchor}>$4.17/month — less than a sleeve of Pro V1s</Text>
+        <Text style={styles.anchor}>$5.83/month — save 17% annually</Text>
 
         <TouchableOpacity style={styles.primaryButton} onPress={handleSubscribe} disabled={isBusy}>
           <Text style={styles.primaryButtonText}>
