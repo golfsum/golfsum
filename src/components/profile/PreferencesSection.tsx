@@ -11,11 +11,18 @@ interface PreferencesSectionProps {
   defaultTee: string;
   homeCourseName: string;
   favoriteCourses: GolfCourse[];
+  pushEnabled: boolean;
+  marketingEnabled: boolean;
+  maintenanceEnabled: boolean;
+  pushPermissionLabel: string;
   onToggle: () => void;
   onDistanceChange: (value: 'yards' | 'meters') => void;
   onDateFormatChange: (value: string) => void;
   onDefaultTeeChange: (value: string) => void;
   onHomeCourseChange: (value: string) => void;
+  onPushEnabledChange: (value: boolean) => void;
+  onMarketingEnabledChange: (value: boolean) => void;
+  onMaintenanceEnabledChange: (value: boolean) => void;
   styles: any;
 }
 
@@ -26,11 +33,18 @@ export const PreferencesSection: React.FC<PreferencesSectionProps> = ({
   defaultTee,
   homeCourseName,
   favoriteCourses,
+  pushEnabled,
+  marketingEnabled,
+  maintenanceEnabled,
+  pushPermissionLabel,
   onToggle,
   onDistanceChange,
   onDateFormatChange,
   onDefaultTeeChange,
   onHomeCourseChange,
+  onPushEnabledChange,
+  onMarketingEnabledChange,
+  onMaintenanceEnabledChange,
   styles,
 }) => (
   <View style={styles.section}>
@@ -43,6 +57,63 @@ export const PreferencesSection: React.FC<PreferencesSectionProps> = ({
     </TouchableOpacity>
     {expanded && (
       <View style={styles.sectionContent}>
+        <View style={styles.preferenceItem}>
+          <View style={styles.preferenceRow}>
+            <Text style={styles.preferenceLabel}>Push Notifications</Text>
+            <Text style={styles.preferenceValue}>{pushPermissionLabel}</Text>
+          </View>
+          <View style={styles.segmentedControl}>
+            <TouchableOpacity
+              style={[styles.segmentButton, pushEnabled && styles.segmentButtonActive]}
+              onPress={() => onPushEnabledChange(true)}
+            >
+              <Text style={[styles.segmentText, pushEnabled && styles.segmentTextActive]}>On</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.segmentButton, !pushEnabled && styles.segmentButtonActive]}
+              onPress={() => onPushEnabledChange(false)}
+            >
+              <Text style={[styles.segmentText, !pushEnabled && styles.segmentTextActive]}>Off</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.preferenceHint}>Enable lock-screen and promotional messages from GolfSum</Text>
+        </View>
+        <View style={styles.preferenceItem}>
+          <Text style={styles.preferenceLabel}>Promotional Offers</Text>
+          <View style={styles.segmentedControl}>
+            <TouchableOpacity
+              style={[styles.segmentButton, marketingEnabled && styles.segmentButtonActive]}
+              onPress={() => onMarketingEnabledChange(true)}
+            >
+              <Text style={[styles.segmentText, marketingEnabled && styles.segmentTextActive]}>On</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.segmentButton, !marketingEnabled && styles.segmentButtonActive]}
+              onPress={() => onMarketingEnabledChange(false)}
+            >
+              <Text style={[styles.segmentText, !marketingEnabled && styles.segmentTextActive]}>Off</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.preferenceHint}>Discounts, feature launches, and upgrade offers</Text>
+        </View>
+        <View style={styles.preferenceItem}>
+          <Text style={styles.preferenceLabel}>Maintenance Updates</Text>
+          <View style={styles.segmentedControl}>
+            <TouchableOpacity
+              style={[styles.segmentButton, maintenanceEnabled && styles.segmentButtonActive]}
+              onPress={() => onMaintenanceEnabledChange(true)}
+            >
+              <Text style={[styles.segmentText, maintenanceEnabled && styles.segmentTextActive]}>On</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.segmentButton, !maintenanceEnabled && styles.segmentButtonActive]}
+              onPress={() => onMaintenanceEnabledChange(false)}
+            >
+              <Text style={[styles.segmentText, !maintenanceEnabled && styles.segmentTextActive]}>Off</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.preferenceHint}>Service outages, maintenance windows, and important account notices</Text>
+        </View>
         <View style={styles.preferenceItem}>
           <Text style={styles.preferenceLabel}>Distance Units</Text>
           <View style={styles.segmentedControl}>

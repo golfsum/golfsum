@@ -4,7 +4,12 @@
 
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { SavedRound, UserProfile, AverageStats, getDefaultProfile } from '../types';
+import {
+  SavedRound,
+  UserProfile,
+  AverageStats,
+  getDefaultProfile,
+} from '../types';
 import { getCurrentUser, refreshAuthToken } from './firebaseAuthService';
 import { db, isFirebaseEnabled } from './firebase';
 import { logger } from '../utils/logger';
@@ -22,6 +27,22 @@ import {
   orderBy,
   limit,
 } from 'firebase/firestore';
+
+export type PushDeviceRegistration = {
+  installationId: string;
+  expoPushToken: string | null;
+  platform: string;
+  projectId: string | null;
+  deviceName?: string | null;
+  appVersion?: string | null;
+  buildNumber?: string | number | null;
+  permissionStatus: string;
+  notificationsEnabled: boolean;
+  marketingEnabled: boolean;
+  maintenanceEnabled: boolean;
+  status: 'active' | 'disabled' | 'denied' | 'invalid' | 'simulator';
+  lastSeenAt: string;
+};
 
 const isPermissionError = (error: unknown): boolean => {
   const s = typeof error === 'string' ? error : JSON.stringify(error);
@@ -315,6 +336,44 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
     updatedAt: new Date().toISOString(),
   });
   logger.debug('✓ Profile saved to Firestore');
+}
+
+export async function upsertPushDeviceRegistration(
+  registration: PushDeviceRegistration
+): Promise<void> {
+  const userId = getUserId();
+  if (!userId) return;
+
+  const fs = requireDb();
+  const nowIso = new Date().toISOString();
+  await setDoc(
+    doc(fs, 'users', userId, 'pushDevices', registration.installationId),
+    {
+      ...registration,
+      updatedAt: nowIso,
+      createdAt: nowIso,
+    },
+    { merge: true }
+  );
+}
+
+export async function deactivatePushDeviceRegistration(installationId: string): Promise<void> {
+  const userId = getUserId();
+  if (!userId || !installationId) return;
+
+  const fs = requireDb();
+  const nowIso = new Date().toISOString();
+  await setDoc(
+    doc(fs, 'users', userId, 'pushDevices', installationId),
+    {
+      status: 'disabled',
+      notificationsEnabled: false,
+      expoPushToken: null,
+      updatedAt: nowIso,
+      lastSeenAt: nowIso,
+    },
+    { merge: true }
+  );
 }
 
 export async function getUserProfile(): Promise<UserProfile> {

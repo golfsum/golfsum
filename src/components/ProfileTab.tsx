@@ -78,6 +78,11 @@ import { GolfDNACard } from './GolfDNACard';
 import { buildImprovementLoop, ImprovementLoopData } from '../services/improvementLoopService';
 import { ImprovementLoopScreen } from './ImprovementLoopScreen';
 import { getQueuedWatchEvents, isWatchBridgeAvailable } from '../services/watchBridgeService';
+import {
+  deactivatePushRegistrationForCurrentUser,
+  getPushPermissionSnapshot,
+  syncPushRegistrationForProfile,
+} from '../services/pushNotificationService';
 
 const PROFILE_STORAGE_KEY = '@GolfSum:UserProfile';
 const LAST_SYNC_KEY = '@GolfSum:LastSync';
@@ -137,6 +142,7 @@ export const ProfileTab: React.FC<Props> = ({
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [dateFormat, setDateFormat] = useState('auto');
+  const [pushPermissionLabel, setPushPermissionLabel] = useState('Not enabled');
   const [nicknameDraft, setNicknameDraft] = useState('');
   const [isEditingNickname, setIsEditingNickname] = useState(false);
   const [goalDrafts, setGoalDrafts] = useState<Record<string, string>>({});
@@ -299,6 +305,7 @@ export const ProfileTab: React.FC<Props> = ({
     loadUnits();
     loadLastSync();
     loadDateFormat();
+    loadPushPermissionLabel().catch(() => undefined);
     getPendingSyncCount().then(setPendingSyncCount).catch(() => setPendingSyncCount(0));
   }, []);
 
@@ -613,6 +620,23 @@ export const ProfileTab: React.FC<Props> = ({
     } catch (error) {
       logger.error('Failed to load date format:', error);
     }
+  };
+
+  const loadPushPermissionLabel = async () => {
+    const permissions = await getPushPermissionSnapshot();
+    if (!permissions) {
+      setPushPermissionLabel(Platform.OS === 'web' ? 'Unsupported' : 'Unavailable');
+      return;
+    }
+    if (permissions.granted) {
+      setPushPermissionLabel('Allowed');
+      return;
+    }
+    if (permissions.canAskAgain) {
+      setPushPermissionLabel('Ask me');
+      return;
+    }
+    setPushPermissionLabel('Blocked');
   };
 
   const recordLastSync = async (date: Date) => {
@@ -1237,6 +1261,7 @@ export const ProfileTab: React.FC<Props> = ({
   const handleSignOut = async () => {
     if (Platform.OS === 'web') {
       if (confirm('Are you sure you want to sign out?')) {
+        await deactivatePushRegistrationForCurrentUser().catch(() => undefined);
         await signOut();
         setUser(null);
         await clearSignedInLocalState();
@@ -1249,6 +1274,7 @@ export const ProfileTab: React.FC<Props> = ({
           text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
+            await deactivatePushRegistrationForCurrentUser().catch(() => undefined);
             await signOut();
             setUser(null);
             await clearSignedInLocalState();
@@ -1619,10 +1645,47 @@ export const ProfileTab: React.FC<Props> = ({
     });
   };
 
-  const handleHomeCourseChange = async (courseName: string) => {
+    const handleHomeCourseChange = async (courseName: string) => {
     await updateProfile({
       coursePreferences: { ...profile.coursePreferences, homeCourseName: courseName },
     });
+  };
+
+  const handleNotificationPreferencesChange = async (
+    updates: Partial<UserProfile['notificationPreferences']>,
+    options?: { requestPermission?: boolean }
+  ) => {
+    const nextPreferences = {
+      pushEnabled: profile.notificationPreferences?.pushEnabled === true,
+      marketingEnabled: profile.notificationPreferences?.marketingEnabled === true,
+      maintenanceEnabled: profile.notificationPreferences?.maintenanceEnabled !== false,
+      ...updates,
+    };
+    const nextProfile = {
+      ...profile,
+      notificationPreferences: nextPreferences,
+    };
+    setProfile(nextProfile);
+    await persistProfile(nextProfile);
+    await syncPushRegistrationForProfile(nextProfile, {
+      requestPermission: options?.requestPermission,
+    }).catch(() => undefined);
+    await loadPushPermissionLabel().catch(() => undefined);
+  };
+
+  const handlePushEnabledChange = async (enabled: boolean) => {
+    await handleNotificationPreferencesChange(
+      { pushEnabled: enabled },
+      { requestPermission: enabled }
+    );
+  };
+
+  const handleMarketingEnabledChange = async (enabled: boolean) => {
+    await handleNotificationPreferencesChange({ marketingEnabled: enabled });
+  };
+
+  const handleMaintenanceEnabledChange = async (enabled: boolean) => {
+    await handleNotificationPreferencesChange({ maintenanceEnabled: enabled });
   };
 
     const formatLastSync = (value: string | null) => {
@@ -1868,11 +1931,18 @@ export const ProfileTab: React.FC<Props> = ({
           defaultTee={profile.coursePreferences.favoriteTee || 'Always Ask'}
           homeCourseName={displayHomeCourseName}
           favoriteCourses={favoriteCourses}
+          pushEnabled={profile.notificationPreferences?.pushEnabled === true}
+          marketingEnabled={profile.notificationPreferences?.marketingEnabled === true}
+          maintenanceEnabled={profile.notificationPreferences?.maintenanceEnabled !== false}
+          pushPermissionLabel={pushPermissionLabel}
           onToggle={() => setShowPreferences(!showPreferences)}
           onDistanceChange={handleDistanceChange}
           onDateFormatChange={handleDateFormatChange}
           onDefaultTeeChange={handleDefaultTeeChange}
           onHomeCourseChange={handleHomeCourseChange}
+          onPushEnabledChange={handlePushEnabledChange}
+          onMarketingEnabledChange={handleMarketingEnabledChange}
+          onMaintenanceEnabledChange={handleMaintenanceEnabledChange}
           styles={styles}
         />
 

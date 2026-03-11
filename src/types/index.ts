@@ -47,6 +47,12 @@ export interface WeatherData {
   humidity?: number;
 }
 
+export interface NotificationPreferences {
+  pushEnabled: boolean;
+  marketingEnabled: boolean;
+  maintenanceEnabled: boolean;
+}
+
 // History Stat State - Critical for WHS Compliance
 // "If the app cannot prove a stat is real, it must act like it doesn't exist."
 export enum HistoryStatState {
@@ -320,6 +326,9 @@ export interface UserProfile {
 
   // Stat preferences (source of truth for UI visibility)
   statPreferences?: StatPreferences;
+
+  // Push notification preferences
+  notificationPreferences?: NotificationPreferences;
 }
 
 // Default profile for new users
@@ -391,6 +400,11 @@ export const getDefaultProfile = (): UserProfile => ({
     upDownPercent: null,
   },
   scoringMode: 'basic',
+  notificationPreferences: {
+    pushEnabled: false,
+    marketingEnabled: false,
+    maintenanceEnabled: true,
+  },
 });
 
 export interface TypicalValue {

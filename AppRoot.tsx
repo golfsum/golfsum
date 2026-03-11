@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -59,6 +59,11 @@ import { AppScreen } from './src/app/appTypes';
 import { AppMainContent } from './src/app/AppMainContent';
 import { detectMilestone, MilestoneEvent } from './src/services/milestoneDetector';
 import { consumeWatchEndRoundFlag, initializeWatchReceiver, type WatchBridgeEvent } from './src/services/watchBridgeService';
+import {
+  initializePushNotifications,
+  syncPushRegistrationForProfile,
+  type NotificationRoutePayload,
+} from './src/services/pushNotificationService';
 
 const ONBOARDING_COMPLETE_KEY = '@GolfSum:onboardingComplete';
 const ONBOARDING_LEGACY_KEY = '@GolfSum:onboardingSeen';
@@ -109,6 +114,9 @@ export default function App() {
       if (state === 'active') {
         syncSubscriptionEntitlement().catch(() => undefined);
         processQueuedSync().catch(() => undefined);
+        getUserProfile()
+          .then((profile) => syncPushRegistrationForProfile(profile, { requestPermission: false }))
+          .catch(() => undefined);
       }
     });
     return () => sub.remove();
@@ -167,6 +175,8 @@ export default function App() {
         // Re-sync trial count from Firestore after login
         await loadTrialCount().catch(() => undefined);
         syncSubscriptionEntitlement().catch(() => undefined);
+        const profile = await getUserProfile().catch(() => null);
+        await syncPushRegistrationForProfile(profile, { requestPermission: false }).catch(() => undefined);
         // Refresh rounds when user signs in
         setRefreshTrigger(prev => prev + 1);
       } else {
@@ -283,6 +293,45 @@ export default function App() {
   const [showQuickStartPrompt, setShowQuickStartPrompt] = useState(false);
   const [upgradeTrigger, setUpgradeTrigger] = useState<UpgradeTrigger>('profile');
   const [upgradeReturnScreen, setUpgradeReturnScreen] = useState<AppScreen>('tabs');
+
+  const handleNotificationOpen = useCallback(async (payload: NotificationRoutePayload) => {
+    if (payload.screen === 'pro-upgrade') {
+      setUpgradeTrigger((payload.source as UpgradeTrigger) || 'profile');
+      setUpgradeReturnScreen('tabs');
+      setCurrentScreen('pro-upgrade');
+      return;
+    }
+
+    if (payload.tab && ['history', 'averages', 'upload', 'insights', 'profile'].includes(payload.tab)) {
+      setActiveTab(payload.tab as TabName);
+      setCurrentScreen('tabs');
+      return;
+    }
+
+    if (payload.screen === 'round-detail' && payload.roundId) {
+      const existingRound = rounds.find((round) => round.id === payload.roundId);
+      const resolvedRound = existingRound || (await getRounds()).find((round) => round.id === payload.roundId);
+      if (resolvedRound) {
+        setSelectedRound(resolvedRound);
+        setActiveTab('history');
+        setCurrentScreen('round-detail');
+        return;
+      }
+    }
+
+    if (payload.screen === 'gps-round') {
+      setActiveTab('upload');
+      setCurrentScreen('tabs');
+      return;
+    }
+
+    if (payload.screen && ['history', 'averages', 'upload', 'insights', 'profile'].includes(payload.screen)) {
+      setActiveTab(payload.screen as TabName);
+      setCurrentScreen('tabs');
+    }
+  }, [rounds]);
+
+  useEffect(() => initializePushNotifications(handleNotificationOpen), [handleNotificationOpen]);
 
   useEffect(() => {
     const golfApiIoToken = process.env.EXPO_PUBLIC_GOLFAPI_IO_TOKEN;

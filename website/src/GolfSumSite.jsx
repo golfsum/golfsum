@@ -1031,6 +1031,19 @@ function AdminPage({ user }) {
   const [refreshingReports, setRefreshingReports] = useState(false);
   const [homeCourseDraft, setHomeCourseDraft] = useState("");
   const [savingHomeCourse, setSavingHomeCourse] = useState(false);
+  const [pushSummary, setPushSummary] = useState({
+    activeDevices: null,
+    marketingDevices: null,
+    maintenanceDevices: null,
+    recentCampaigns: [],
+  });
+  const [pushAudience, setPushAudience] = useState("marketing");
+  const [pushTitle, setPushTitle] = useState("");
+  const [pushBody, setPushBody] = useState("");
+  const [pushScreen, setPushScreen] = useState("pro-upgrade");
+  const [pushTab, setPushTab] = useState("profile");
+  const [pushSending, setPushSending] = useState(false);
+  const [pushResult, setPushResult] = useState(null);
 
   useEffect(() => {
     return () => { aliveRef.current = false; };
@@ -1079,6 +1092,7 @@ function AdminPage({ user }) {
       const ocrErrorItems = Array.isArray(adminData.ocrErrors) ? adminData.ocrErrors : [];
       if (!aliveRef.current || seq !== reloadSeqRef.current) return;
       setOcrErrors(ocrErrorItems);
+      void loadPushSummary(token);
       try {
         const { resp: sr, data: sd } = await fetchJsonWithTimeout("/api/analytics-stats", {
           headers: { Authorization: `Bearer ${token}` },
@@ -1099,6 +1113,78 @@ function AdminPage({ user }) {
     if (aliveRef.current) setRefreshingReports(true);
     await reloadAdminData(false);
     if (aliveRef.current) setRefreshingReports(false);
+  };
+
+  const loadPushSummary = useCallback(async (tokenOverride = null) => {
+    try {
+      const token = tokenOverride || await resolveAuthToken(user);
+      if (!token) return;
+      const { resp, data } = await fetchJsonWithTimeout(
+        "/api/admin-push-campaign",
+        { headers: { Authorization: `Bearer ${token}` } },
+        15000
+      );
+      if (!resp.ok || !aliveRef.current) return;
+      setPushSummary({
+        activeDevices: data?.activeDevices ?? 0,
+        marketingDevices: data?.marketingDevices ?? 0,
+        maintenanceDevices: data?.maintenanceDevices ?? 0,
+        recentCampaigns: Array.isArray(data?.recentCampaigns) ? data.recentCampaigns : [],
+      });
+    } catch {}
+  }, [user]);
+
+  const sendPushCampaign = async () => {
+    if (!pushTitle.trim() || !pushBody.trim()) return;
+    if (aliveRef.current) {
+      setPushSending(true);
+      setPushResult(null);
+    }
+    try {
+      const token = await resolveAuthToken(user);
+      if (!token) throw new Error("Missing admin token");
+      const payload = {
+        audience: pushAudience,
+        title: pushTitle.trim(),
+        body: pushBody.trim(),
+        screen: pushScreen || null,
+        tab: pushTab || null,
+        source: pushAudience === "marketing" ? "promo-offer" : "maintenance",
+      };
+      const { resp, data } = await fetchJsonWithTimeout(
+        "/api/admin-push-campaign",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        },
+        30000
+      );
+      if (!aliveRef.current) return;
+      if (!resp.ok) {
+        setPushResult({
+          ok: false,
+          message: data?.error || "Push send failed",
+        });
+        return;
+      }
+      setPushResult({
+        ok: true,
+        message: `Queued ${data?.sentCount ?? 0} sends from ${data?.targetedCount ?? 0} eligible devices.`,
+      });
+      await loadPushSummary(token);
+    } catch (error) {
+      if (!aliveRef.current) return;
+      setPushResult({
+        ok: false,
+        message: error?.message || "Push send failed",
+      });
+    } finally {
+      if (aliveRef.current) setPushSending(false);
+    }
   };
 
   const loadUserDetail = async (usr) => {
@@ -1451,7 +1537,7 @@ function AdminPage({ user }) {
       </div>
 
       <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: `1px solid ${C.border}` }}>
-        {["overview", "users", "ocr", "reported", ...(selectedUser ? ["user"] : [])].map((t) => (
+        {["overview", "users", "ocr", "reported", "push", ...(selectedUser ? ["user"] : [])].map((t) => (
           <button key={t} onClick={() => setTab(t)} style={{ background: "none", border: "none", padding: "10px 16px", cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: tab === t ? 600 : 400, color: tab === t ? C.text : C.textMuted, borderBottom: tab === t ? `2px solid ${C.brand}` : "2px solid transparent", textTransform: "capitalize" }}>
             {t === "user" && selectedUser
               ? `User: ${selectedUser.personalInfo?.name || selectedUser.uid.slice(0, 8)}`
@@ -1459,6 +1545,8 @@ function AdminPage({ user }) {
                 ? "OCR Errors"
               : t === "reported"
                 ? "Reported Issues"
+                : t === "push"
+                  ? "Push Campaigns"
                 : t}
           </button>
         ))}
@@ -1842,6 +1930,164 @@ function AdminPage({ user }) {
                 </tr>
               ))}
             </tbody></table>
+          </div>
+        </div>
+      )}
+
+      {tab === "push" && (
+        <div className="fade-in">
+          <div className="stat-grid" style={{ marginBottom: 20 }}>
+            <div className="stat-box">
+              <div className="stat-value" style={{ color: C.brand }}>{pushSummary.activeDevices ?? "—"}</div>
+              <div className="stat-label">Active Devices</div>
+            </div>
+            <div className="stat-box">
+              <div className="stat-value">{pushSummary.marketingDevices ?? "—"}</div>
+              <div className="stat-label">Marketing Opt-In</div>
+            </div>
+            <div className="stat-box">
+              <div className="stat-value">{pushSummary.maintenanceDevices ?? "—"}</div>
+              <div className="stat-label">Maintenance Opt-In</div>
+            </div>
+          </div>
+
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 }}>
+              <div>
+                <h3 style={{ fontSize: 15, fontWeight: 600 }}>Send Push Campaign</h3>
+                <p style={{ fontSize: 12, color: C.textMuted, marginTop: 4 }}>
+                  Use marketing for offers and launches. Use maintenance for outages, windows, and urgent service notices.
+                </p>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => loadPushSummary()} disabled={pushSending}>
+                Refresh
+              </button>
+            </div>
+            <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 12, color: C.textDim, textTransform: "uppercase" }}>Audience</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {[
+                    ["marketing", "Marketing"],
+                    ["maintenance", "Maintenance"],
+                    ["all", "All Active"],
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setPushAudience(value)}
+                      style={{
+                        borderColor: pushAudience === value ? C.brand : C.border,
+                        color: pushAudience === value ? C.text : C.textMuted,
+                        background: pushAudience === value ? "rgba(16,185,129,0.10)" : "transparent",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 12, color: C.textDim, textTransform: "uppercase" }}>Title</div>
+                <input className="input" value={pushTitle} onChange={(e) => setPushTitle(e.target.value)} placeholder="March offer: 7 days free Pro" maxLength={80} />
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 12, color: C.textDim, textTransform: "uppercase" }}>Message</div>
+                <textarea
+                  value={pushBody}
+                  onChange={(e) => setPushBody(e.target.value)}
+                  placeholder="Open GolfSum to claim the latest offer."
+                  maxLength={240}
+                  style={{
+                    width: "100%",
+                    minHeight: 96,
+                    background: C.bgElevated,
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 10,
+                    color: C.text,
+                    padding: "10px 12px",
+                    fontFamily: "inherit",
+                    fontSize: 13,
+                  }}
+                />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 12, color: C.textDim, textTransform: "uppercase", marginBottom: 8 }}>Open Screen</div>
+                  <select className="input" value={pushScreen} onChange={(e) => setPushScreen(e.target.value)}>
+                    <option value="pro-upgrade">Pro Upgrade</option>
+                    <option value="history">History</option>
+                    <option value="averages">Averages</option>
+                    <option value="insights">Insights</option>
+                    <option value="profile">Profile</option>
+                    <option value="upload">Play</option>
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: C.textDim, textTransform: "uppercase", marginBottom: 8 }}>Tab Hint</div>
+                  <select className="input" value={pushTab} onChange={(e) => setPushTab(e.target.value)}>
+                    <option value="profile">Profile</option>
+                    <option value="history">History</option>
+                    <option value="averages">Averages</option>
+                    <option value="insights">Insights</option>
+                    <option value="upload">Play</option>
+                  </select>
+                </div>
+              </div>
+              {pushResult && (
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: pushResult.ok ? "#10B981" : "#F87171",
+                    background: pushResult.ok ? "rgba(16,185,129,0.10)" : "rgba(248,113,113,0.10)",
+                    border: `1px solid ${pushResult.ok ? "rgba(16,185,129,0.30)" : "rgba(248,113,113,0.30)"}`,
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                  }}
+                >
+                  {pushResult.message}
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button className="btn btn-primary" onClick={sendPushCampaign} disabled={pushSending || !pushTitle.trim() || !pushBody.trim()}>
+                  {pushSending ? "Sending..." : "Send Push"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}` }}>
+              <h3 style={{ fontSize: 15, fontWeight: 600 }}>Recent Campaigns</h3>
+            </div>
+            {pushSummary.recentCampaigns.length === 0 ? (
+              <div style={{ padding: 20, fontSize: 13, color: C.textMuted }}>No campaigns sent yet.</div>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Sent</th>
+                    <th>Audience</th>
+                    <th>Title</th>
+                    <th>Target</th>
+                    <th>Accepted</th>
+                    <th>Errors</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pushSummary.recentCampaigns.map((campaign) => (
+                    <tr key={campaign.id}>
+                      <td>{campaign.sentAt ? fmtDate(campaign.sentAt) : "—"}</td>
+                      <td style={{ textTransform: "capitalize" }}>{campaign.audience || "—"}</td>
+                      <td style={{ color: C.text, fontWeight: 500 }}>{campaign.title || "—"}</td>
+                      <td>{campaign.targetedCount ?? 0}</td>
+                      <td>{campaign.sentCount ?? 0}</td>
+                      <td>{campaign.errorCount ?? 0}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       )}

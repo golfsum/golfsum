@@ -90,6 +90,7 @@ module.exports = function(env) {
           locationAlwaysAndWhenInUsePermission: 'GolfSum needs your location to find nearby golf courses.',
         },
       ],
+      'expo-notifications',
       '@react-native-community/datetimepicker',
       'expo-apple-authentication',
       ...(mapboxDownloadToken ? ['@rnmapbox/maps'] : []),
