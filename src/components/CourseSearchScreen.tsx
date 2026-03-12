@@ -365,33 +365,6 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
     });
   };
 
-  const handleGpsRoundPress = (course: GolfCourse) => {
-    if (!onGpsRoundStart) return;
-    handleStartNewSelection(async () => {
-      setGpsSetupVisible(true);
-      setGpsSetupLoading(true);
-      setGpsSetupCourse({ courseId: course.id, courseName: course.name });
-      setGpsStartingHole(1);
-      setGpsTournamentMode(false);
-      setGpsTeeOptions([]);
-      setSelectedGpsTee('');
-
-      try {
-        const setup = await loadGpsRoundSetup(course.id);
-        const defaultTee = setup.teeOptions[0]?.name || 'Blue';
-        setGpsTeeOptions(setup.teeOptions);
-        setSelectedGpsTee(defaultTee);
-        setGpsHoleCount(setup.holeCount || 18);
-      } catch (err) {
-        setGpsSetupVisible(false);
-        logger.error('Error loading GPS round setup:', err);
-        Alert.alert('GPS Setup', err instanceof Error ? err.message : 'Unable to load tee box data.');
-      } finally {
-        setGpsSetupLoading(false);
-      }
-    });
-  };
-
   const getMockGpsRoute = (courseName?: string) => {
     const normalized = (courseName || '').trim().toLowerCase();
     if (normalized.includes('pebble beach')) {
@@ -401,6 +374,42 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
       };
     }
     return null;
+  };
+
+  const handleGpsRoundPress = (course: GolfCourse) => {
+    if (!onGpsRoundStart) return;
+    handleStartNewSelection(async () => {
+      const mockRoute = getMockGpsRoute(course.name);
+      const resolvedCourseId = mockRoute?.courseId ?? course.id;
+      const resolvedCourseName = mockRoute?.courseName ?? course.name;
+
+      setGpsSetupVisible(true);
+      setGpsSetupLoading(true);
+      setGpsSetupCourse({ courseId: resolvedCourseId, courseName: resolvedCourseName });
+      setGpsStartingHole(1);
+      setGpsTournamentMode(false);
+      setGpsTeeOptions([]);
+      setSelectedGpsTee('');
+
+      try {
+        const setup = await loadGpsRoundSetup(resolvedCourseId);
+        const defaultTee = setup.teeOptions[0]?.name || 'Blue';
+        setGpsTeeOptions(setup.teeOptions);
+        setSelectedGpsTee(defaultTee);
+        setGpsHoleCount(setup.holeCount || 18);
+      } catch (err) {
+        setGpsSetupVisible(false);
+        logger.error('Error loading GPS round setup:', err);
+        const msg = err instanceof Error ? err.message : 'Unable to load tee box data.';
+        if (Platform.OS === 'web') {
+          window.alert(`GPS Setup: ${msg}`);
+        } else {
+          Alert.alert('GPS Setup', msg);
+        }
+      } finally {
+        setGpsSetupLoading(false);
+      }
+    });
   };
 
   const handleOsmGpsRoundPress = (course: OSMGolfCourse) => {

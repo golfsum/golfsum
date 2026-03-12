@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { getCourse, saveCourse } from './courseCache';
 import { fetchCourseHolesFromBackend } from './golfApi';
 import { getMockGpsCourse } from './gpsMockCourses';
@@ -42,24 +43,30 @@ export async function loadGpsRoundSetup(courseId) {
     };
   }
 
-  try {
-    const remote = await fetchCourseHolesFromBackend(courseId);
-    await saveCourse(courseId, remote);
-    return {
-      course: remote,
-      cached: false,
-      teeOptions: getGpsTeeOptions(remote),
-      holeCount: Array.isArray(remote?.holes) ? remote.holes.length : 0,
-    };
-  } catch (error) {
-    const mockCourse = getMockGpsCourse(courseId);
-    if (!mockCourse) throw error;
-    await saveCourse(courseId, mockCourse);
-    return {
-      course: mockCourse,
-      cached: false,
-      teeOptions: getGpsTeeOptions(mockCourse),
-      holeCount: Array.isArray(mockCourse?.holes) ? mockCourse.holes.length : 0,
-    };
+  // On web, Firebase callable functions are blocked by CORS in local dev.
+  // Skip straight to mock lookup; on native, try remote first.
+  if (Platform.OS !== 'web') {
+    try {
+      const remote = await fetchCourseHolesFromBackend(courseId);
+      await saveCourse(courseId, remote);
+      return {
+        course: remote,
+        cached: false,
+        teeOptions: getGpsTeeOptions(remote),
+        holeCount: Array.isArray(remote?.holes) ? remote.holes.length : 0,
+      };
+    } catch (_) {
+      // fall through to mock
+    }
   }
+
+  const mockCourse = getMockGpsCourse(courseId);
+  if (!mockCourse) throw new Error('Course data not available for web preview.');
+  await saveCourse(courseId, mockCourse);
+  return {
+    course: mockCourse,
+    cached: false,
+    teeOptions: getGpsTeeOptions(mockCourse),
+    holeCount: Array.isArray(mockCourse?.holes) ? mockCourse.holes.length : 0,
+  };
 }

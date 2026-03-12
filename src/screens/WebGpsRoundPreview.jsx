@@ -23,7 +23,21 @@ import { getMockGpsCourse } from '../services/gpsMockCourses';
 import { MAPBOX_PUBLIC_TOKEN } from '../config/mapbox';
 import { getStaticMapCameraConfig } from '../services/mapFraming';
 import { buildInRoundNudge } from '../services/inRoundNudgeService';
+import { getRecentHoleNote } from '../services/holeNotesService';
 import { colors } from '../theme/tokens';
+
+const CLUB_PATTERN = /\b(driver|3w|3 wood|5w|5 wood|2i|3i|4i|5i|6i|7i|8i|9i|pw|gw|aw|sw|lw|60|58|56|54|52|50|48|lob wedge|gap wedge|pitching wedge|sand wedge)\b/i;
+
+function extractClubFromNote(noteText) {
+  if (!noteText) return null;
+  const match = noteText.match(CLUB_PATTERN);
+  return match ? match[0] : null;
+}
+
+function buildGreenStaticMapUrl(greenPoi, imageWidth, imageHeight) {
+  if (!MAPBOX_PUBLIC_TOKEN || !greenPoi) return null;
+  return `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/${greenPoi.Longitude},${greenPoi.Latitude},19.5,0/${imageWidth}x${imageHeight}?access_token=${MAPBOX_PUBLIC_TOKEN}&attribution=false`;
+}
 
 const CLUB_OPTIONS = [
   { id: 'dr', abbr: 'Dr', name: 'Driver', yards: 240, color: '#F87171' },
@@ -207,6 +221,7 @@ export function WebGpsRoundPreview({
   startingHole = 1,
   tournamentMode = false,
   onBack,
+  onSwitchToManual,
 }) {
   const { width, height } = useWindowDimensions();
   const [loading, setLoading] = useState(true);
@@ -225,6 +240,9 @@ export function WebGpsRoundPreview({
   const [mapLayout, setMapLayout] = useState({ width: 0, height: 0 });
   const [coachingEnabled, setCoachingEnabled] = useState(true);
   const [showGreenSheet, setShowGreenSheet] = useState(false);
+  const [showGreenView, setShowGreenView] = useState(false);
+  const [holeNoteClub, setHoleNoteClub] = useState(null);
+  const [gpsActive, setGpsActive] = useState(true);
 
   const currentHole = course?.holes?.[currentHoleIndex] || null;
   const hazardTags = useMemo(() => getHazardTags(currentHole), [currentHole]);
@@ -308,7 +326,16 @@ export function WebGpsRoundPreview({
   );
   const yardageMarkers = useMemo(() => getYardageMarkers(currentHole), [currentHole]);
   const hazardCarryLabels = useMemo(() => getHazardCarryLabels(currentHole, yardages), [currentHole, yardages]);
-  const suggestedClub = useMemo(() => getBestClub(yardages.center), [yardages.center]);
+  const suggestedClub = useMemo(() => {
+    if (holeNoteClub) {
+      const noteClubLower = holeNoteClub.toLowerCase();
+      const match = CLUB_OPTIONS.find((c) => c.name.toLowerCase() === noteClubLower || c.abbr.toLowerCase() === noteClubLower);
+      if (match) return { ...match, fromNote: true };
+      return { id: 'note', abbr: holeNoteClub.slice(0, 3).toUpperCase(), name: holeNoteClub, yards: null, color: '#10B981', fromNote: true };
+    }
+    return getBestClub(yardages.center);
+  }, [holeNoteClub, yardages.center]);
+
   const activeNudge = useMemo(() => coachingEnabled ? buildInRoundNudge({
     holeNumber: currentHole?.hole || currentHoleIndex + 1,
     holePar: currentHole?.par || 4,
@@ -335,16 +362,30 @@ export function WebGpsRoundPreview({
     () => buildStaticMapUrl(currentHole, mapWidth, mapHeight),
     [currentHole, mapWidth, mapHeight]
   );
+  const greenStaticUrl = useMemo(
+    () => buildGreenStaticMapUrl(greenCenter, mapWidth, mapHeight),
+    [greenCenter, mapWidth, mapHeight]
+  );
 
   useEffect(() => {
     setMapLoadError('');
-  }, [holeImageUrl, currentHoleIndex, mapWidth, mapHeight]);
+  }, [holeImageUrl, greenStaticUrl, showGreenView, currentHoleIndex, mapWidth, mapHeight]);
 
   useEffect(() => {
     setShotFlow('idle');
     setSelectedClub(null);
     setShowGreenSheet(false);
+    setShowGreenView(false);
   }, [currentHoleIndex]);
+
+  useEffect(() => {
+    let active = true;
+    if (!courseId || !currentHole?.hole) { setHoleNoteClub(null); return undefined; }
+    getRecentHoleNote(courseId, currentHole.hole)
+      .then((note) => { if (active) setHoleNoteClub(note ? extractClubFromNote(note.text) : null); })
+      .catch(() => { if (active) setHoleNoteClub(null); });
+    return () => { active = false; };
+  }, [courseId, currentHole?.hole]);
 
   const handleSelectHole = useCallback((nextIndex) => {
     setCurrentHoleIndex(nextIndex);
@@ -447,11 +488,12 @@ export function WebGpsRoundPreview({
               {cached ? 'Cached on device' : course?.source === 'LOCAL_SAMPLE' ? 'Local sample data' : 'Loaded now'} • {selectedTee?.name || teeColor} • Hole {currentHoleIndex + 1}
             </Text>
           </View>
-          <View style={styles.scorePill}>
-            <Text style={styles.scorePillText}>GPS</Text>
-          </View>
-          <TouchableOpacity style={[styles.iconBtn, coachingEnabled && styles.iconBtnActive]} onPress={() => setCoachingEnabled((value) => !value)}>
-            <Ionicons name="bulb-outline" size={16} color={coachingEnabled ? colors.brand.primary : 'rgba(255,255,255,0.55)'} />
+          <TouchableOpacity
+            style={[styles.gpsPill, !gpsActive && styles.gpsPillOff]}
+            onPress={() => setGpsActive((v) => !v)}
+          >
+            <Ionicons name="navigate" size={11} color="#FFFFFF" />
+            <Text style={styles.gpsPillText}>{gpsActive ? 'GPS' : 'Manual'}</Text>
           </TouchableOpacity>
         </View>
 
@@ -465,9 +507,9 @@ export function WebGpsRoundPreview({
             height: event.nativeEvent.layout.height,
           })}
         >
-          {holeImageUrl && !mapLoadError ? (
+          {(showGreenView ? greenStaticUrl : holeImageUrl) && !mapLoadError ? (
             <Image
-              source={{ uri: holeImageUrl }}
+              source={{ uri: showGreenView ? greenStaticUrl : holeImageUrl }}
               style={[styles.mapImage, { height: mapHeight }]}
               resizeMode="cover"
               onError={() => setMapLoadError('Mapbox image failed to load. Check token validity and any token URL restrictions.')}
@@ -560,20 +602,24 @@ export function WebGpsRoundPreview({
               </View>
             </View>
           ))}
-          <View
-            pointerEvents="none"
-            style={[
-              styles.playerRing,
-              { left: `${playerPoint.x * 100}%`, top: `${playerPoint.y * 100}%` },
-            ]}
-          />
-          <View
-            pointerEvents="none"
-            style={[
-              styles.playerDot,
-              { left: `${playerPoint.x * 100}%`, top: `${playerPoint.y * 100}%` },
-            ]}
-          />
+          {!showGreenView && (
+            <>
+              <View
+                pointerEvents="none"
+                style={[
+                  styles.playerRing,
+                  { left: `${playerPoint.x * 100}%`, top: `${playerPoint.y * 100}%` },
+                ]}
+              />
+              <View
+                pointerEvents="none"
+                style={[
+                  styles.playerDot,
+                  { left: `${playerPoint.x * 100}%`, top: `${playerPoint.y * 100}%` },
+                ]}
+              />
+            </>
+          )}
           {shotFlow === 'mark' && (
             <Pressable style={styles.mapTapCatcher} onPress={handleMapShotPlacement}>
               <View style={styles.mapTapScrim}>
@@ -609,10 +655,10 @@ export function WebGpsRoundPreview({
             <Text style={styles.distanceUnit}>yds</Text>
             {!tournamentMode && <Text style={styles.distanceAdjust}>W +4 · T -2</Text>}
           </View>
-          <TouchableOpacity style={styles.suggestedChip} onPress={handleStartShot}>
-            <Text style={styles.suggestedLabel}>SUGGESTED</Text>
+          <TouchableOpacity style={[styles.suggestedChip, suggestedClub?.fromNote && styles.suggestedChipNote]} onPress={handleStartShot}>
+            <Text style={styles.suggestedLabel}>{suggestedClub?.fromNote ? '📝 FROM NOTE' : 'SUGGESTED'}</Text>
             <Text style={styles.suggestedClub}>{suggestedClub.name}</Text>
-            <Text style={styles.suggestedMeta}>{suggestedClub.yards}y</Text>
+            {suggestedClub.yards ? <Text style={styles.suggestedMeta}>{suggestedClub.yards}y</Text> : null}
             <Text style={styles.suggestedChevron}>›</Text>
           </TouchableOpacity>
           {!clubPickerOpen && shotFlow === 'idle' && currentHoleShots.length > 0 && !activeNudge && (
@@ -672,15 +718,16 @@ export function WebGpsRoundPreview({
           <View style={styles.bottomMapBar}>
             <TouchableOpacity
               style={styles.teeJumpButton}
-              onPress={() => setPlayerPositionsByHole((prev) => ({ ...prev, [currentHoleIndex]: PREVIEW_POINTS.tee }))}
+              onPress={() => setShowGreenView(false)}
             >
               <Text style={styles.teeJumpText}>🏌️ Tee</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.greenJumpButton}
-              onPress={() => setPlayerPositionsByHole((prev) => ({ ...prev, [currentHoleIndex]: PREVIEW_POINTS.greenCenter }))}
+              style={[styles.teeJumpButton, showGreenView && styles.teeJumpButtonActive]}
+              onPress={() => setShowGreenView((v) => !v)}
             >
-              <Text style={styles.greenJumpText}>⛳ Green</Text>
+              <Ionicons name="map" size={13} color={showGreenView ? colors.brand.primary : 'rgba(255,255,255,0.55)'} />
+              <Text style={[styles.teeJumpText, showGreenView && { color: colors.brand.primary }]}>Green</Text>
             </TouchableOpacity>
             {liveLie?.lie === 'Green' && (
               <TouchableOpacity style={styles.greenMarkButton} onPress={() => setShowGreenSheet(true)}>
@@ -688,8 +735,9 @@ export function WebGpsRoundPreview({
               </TouchableOpacity>
             )}
             <View style={styles.bottomSpacer} />
-            <TouchableOpacity style={styles.logShotButton} onPress={handleStartShot}>
-              <Text style={styles.logShotButtonText}>+ Log Shot</Text>
+            <TouchableOpacity style={styles.addShotButton} onPress={handleStartShot}>
+              <Ionicons name="add" size={22} color="#FFFFFF" />
+              <Text style={[styles.addShotButtonText, { color: '#FFFFFF' }]}>Add Shot</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -697,62 +745,10 @@ export function WebGpsRoundPreview({
         <YardagePanel yardages={yardages} />
         <View style={styles.helperBar}>
           <Text style={styles.helperText}>
-            {coachingEnabled
-              ? 'Coaching is on • Pick a club, tap the map to place shots, add putts, then advance.'
-              : 'Coaching is off • Tap the bulb to bring tips back during the round preview.'}
+            {gpsActive
+              ? 'GPS on • Pick a club, tap the map to place shots, add putts, then advance.'
+              : 'Manual mode • GPS paused — yardages shown from tee. Tap GPS to re-enable.'}
           </Text>
-        </View>
-
-        <View style={styles.roundCard}>
-          <View style={styles.roundCardHeader}>
-            <View>
-              <Text style={styles.roundCardTitle}>In-Round Controls</Text>
-              <Text style={styles.roundCardSubtitle}>Web preview now simulates shot logging for this hole.</Text>
-            </View>
-            <View style={styles.holeScorePill}>
-              <Text style={styles.holeScorePillLabel}>Hole Score</Text>
-              <Text style={styles.holeScorePillValue}>{holeScore || 0}</Text>
-            </View>
-          </View>
-          <View style={styles.metricRow}>
-            <View style={styles.metric}>
-              <Text style={styles.metricLabel}>Shots Logged</Text>
-              <Text style={styles.metricValue}>{currentHoleShots.length}</Text>
-            </View>
-            <View style={styles.metric}>
-              <Text style={styles.metricLabel}>Current Lie</Text>
-              <Text style={[styles.metricValue, { color: liveLie.color }]}>{liveLie.lie}</Text>
-            </View>
-          </View>
-          <View style={styles.puttRow}>
-            <Text style={styles.puttLabel}>Putts</Text>
-            <View style={styles.puttStepper}>
-              <TouchableOpacity
-                style={styles.puttButton}
-                onPress={() => setHolePutts((prev) => ({ ...prev, [currentHoleIndex]: Math.max(0, currentPutts - 1) }))}
-              >
-                <Text style={styles.puttButtonText}>-</Text>
-              </TouchableOpacity>
-              <Text style={styles.puttValue}>{currentPutts}</Text>
-              <TouchableOpacity
-                style={styles.puttButton}
-                onPress={() => setHolePutts((prev) => ({ ...prev, [currentHoleIndex]: currentPutts + 1 }))}
-              >
-                <Text style={styles.puttButtonText}>+</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          <View style={styles.roundActionRow}>
-            <TouchableOpacity style={styles.secondaryAction} onPress={() => handleAdvanceHole(-1)}>
-              <Text style={styles.secondaryActionText}>Prev Hole</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryAction} onPress={handleResetHole}>
-              <Text style={styles.secondaryActionText}>Reset Hole</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.primaryAction} onPress={() => handleAdvanceHole(1)}>
-              <Text style={styles.primaryActionText}>{currentHoleIndex === course.holes.length - 1 ? 'Stay on 18' : 'Next Hole'}</Text>
-            </TouchableOpacity>
-          </View>
         </View>
 
         <View style={styles.previewCard}>
@@ -924,8 +920,9 @@ const styles = StyleSheet.create({
   iconBtnActive: { borderWidth: 1, borderColor: colors.brand.primaryBorder },
   courseName: { color: colors.text.primary, fontSize: 13, fontWeight: '600', letterSpacing: -0.2 },
   subMeta: { color: colors.text.secondary, fontSize: 10, marginTop: 1 },
-  scorePill: { minWidth: 42, height: 30, borderRadius: 8, paddingHorizontal: 10, backgroundColor: colors.bg.elevated, borderWidth: 1, borderColor: colors.border.subtle, alignItems: 'center', justifyContent: 'center' },
-  scorePillText: { color: colors.text.secondary, fontSize: 13, fontWeight: '700' },
+  gpsPill: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 30, borderRadius: 15, paddingHorizontal: 10, backgroundColor: colors.brand.primary, marginLeft: 2 },
+  gpsPillOff: { backgroundColor: colors.bg.elevated, borderWidth: 1, borderColor: colors.border.subtle },
+  gpsPillText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
   loadingText: { color: '#9CA3AF', marginTop: 12, fontSize: 14 },
   errorText: { color: '#FCA5A5', textAlign: 'center', lineHeight: 20, marginBottom: 14 },
   backBtn: {
@@ -1055,6 +1052,7 @@ const styles = StyleSheet.create({
     paddingLeft: 9,
     paddingRight: 22,
   },
+  suggestedChipNote: { borderColor: colors.brand.primaryBorder },
   suggestedLabel: { color: 'rgba(255,255,255,0.3)', fontSize: 8, fontWeight: '700', letterSpacing: 1.2, marginBottom: 1 },
   suggestedClub: { color: colors.text.primary, fontSize: 12, fontWeight: '600' },
   suggestedMeta: { color: 'rgba(255,255,255,0.28)', fontSize: 10, marginTop: 1 },
@@ -1315,138 +1313,16 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   bottomMapBar: { position: 'absolute', left: 10, right: 10, bottom: 28, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  teeJumpButton: { backgroundColor: colors.bg.secondary, borderWidth: 1, borderColor: colors.border.subtle, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
-  teeJumpText: { color: colors.text.secondary, fontSize: 11, fontWeight: '500' },
-  greenJumpButton: { backgroundColor: colors.brand.primaryMuted, borderWidth: 1, borderColor: colors.brand.primaryBorder, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
-  greenJumpText: { color: colors.brand.primary, fontSize: 11, fontWeight: '500' },
+  teeJumpButton: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.bg.secondary, borderWidth: 1, borderColor: colors.border.subtle, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  teeJumpButtonActive: { borderColor: colors.brand.primaryBorder },
+  teeJumpText: { color: 'rgba(255,255,255,0.55)', fontSize: 11, fontWeight: '500' },
   greenMarkButton: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
   greenMarkText: { color: '#E5E7EB', fontSize: 11, fontWeight: '600' },
   bottomSpacer: { flex: 1 },
-  logShotButton: { backgroundColor: colors.brand.primary, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 5 },
-  logShotButtonText: { color: colors.text.inverse, fontSize: 11, fontWeight: '700' },
+  addShotButton: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brand.primary, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8 },
+  addShotButtonText: { color: '#FFFFFF', fontSize: 9, fontWeight: '700', marginTop: 2, letterSpacing: 0.3 },
   helperBar: { backgroundColor: colors.bg.primary, paddingTop: 4, paddingBottom: 10, alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border.subtle },
   helperText: { color: 'rgba(255,255,255,0.20)', fontSize: 10, letterSpacing: 0.2, textAlign: 'center' },
-  roundCard: {
-    marginHorizontal: 14,
-    marginTop: 8,
-    backgroundColor: '#111827',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    padding: 16,
-    gap: 12,
-  },
-  roundCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  roundCardTitle: {
-    color: '#E5E7EB',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  roundCardSubtitle: {
-    color: '#9CA3AF',
-    fontSize: 12,
-    marginTop: 3,
-  },
-  holeScorePill: {
-    minWidth: 72,
-    backgroundColor: colors.brand.primaryMuted,
-    borderWidth: 1,
-    borderColor: colors.brand.primaryBorder,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  holeScorePillLabel: {
-    color: colors.brand.primary,
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  holeScorePillValue: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '800',
-    marginTop: 2,
-  },
-  puttRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  puttLabel: {
-    color: '#CBD5E1',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  puttStepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  puttButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.bg.secondary,
-    borderWidth: 1,
-    borderColor: colors.border.subtle,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  puttButtonText: {
-    color: '#E5E7EB',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  puttValue: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '800',
-    minWidth: 18,
-    textAlign: 'center',
-  },
-  roundActionRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  secondaryAction: {
-    flex: 1,
-    backgroundColor: colors.bg.secondary,
-    borderWidth: 1,
-    borderColor: colors.border.subtle,
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  secondaryActionText: {
-    color: '#CBD5E1',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  primaryAction: {
-    flex: 1.2,
-    backgroundColor: colors.brand.primary,
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  primaryActionText: {
-    color: colors.text.inverse,
-    fontSize: 12,
-    fontWeight: '800',
-  },
   previewCard: {
     marginHorizontal: 14,
     marginTop: 4,

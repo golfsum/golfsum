@@ -52,7 +52,7 @@
       [
         "@rnmapbox/maps",
         {
-          "RNMapboxMapsDownloadToken": "sk.YOUR_SECRET_TOKEN"
+      "RNMapboxMapsImpl": "mapbox"
         }
       ]
     ],

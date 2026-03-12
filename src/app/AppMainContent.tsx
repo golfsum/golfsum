@@ -349,7 +349,11 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
               <View style={styles.featuresList}>
                 <View style={styles.featureItem}>
                   <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                  <Text style={styles.featureText}>30,000+ courses worldwide</Text>
+                  <Text style={styles.featureText}>42,000 Courses Worldwide</Text>
+                </View>
+                <View style={styles.featureItem}>
+                  <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                  <Text style={styles.featureText}>GPS scoring with live yardages</Text>
                 </View>
                 <View style={styles.featureItem}>
                   <Ionicons name="checkmark-circle" size={20} color="#10B981" />
