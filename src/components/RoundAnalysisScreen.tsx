@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { SavedRound } from '../types';
@@ -40,6 +40,13 @@ const shotBadge = (dogleg: DoglegType) => {
   if (dogleg === 'right') return '->';
   if (dogleg === 'left') return '<-';
   return '--';
+};
+
+const formatPinLabel = (pinLocation: 'front' | 'middle' | 'back' | null | undefined) => {
+  if (pinLocation === 'front') return 'Pin F';
+  if (pinLocation === 'middle') return 'Pin M';
+  if (pinLocation === 'back') return 'Pin B';
+  return null;
 };
 
 export function RoundAnalysisScreen({ round, onBack }: Props) {
@@ -139,6 +146,25 @@ function CoachingTab({ analysis }: { analysis: ReturnType<typeof buildRoundAnaly
       {analysis.focusCard ? <InsightCard {...analysis.focusCard} heading="Focus Area" /> : null}
       {analysis.shapeStrengthCard ? <InsightCard {...analysis.shapeStrengthCard} heading="Shape Strength" /> : null}
       {analysis.shapeFocusCard ? <InsightCard {...analysis.shapeFocusCard} heading="Shape Focus" /> : null}
+      {analysis.mostCostlyPattern ? <InsightCard {...analysis.mostCostlyPattern} heading="Most Costly Pattern" /> : null}
+      {analysis.bestScoringWindowCard ? <InsightCard {...analysis.bestScoringWindowCard} heading="Best Scoring Window" /> : null}
+      {analysis.targetDistanceCard ? <InsightCard {...analysis.targetDistanceCard} heading="Target Number" /> : null}
+      {analysis.lieImpactCard ? <InsightCard {...analysis.lieImpactCard} heading="Lie Impact" /> : null}
+      {analysis.puttingCard ? <InsightCard {...analysis.puttingCard} heading="Putting" /> : null}
+      {analysis.pinLocationCard ? <InsightCard {...analysis.pinLocationCard} heading="Pin Location" /> : null}
+
+      {analysis.nextPracticeFocus ? (
+        <View style={styles.practiceCard}>
+          <Text style={styles.practiceEyebrow}>Next Practice Focus</Text>
+          <Text style={styles.practiceTitle}>{analysis.nextPracticeFocus.title}</Text>
+          <Text style={styles.practiceBody}>{analysis.nextPracticeFocus.why}</Text>
+          <View style={styles.practiceDrillBox}>
+            <Text style={styles.practiceDrillLabel}>Drill</Text>
+            <Text style={styles.practiceDrillBody}>{analysis.nextPracticeFocus.drill}</Text>
+          </View>
+          <ResourceLinks resources={analysis.nextPracticeFocus.resources} />
+        </View>
+      ) : null}
 
       <SectionTitle title="Pattern Insights" />
       {analysis.patternInsights.length ? (
@@ -196,6 +222,21 @@ function AveragesTab({
 }) {
   return (
     <>
+      <SectionTitle title="Distance Engine" />
+      {analysis.distanceEngineSummary ? (
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryGrid}>
+            <MiniCell label="AVG GPS" value={analysis.distanceEngineSummary.avgGps !== null ? `${Math.round(analysis.distanceEngineSummary.avgGps)}y` : '—'} />
+            <MiniCell label="AVG PLAYING" value={analysis.distanceEngineSummary.avgPlaying !== null ? `${Math.round(analysis.distanceEngineSummary.avgPlaying)}y` : '—'} />
+            <MiniCell label="AVG DELTA" value={analysis.distanceEngineSummary.avgDelta !== null ? `${analysis.distanceEngineSummary.avgDelta > 0 ? '+' : ''}${Math.round(analysis.distanceEngineSummary.avgDelta)}y` : '—'} />
+            <MiniCell label="MAX DELTA" value={analysis.distanceEngineSummary.maxDelta !== null ? `${analysis.distanceEngineSummary.maxDelta}y` : '—'} />
+          </View>
+          {analysis.distanceEngineSummary.note ? <Text style={styles.summaryNote}>{analysis.distanceEngineSummary.note}</Text> : null}
+        </View>
+      ) : (
+        <EmptyCard message="Distance engine summary appears once the round has GPS and playing-yardage shot data." />
+      )}
+
       <SectionTitle title="Shots By Lie" />
       {analysis.lieSummaries.length ? (
         <View style={styles.lieWrap}>
@@ -209,6 +250,54 @@ function AveragesTab({
       ) : (
         <EmptyCard message="This round does not have lie-tagged shot data yet." />
       )}
+
+      <SectionTitle title="Putting" />
+      {analysis.puttingSummary ? (
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryGrid}>
+            <MiniCell label="TRACKED" value={`${analysis.puttingSummary.trackedHoles}`} />
+            <MiniCell label="TOTAL PUTTS" value={analysis.puttingSummary.totalPutts !== null ? `${analysis.puttingSummary.totalPutts}` : '—'} />
+            <MiniCell label="AVG PUTTS" value={analysis.puttingSummary.avgPutts !== null ? analysis.puttingSummary.avgPutts.toFixed(1) : '—'} />
+            <MiniCell label="1ST PUTT" value={analysis.puttingSummary.avgFirstPuttDistance !== null ? `${Math.round(analysis.puttingSummary.avgFirstPuttDistance)} ft` : '—'} />
+          </View>
+          {analysis.puttingSummary.pinLocations.length ? (
+            <Text style={styles.summaryNote}>
+              Hole locations tracked:{' '}
+              {analysis.puttingSummary.pinLocations.map((pin) => `${pin.label} ${pin.count}`).join(' · ')}
+            </Text>
+          ) : null}
+        </View>
+      ) : (
+        <EmptyCard message="Putting summary appears once the round has green location and first-putt tracking." />
+      )}
+      {analysis.puttingSummary?.pinLocationRows.length ? (
+        analysis.puttingSummary.pinLocationRows.map((row) => (
+          <View key={row.label} style={styles.metricRowCard}>
+            <View style={styles.metricRowMain}>
+              <Text style={styles.metricRowTitle}>{row.label} Pin</Text>
+              <Text style={styles.metricRowValue}>{row.avgPutts !== null ? row.avgPutts.toFixed(1) : '—'}</Text>
+            </View>
+            <View style={styles.metricRowMeta}>
+              <Text style={styles.metricRowSub}>{row.count} green{row.count === 1 ? '' : 's'}</Text>
+              <Text style={styles.metricRowSub}>{row.avgFirstPuttDistance !== null ? `${Math.round(row.avgFirstPuttDistance)} ft 1st putt` : '— 1st putt'}</Text>
+            </View>
+          </View>
+        ))
+      ) : null}
+      {analysis.puttingSummary?.firstPuttBuckets.length ? (
+        analysis.puttingSummary.firstPuttBuckets.map((bucket) => (
+          <View key={bucket.label} style={styles.metricRowCard}>
+            <View style={styles.metricRowMain}>
+              <Text style={styles.metricRowTitle}>{bucket.label}</Text>
+              <Text style={styles.metricRowValue}>{bucket.avgPutts !== null ? bucket.avgPutts.toFixed(1) : '—'}</Text>
+            </View>
+            <View style={styles.metricRowMeta}>
+              <Text style={styles.metricRowSub}>{bucket.count} first putt{bucket.count === 1 ? '' : 's'}</Text>
+              <Text style={styles.metricRowSub}>{bucket.threePuttPct !== null ? `${bucket.threePuttPct}% 3-putt` : '— 3-putt'}</Text>
+            </View>
+          </View>
+        ))
+      ) : null}
 
       <SectionTitle title="Club Averages" />
       {analysis.clubAverageRows.length ? (
@@ -248,6 +337,83 @@ function AveragesTab({
         })
       ) : (
         <EmptyCard message="Club averages need shot-level distance data from the round log." />
+      )}
+
+      <SectionTitle title="Distance Windows" />
+      {analysis.distanceBandRows.length ? (
+        analysis.distanceBandRows.map((row) => (
+          <View key={row.label} style={styles.metricRowCard}>
+            <View style={styles.metricRowMain}>
+              <Text style={styles.metricRowTitle}>{row.label}</Text>
+              <Text style={[styles.metricRowValue, { color: toneColor(row.tone) }]}>{formatDelta(row.avgDelta)}</Text>
+            </View>
+            <View style={styles.metricRowMeta}>
+              <Text style={styles.metricRowSub}>{row.count} shot{row.count === 1 ? '' : 's'}</Text>
+              <Text style={styles.metricRowSub}>{row.girPct !== null ? `${row.girPct}% GIR` : '— GIR'}</Text>
+            </View>
+          </View>
+        ))
+      ) : (
+        <EmptyCard message="Distance-window scoring needs tagged approach shots with yardage." />
+      )}
+
+      <SectionTitle title="Lie Impact" />
+      {analysis.lieImpactRows.length ? (
+        analysis.lieImpactRows.map((row) => (
+          <View key={row.label} style={styles.metricRowCard}>
+            <View style={styles.metricRowMain}>
+              <Text style={styles.metricRowTitle}>{row.label}</Text>
+              <Text style={[styles.metricRowValue, { color: toneColor(row.tone) }]}>{formatDelta(row.avgDelta)}</Text>
+            </View>
+            <View style={styles.metricRowMeta}>
+              <Text style={styles.metricRowSub}>{row.count} hole{row.count === 1 ? '' : 's'}</Text>
+              <Text style={styles.metricRowSub}>
+                {row.deltaVsFairway !== null ? `${row.deltaVsFairway > 0 ? '+' : ''}${row.deltaVsFairway} vs fairway` : 'Baseline'}
+              </Text>
+            </View>
+          </View>
+        ))
+      ) : (
+        <EmptyCard message="Lie impact needs enough GPS-tagged lies across the round." />
+      )}
+
+      <SectionTitle title="Club Miss Pattern" />
+      {analysis.clubMissRows.length ? (
+        analysis.clubMissRows.map((row) => (
+          <View key={row.club} style={styles.metricRowCard}>
+            <View style={styles.metricRowMain}>
+              <Text style={styles.metricRowTitle}>{row.clubLabel}</Text>
+              <Text style={[styles.metricRowValue, { color: row.color }]}>{row.dominant ?? 'BAL'}</Text>
+            </View>
+            <View style={styles.missGrid}>
+              <Text style={styles.missCell}>S {row.shortPct}%</Text>
+              <Text style={styles.missCell}>L {row.longPct}%</Text>
+              <Text style={styles.missCell}>← {row.leftPct}%</Text>
+              <Text style={styles.missCell}>→ {row.rightPct}%</Text>
+            </View>
+          </View>
+        ))
+      ) : (
+        <EmptyCard message="Miss pattern needs at least a few approach shots with directional results." />
+      )}
+
+      <SectionTitle title="Tee Club Performance" />
+      {analysis.teeClubPerformanceRows.length ? (
+        analysis.teeClubPerformanceRows.map((row) => (
+          <View key={row.club} style={styles.metricRowCard}>
+            <View style={styles.metricRowMain}>
+              <Text style={styles.metricRowTitle}>{row.clubLabel}</Text>
+              <Text style={[styles.metricRowValue, { color: row.color }]}>{row.fairwayPct !== null ? `${row.fairwayPct}%` : '—'}</Text>
+            </View>
+            <View style={styles.metricRowMeta}>
+              <Text style={styles.metricRowSub}>{row.avgPlaying !== null ? `${Math.round(row.avgPlaying)}y avg` : '— avg'}</Text>
+              <Text style={styles.metricRowSub}>{row.avgDelta !== null ? `${formatDelta(row.avgDelta)} score` : '— score'}</Text>
+            </View>
+            {row.tag ? <Text style={styles.metricRowTag}>{row.tag}</Text> : null}
+          </View>
+        ))
+      ) : (
+        <EmptyCard message="Tee club performance needs GPS tee-shot logs on par 4s and par 5s." />
       )}
 
       <SectionTitle title="Tee Shot Tendencies" />
@@ -375,12 +541,16 @@ function InsightCard({
   title,
   tone,
   note,
+  support,
+  resources,
 }: {
   heading: string;
   badge: string;
   title: string;
   tone: 'green' | 'amber' | 'red';
   note: string;
+  support?: string | null;
+  resources?: Array<{ title: string; url: string }>;
 }) {
   return (
     <View style={styles.insightCard}>
@@ -393,7 +563,9 @@ function InsightCard({
         </View>
         <View style={styles.insightCopy}>
           <Text style={[styles.insightTitle, { color: toneColor(tone) }]}>{title}</Text>
+          {support ? <Text style={styles.insightSupport}>{support}</Text> : null}
           <Text style={styles.insightNote}>{note}</Text>
+          <ResourceLinks resources={resources} />
         </View>
       </View>
     </View>
@@ -405,11 +577,15 @@ function InsightListRow({
   title,
   tone,
   note,
+  support,
+  resources,
 }: {
   badge: string;
   title: string;
   tone: 'green' | 'amber' | 'red';
   note: string;
+  support?: string | null;
+  resources?: Array<{ title: string; url: string }>;
 }) {
   return (
     <View style={styles.listInsightRow}>
@@ -418,8 +594,34 @@ function InsightListRow({
       </View>
       <View style={styles.listInsightCopy}>
         <Text style={[styles.listInsightTitle, { color: toneColor(tone) }]}>{title}</Text>
+        {support ? <Text style={styles.listInsightSupport}>{support}</Text> : null}
         <Text style={styles.listInsightNote}>{note}</Text>
+        <ResourceLinks resources={resources} compact />
       </View>
+    </View>
+  );
+}
+
+function ResourceLinks({
+  resources,
+  compact = false,
+}: {
+  resources?: Array<{ title: string; url: string }>;
+  compact?: boolean;
+}) {
+  if (!resources?.length) return null;
+  return (
+    <View style={[styles.resourceWrap, compact ? styles.resourceWrapCompact : null]}>
+      {resources.map((resource) => (
+        <TouchableOpacity
+          key={`${resource.title}-${resource.url}`}
+          style={[styles.resourceChip, compact ? styles.resourceChipCompact : null]}
+          onPress={() => Linking.openURL(resource.url).catch(() => undefined)}
+        >
+          <Ionicons name="logo-youtube" size={14} color="#FF0000" />
+          <Text style={styles.resourceChipText} numberOfLines={1}>{resource.title}</Text>
+        </TouchableOpacity>
+      ))}
     </View>
   );
 }
@@ -466,10 +668,21 @@ function GroupCardView({ group, mode }: { group: GroupCard; mode: 'par' | 'dogle
       <View style={styles.holeChipWrap}>
         {group.holes.map((hole) => (
           <View key={`hole-chip-${group.key}-${hole.number}`} style={styles.holeChip}>
-            <Text style={styles.holeChipLabel}>H{hole.number}</Text>
-            <Text style={[styles.holeChipValue, { color: toneColor(hole.delta > 1 ? 'red' : hole.delta > 0 ? 'amber' : hole.delta < 0 ? 'green' : 'white') }]}>
-              {formatScoreDelta(hole.delta)}
-            </Text>
+            <View style={styles.holeChipTop}>
+              <Text style={styles.holeChipLabel}>H{hole.number}</Text>
+              <Text style={[styles.holeChipValue, { color: toneColor(hole.delta > 1 ? 'red' : hole.delta > 0 ? 'amber' : hole.delta < 0 ? 'green' : 'white') }]}>
+                {formatScoreDelta(hole.delta)}
+              </Text>
+            </View>
+            {hole.putts !== null && hole.putts !== undefined ? (
+              <Text style={styles.holeChipMeta}>{hole.putts} putt{hole.putts === 1 ? '' : 's'}</Text>
+            ) : null}
+            {hole.firstPuttDistance !== null && hole.firstPuttDistance !== undefined ? (
+              <Text style={styles.holeChipMeta}>{Math.round(hole.firstPuttDistance)} ft first</Text>
+            ) : null}
+            {formatPinLabel(hole.pinLocation) ? (
+              <Text style={styles.holeChipMeta}>{formatPinLabel(hole.pinLocation)}</Text>
+            ) : null}
           </View>
         ))}
       </View>
@@ -560,6 +773,7 @@ const styles = StyleSheet.create({
   insightBadgeText: { fontSize: 14, fontWeight: '800' },
   insightCopy: { flex: 1 },
   insightTitle: { fontSize: 15, fontWeight: '700' },
+  insightSupport: { marginTop: 4, color: 'rgba(255,255,255,0.42)', fontSize: 11, lineHeight: 16 },
   insightNote: { marginTop: 6, color: 'rgba(255,255,255,0.66)', fontSize: 13, lineHeight: 19 },
   listInsightRow: {
     marginHorizontal: 16, marginBottom: 10, borderRadius: 14, padding: 12, backgroundColor: 'rgba(255,255,255,0.04)',
@@ -569,7 +783,37 @@ const styles = StyleSheet.create({
   listInsightBadgeText: { fontSize: 12, fontWeight: '800' },
   listInsightCopy: { flex: 1 },
   listInsightTitle: { fontSize: 13, fontWeight: '700' },
+  listInsightSupport: { marginTop: 3, color: 'rgba(255,255,255,0.4)', fontSize: 11, lineHeight: 16 },
   listInsightNote: { marginTop: 4, color: 'rgba(255,255,255,0.62)', fontSize: 12, lineHeight: 18 },
+  resourceWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  resourceWrapCompact: { marginTop: 8 },
+  resourceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    maxWidth: '100%',
+  },
+  resourceChipCompact: { paddingVertical: 5 },
+  resourceChipText: { color: 'rgba(255,255,255,0.72)', fontSize: 11, fontWeight: '600', flexShrink: 1 },
+  practiceCard: {
+    marginHorizontal: 16, marginTop: 12, borderRadius: 14, padding: 14, backgroundColor: 'rgba(76,175,125,0.08)',
+    borderWidth: 1, borderColor: 'rgba(76,175,125,0.28)',
+  },
+  practiceEyebrow: { color: 'rgba(255,255,255,0.34)', fontSize: 10, fontWeight: '700', letterSpacing: 1.2 },
+  practiceTitle: { marginTop: 8, color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  practiceBody: { marginTop: 6, color: 'rgba(255,255,255,0.7)', fontSize: 13, lineHeight: 19 },
+  practiceDrillBox: {
+    marginTop: 10, borderRadius: 12, padding: 12, backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+  },
+  practiceDrillLabel: { color: '#4CAF7D', fontSize: 10, fontWeight: '700', letterSpacing: 1.1 },
+  practiceDrillBody: { marginTop: 6, color: '#FFFFFF', fontSize: 12, lineHeight: 18 },
   subToggle: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginTop: 8 },
   subTogglePill: {
     flex: 1, alignItems: 'center', borderRadius: 10, paddingVertical: 10, backgroundColor: 'rgba(255,255,255,0.05)',
@@ -601,11 +845,13 @@ const styles = StyleSheet.create({
   groupFairwayValue: { color: '#4CAF7D', fontSize: 12, fontWeight: '700' },
   holeChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
   holeChip: {
-    flexDirection: 'row', gap: 6, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6,
+    minWidth: 82, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6,
     backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
   },
+  holeChipTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   holeChipLabel: { color: 'rgba(255,255,255,0.42)', fontSize: 11, fontWeight: '700' },
   holeChipValue: { fontSize: 11, fontWeight: '800' },
+  holeChipMeta: { color: 'rgba(255,255,255,0.46)', fontSize: 10, fontWeight: '600', marginTop: 4 },
   groupNote: { marginTop: 14, fontSize: 12, lineHeight: 18 },
   lieWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16 },
   liePill: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 999, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6 },
@@ -626,6 +872,27 @@ const styles = StyleSheet.create({
   statBlockLabel: { color: 'rgba(255,255,255,0.34)', fontSize: 10, fontWeight: '700' },
   statBlockValue: { marginTop: 4, color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
   statBlockValueHighlight: { color: '#4CAF7D' },
+  summaryCard: {
+    marginHorizontal: 16, marginBottom: 10, borderRadius: 14, padding: 14, backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
+  },
+  summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  summaryNote: { marginTop: 10, color: 'rgba(255,255,255,0.62)', fontSize: 12, lineHeight: 18 },
+  metricRowCard: {
+    marginHorizontal: 16, marginBottom: 10, borderRadius: 14, padding: 14, backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
+  },
+  metricRowMain: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  metricRowTitle: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  metricRowValue: { fontSize: 16, fontWeight: '800' },
+  metricRowMeta: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8, gap: 10 },
+  metricRowSub: { color: 'rgba(255,255,255,0.42)', fontSize: 11, flex: 1 },
+  missGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  missCell: {
+    color: 'rgba(255,255,255,0.72)', fontSize: 11, fontWeight: '700',
+    backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5,
+  },
+  metricRowTag: { marginTop: 10, color: '#4CAF7D', fontSize: 11, fontWeight: '800' },
   clubLieRow: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10,
     borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)', gap: 8,

@@ -28,7 +28,7 @@ import { RoundDetailView } from './src/components/RoundDetailView';
 import { ScorecardViewer } from './src/components/ScorecardViewer';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { setApiKey, getApiKey } from './src/services/golfCourseApiService';
-import { TabName, SavedRound, ScorecardResult } from './src/types';
+import { TabName, SavedRound, ScorecardResult, PendingGpsRoundData } from './src/types';
 import { OSMGolfCourse } from './src/services/openStreetMapService';
 import { CourseDetails } from './src/services/golfCourseApiService';
 import { GolfSumLogo } from './src/components/ui/GolfSumLogo';
@@ -165,6 +165,7 @@ export default function App() {
   const [quickStartSettings, setQuickStartSettings] = useState<{ teeName?: string; startingHole?: number }>({});
   const [inProgressRound, setInProgressRound] = useState<InProgressRoundDraft | null>(null);
   const [resumeDraft, setResumeDraft] = useState<InProgressRoundDraft | null>(null);
+  const [pendingGpsRoundData, setPendingGpsRoundData] = useState<PendingGpsRoundData | null>(null);
   
   // Listen to Firebase Auth state changes
   useEffect(() => {
@@ -201,6 +202,7 @@ export default function App() {
             setShowQuickStartPrompt(false);
             setInProgressRound(null);
             setResumeDraft(null);
+            setPendingGpsRoundData(null);
             clearInProgressRound().catch(() => undefined);
             setRefreshTrigger(prev => prev + 1);
           })
@@ -468,6 +470,7 @@ export default function App() {
     setSelectedCourseData(null);
     setQuickStartSettings({});
     setResumeDraft(null);
+    setPendingGpsRoundData(null);
     setCurrentScreen('score-entry');
   };
 
@@ -476,6 +479,7 @@ export default function App() {
     setSelectedCourseId(course.id);
     setQuickStartSettings({});
     setResumeDraft(null);
+    setPendingGpsRoundData(null);
     setCurrentScreen('score-entry');
   };
 
@@ -499,6 +503,7 @@ export default function App() {
     setSelectedCourseData(null);
     setQuickStartSettings({ teeName, startingHole: 1 });
     setResumeDraft(null);
+    setPendingGpsRoundData(null);
     setCurrentScreen('score-entry');
   };
 
@@ -507,6 +512,20 @@ export default function App() {
     setSelectedCourseData(draft.courseOverride || null);
     setQuickStartSettings({});
     setResumeDraft(draft);
+    setPendingGpsRoundData(null);
+    setCurrentScreen('score-entry');
+  };
+
+  const handleFinishGpsRound = (data: PendingGpsRoundData) => {
+    setPendingGpsRoundData(data);
+    setSelectedCourseId(data.courseId);
+    setSelectedCourseData(null);
+    setQuickStartSettings({
+      teeName: data.teeName,
+      startingHole: data.startingHole || 1,
+    });
+    setResumeDraft(null);
+    setGpsRoundCourse(null);
     setCurrentScreen('score-entry');
   };
 
@@ -534,6 +553,7 @@ export default function App() {
     setSelectedCourseData(null);
     setQuickStartSettings({});
     setResumeDraft(null);
+    setPendingGpsRoundData(null);
     setSelectedScorecard(null);
     setSelectedRound(round);
     setCurrentScreen('round-detail');
@@ -565,6 +585,7 @@ export default function App() {
     setSelectedCourseData(null);
     setQuickStartSettings({ teeName: round.teeName || round.stats?.teeBox, startingHole: 1 });
     setResumeDraft(null);
+    setPendingGpsRoundData(null);
     setCurrentScreen('score-entry');
   };
 
@@ -601,7 +622,9 @@ export default function App() {
     if (currentScreen === 'score-entry') {
       setSelectedCourseId(null);
       setSelectedCourseData(null);
+      setQuickStartSettings({});
       setResumeDraft(null);
+      setPendingGpsRoundData(null);
       setCurrentScreen('course-search');
     } else if (currentScreen === 'course-search') {
       setCurrentScreen('tabs');
@@ -644,6 +667,7 @@ export default function App() {
     setSelectedScorecard(null);
     setSelectedCourseName(null);
     setGpsRoundCourse(null);
+    setPendingGpsRoundData(null);
   };
 
   const completeOnboarding = async () => {
@@ -693,6 +717,7 @@ export default function App() {
       scorecardImportMode={scorecardImportMode}
       quickStartSettings={quickStartSettings}
       resumeDraft={resumeDraft}
+      pendingGpsRoundData={pendingGpsRoundData}
       onSetActiveTab={setActiveTab}
       onSetCurrentScreen={setCurrentScreen}
       onSetSelectedCourseData={setSelectedCourseData}
@@ -705,6 +730,7 @@ export default function App() {
       onSetResumeDraft={setResumeDraft}
       onCourseSelected={handleCourseSelected}
       onStartGpsRound={handleStartGpsRound}
+      onFinishGpsRound={handleFinishGpsRound}
       onBack={handleBack}
       onUploadScorecard={handleUploadScorecard}
       onCommunityCourseSelected={handleCommunityCourseSelected}

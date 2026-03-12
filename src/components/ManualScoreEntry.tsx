@@ -19,7 +19,7 @@ import { CourseDetails, TeeBox } from '../services/golfCourseApiService';
 import { saveRound, calculateHandicapIndex } from '../services/roundsService';
 import { processIncompleteRound, process9HoleRound, meetsWHSMinimum } from '../services/whsCalculations';
 import { fetchLocalWeather, getCurrentWeather, WeatherData as LocalWeatherData } from '../services/weatherService';
-import type { SavedRound, RoundHole } from '../types';
+import type { PendingGpsRoundData, SavedRound, RoundHole } from '../types';
 import { getStatPreferencesFromProfile } from '../utils/statPreferences';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 import { TrialBanner } from './TrialBanner';
@@ -116,6 +116,7 @@ interface ManualScoreEntryProps {
     startingHole?: number;
   };
   resumeDraft?: InProgressRoundDraft | null;
+  gpsRoundData?: PendingGpsRoundData | null;
 }
 
 
@@ -127,6 +128,7 @@ export const ManualScoreEntry: React.FC<ManualScoreEntryProps> = ({
   courseOverride,
   quickStart,
   resumeDraft,
+  gpsRoundData,
 }) => {
   const ACTION_ICON_SIZE = 18;
   const [isSaving, setIsSaving] = useState(false);
@@ -167,6 +169,7 @@ export const ManualScoreEntry: React.FC<ManualScoreEntryProps> = ({
     course,
     courseId,
     quickStart,
+    gpsRoundData,
     defaultTeeName: userProfile?.coursePreferences?.favoriteTee,
     resumeDraft,
     showTeeSelection,
@@ -218,6 +221,12 @@ export const ManualScoreEntry: React.FC<ManualScoreEntryProps> = ({
   const holeReadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firstSaveTimestampRef = useRef<number | null>(null);
   const lastSaveTimestampRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!gpsRoundData?.startedAt) return;
+    firstSaveTimestampRef.current = gpsRoundData.startedAt;
+    lastSaveTimestampRef.current = gpsRoundData.endedAt || gpsRoundData.startedAt;
+  }, [gpsRoundData]);
   const holeReadOpacity = useRef(new Animated.Value(0)).current;
   const [holeRead, setHoleRead] = useState<HoleQualityRead | null>(null);
 
@@ -238,6 +247,8 @@ export const ManualScoreEntry: React.FC<ManualScoreEntryProps> = ({
     historicalBaseline,
     preRoundTip,
     weatherContextTip,
+    caddieNote,
+    caddieNoteLabel,
   } = useRoundContext({
     courseId,
     selectedTeeBox,
@@ -272,6 +283,7 @@ export const ManualScoreEntry: React.FC<ManualScoreEntryProps> = ({
     weatherFront9,
     weatherBack9,
     windDirection,
+    gpsRoundData,
     onRoundSaved,
     setIsSaving,
     firstSaveTimestampRef,
@@ -839,9 +851,11 @@ export const ManualScoreEntry: React.FC<ManualScoreEntryProps> = ({
     // Mark the current hole as explicitly saved by the golfer
     const now = Date.now();
     if (!firstSaveTimestampRef.current) {
-      firstSaveTimestampRef.current = now;
+      firstSaveTimestampRef.current = gpsRoundData?.startedAt ?? now;
     }
-    lastSaveTimestampRef.current = now;
+    if (!gpsRoundData?.endedAt) {
+      lastSaveTimestampRef.current = now;
+    }
 
     let updatedHoles: typeof holes = holes;
     setHoles(prev => {
@@ -1163,7 +1177,7 @@ export const ManualScoreEntry: React.FC<ManualScoreEntryProps> = ({
         <PreRoundSplash
           visible={
             showPreRoundSplash &&
-            !!(preRoundTip || weatherContextTip || currentWeather)
+            !!(preRoundTip || caddieNote || weatherContextTip || currentWeather)
           }
           courseName={course.name}
           teeName={selectedTeeBox.name}
@@ -1171,6 +1185,8 @@ export const ManualScoreEntry: React.FC<ManualScoreEntryProps> = ({
           totalYards={selectedTeeBox.holes.reduce((sum, h) => sum + (h.yardage || 0), 0)}
           distanceUnit={distanceUnit}
           tip={showPreRoundTip ? preRoundTip : null}
+          caddieNote={caddieNote}
+          caddieNoteLabel={caddieNoteLabel}
           weatherSummary={
             currentWeather
               ? `${currentWeather.temp}F · ${currentWeather.conditions ?? 'Conditions'} · ${currentWeather.wind ?? 'Light wind'}`

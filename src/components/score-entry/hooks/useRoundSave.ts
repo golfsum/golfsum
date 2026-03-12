@@ -3,7 +3,7 @@ import { Alert, Platform, Share } from 'react-native';
 import { saveRound } from '../../../services/roundsService';
 import { processIncompleteRound, process9HoleRound } from '../../../services/whsCalculations';
 import { fetchLocalWeather, getCurrentWeather, type WeatherData as LocalWeatherData } from '../../../services/weatherService';
-import type { SavedRound, RoundHole, UserProfile } from '../../../types';
+import type { PendingGpsRoundData, SavedRound, RoundHole, UserProfile } from '../../../types';
 import type { CourseDetails, TeeBox } from '../../../services/golfCourseApiService';
 import { buildCourseSnapshot } from '../scoreEntryUtils';
 import { clearInProgressRound } from '../../../services/inProgressRoundService';
@@ -12,6 +12,7 @@ import { formatYardage, getYardageUnitLabel, type DistanceUnit } from '../../../
 import { FEEDBACK_COPY } from '../../../constants/feedbackCopy';
 import type { HoleScore } from '../types';
 import { getStatPreferencesFromProfile } from '../../../utils/statPreferences';
+import { buildRoundPersistenceMeta } from './roundPersistenceMeta';
 
 interface UseRoundSaveParams {
   course: CourseDetails | null;
@@ -33,6 +34,7 @@ interface UseRoundSaveParams {
   weatherFront9: LocalWeatherData | null;
   weatherBack9: LocalWeatherData | null;
   windDirection: 'into' | 'helping' | 'cross-l' | 'cross-r' | 'swirling' | 'calm';
+  gpsRoundData?: PendingGpsRoundData | null;
   onRoundSaved: (round: SavedRound) => void;
   setIsSaving: (v: boolean) => void;
   firstSaveTimestampRef: MutableRefObject<number | null>;
@@ -59,6 +61,7 @@ export function useRoundSave({
   weatherFront9,
   weatherBack9,
   windDirection,
+  gpsRoundData,
   onRoundSaved,
   setIsSaving,
   firstSaveTimestampRef,
@@ -208,9 +211,11 @@ export function useRoundSave({
       const roundWeather = await resolveRoundWeather();
       const frontWeather = weatherFront9 || roundWeather;
       const backWeather = weatherBack9;
-      const roundStartedAt = firstSaveTimestampRef.current ?? Date.now();
-      const roundEndedAt = lastSaveTimestampRef.current ?? Date.now();
-      const roundDurationMinutes = Math.max(1, Math.round((roundEndedAt - roundStartedAt) / 60000));
+      const persistenceMeta = buildRoundPersistenceMeta(
+        gpsRoundData,
+        firstSaveTimestampRef.current,
+        lastSaveTimestampRef.current,
+      );
 
       const savedRound = await saveRound({
         courseId: course.id,
@@ -248,9 +253,7 @@ export function useRoundSave({
         startType,
         holesPlayed: holesPlayedNumbers,
         eventTag: eventTag || undefined,
-        roundStartedAt,
-        roundEndedAt,
-        roundDurationMinutes,
+        ...persistenceMeta,
       });
 
       logger.debug('Incomplete round saved', { startType, reason, holesCompleted: holesCompletedCount });
@@ -265,7 +268,7 @@ export function useRoundSave({
   }, [
     course, selectedTeeBox, holes, currentHole, startType, startingHole, eventTag,
     statPreferences, hasStatAccess, entryMode, courseElevationFt,
-    weatherFront9, weatherBack9, windDirection, onRoundSaved,
+    weatherFront9, weatherBack9, windDirection, gpsRoundData, onRoundSaved,
     setIsSaving, calculateStats, resolveRoundWeather, toRoundHoles,
   ]);
 
@@ -369,9 +372,11 @@ ${renderRow('GIR', [...back9.map(girLabel), '-', `${holesOverride.filter(h => h.
       const roundWeather = await resolveRoundWeather();
       const frontWeather = weatherFront9 || roundWeather;
       const backWeather = weatherBack9;
-      const roundStartedAt = firstSaveTimestampRef.current ?? Date.now();
-      const roundEndedAt = lastSaveTimestampRef.current ?? Date.now();
-      const roundDurationMinutes = Math.max(1, Math.round((roundEndedAt - roundStartedAt) / 60000));
+      const persistenceMeta = buildRoundPersistenceMeta(
+        gpsRoundData,
+        firstSaveTimestampRef.current,
+        lastSaveTimestampRef.current,
+      );
 
       const savedRound = await saveRound({
         courseId: course.id,
@@ -415,9 +420,7 @@ ${renderRow('GIR', [...back9.map(girLabel), '-', `${holesOverride.filter(h => h.
             ? `Played ${savedHoles.length} of ${holesToUse.length} holes. Minimum ${holesToUse.length <= 9 ? 9 : 18} required for rating.`
             : undefined,
         }),
-        roundStartedAt,
-        roundEndedAt,
-        roundDurationMinutes,
+        ...persistenceMeta,
       });
 
       await clearInProgressRound();
@@ -430,7 +433,7 @@ ${renderRow('GIR', [...back9.map(girLabel), '-', `${holesOverride.filter(h => h.
     }
   }, [
     course, selectedTeeBox, holes, statPreferences, hasStatAccess, entryMode,
-    courseElevationFt, weatherFront9, weatherBack9, windDirection, onRoundSaved,
+    courseElevationFt, weatherFront9, weatherBack9, windDirection, gpsRoundData, onRoundSaved,
     setIsSaving, calculateStats, resolveRoundWeather, toRoundHoles, generateScorecardHTML,
   ]);
 
@@ -486,8 +489,11 @@ ${renderRow('GIR', [...back9.map(girLabel), '-', `${holesOverride.filter(h => h.
   const copyScorecardHTML = useCallback(async () => {
     const html = generateScorecardHTML();
     try {
-      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(html);
+      const webNavigator = typeof navigator !== 'undefined'
+        ? (navigator as Navigator & { clipboard?: { writeText?: (value: string) => Promise<void> } })
+        : undefined;
+      if (Platform.OS === 'web' && webNavigator?.clipboard?.writeText) {
+        await webNavigator.clipboard.writeText(html);
         Alert.alert(FEEDBACK_COPY.alerts.copiedTitle, FEEDBACK_COPY.alerts.copiedBody);
         return;
       }

@@ -53,6 +53,43 @@ export interface NotificationPreferences {
   maintenanceEnabled: boolean;
 }
 
+export interface GpsShotLog {
+  id: string;
+  holeNumber: number;
+  shotNumber: number;
+  club: string;
+  lie: string | null;
+  actualYards: number | null;
+  playingYards: number | null;
+  from?: { lat: number; lng: number } | null;
+  to?: { lat: number; lng: number } | null;
+  weather?: {
+    windMph?: number | null;
+    windDegrees?: number | null;
+    tempF?: number | null;
+    humidity?: number | null;
+  } | null;
+  loggedAt?: string;
+}
+
+export interface GpsHoleSummary {
+  holeNumber: number;
+  firstPuttDistance?: number | null;
+  pinLocation?: 'front' | 'middle' | 'back' | null;
+  putts?: number | null;
+}
+
+export interface PendingGpsRoundData {
+  courseId: string;
+  courseName: string;
+  teeName?: string;
+  startingHole?: number;
+  startedAt: number;
+  endedAt: number;
+  gpsShots: GpsShotLog[];
+  gpsHoleSummaries?: GpsHoleSummary[];
+}
+
 // History Stat State - Critical for WHS Compliance
 // "If the app cannot prove a stat is real, it must act like it doesn't exist."
 export enum HistoryStatState {
@@ -166,6 +203,9 @@ export interface SavedRound {
   roundStartedAt?: number; // Unix ms when the round session began
   roundEndedAt?: number; // Unix ms when the round was saved/ended
   roundDurationMinutes?: number; // Persisted elapsed play time in whole minutes
+  gpsShots?: GpsShotLog[];
+  gpsShotCount?: number;
+  gpsHoleSummaries?: GpsHoleSummary[];
 
   // Round holes (for NDB calculation)
   holes?: RoundHole[];
@@ -181,6 +221,7 @@ export interface RoundHole {
   score: number; // Gross score
   adjustedScore?: number; // After NDB
   putts?: number;
+  firstPuttDistance?: number | null;
   fairwayHit?: boolean | 'left' | 'right' | 'short' | 'long' | 'double-left' | 'double-right' | null; // null for par 3 (FIR is tee shot only)
   greenHit?: boolean | 'short' | 'long' | 'left' | 'right' | null; // GIR (shot attempting to reach green)
   approachDistance?:

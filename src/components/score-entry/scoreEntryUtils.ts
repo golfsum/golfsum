@@ -1,4 +1,4 @@
-import type { CourseSnapshot } from '../../types';
+import type { CourseSnapshot, GpsHoleSummary } from '../../types';
 import type { CourseDetails, TeeBox } from '../../services/golfCourseApiService';
 import type { InProgressHole } from '../../services/inProgressRoundService';
 import type { HoleScore } from './types';
@@ -65,6 +65,27 @@ export const createInitialHoles = (teeBox: TeeBox): HoleScore[] => {
     drinks: 0,
     isSaved: false,
   }));
+};
+
+export const applyGpsHoleSummaries = (
+  holes: HoleScore[],
+  gpsHoleSummaries?: GpsHoleSummary[] | null
+): HoleScore[] => {
+  if (!gpsHoleSummaries?.length) return holes;
+
+  const summaryMap = new Map(
+    gpsHoleSummaries.map((summary) => [summary.holeNumber, summary])
+  );
+
+  return holes.map((hole) => {
+    const summary = summaryMap.get(hole.hole);
+    if (!summary) return hole;
+    return {
+      ...hole,
+      putts: summary.putts ?? hole.putts,
+      firstPuttDistance: summary.firstPuttDistance ?? hole.firstPuttDistance,
+    };
+  });
 };
 
 export const mergeDraftHoles = (

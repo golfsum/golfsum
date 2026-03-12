@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { getRounds } from '../../../services/roundsService';
 import { buildScorePrediction, type ScorePrediction } from '../../../services/scorePredictionService';
 import { findGhostRound, type GhostRound } from '../../../services/ghostRoundService';
+import { buildInRoundNudgeContext } from '../../../services/inRoundNudgeService';
 import type { SavedRound } from '../../../types';
 import type { WeatherData } from '../../../services/weatherService';
 import type { TeeBox } from '../../../services/golfCourseApiService';
@@ -30,6 +31,8 @@ export function useRoundContext({
   } | null>(null);
   const [preRoundTip, setPreRoundTip] = useState<string | null>(null);
   const [weatherContextTip, setWeatherContextTip] = useState<string | null>(null);
+  const [caddieNote, setCaddieNote] = useState<string | null>(null);
+  const [caddieNoteLabel, setCaddieNoteLabel] = useState<'Caddie Note' | 'Course Note'>('Caddie Note');
 
   useEffect(() => {
     if (!selectedTeeBox || showTeeSelection) return;
@@ -59,9 +62,26 @@ export function useRoundContext({
 
           const ghost = findGhostRound(rounds, courseId);
           setGhostRound(ghost);
+
+          if (!caddieNote) {
+            const courseContext = buildInRoundNudgeContext(courseRounds);
+            let courseNote: string | null = null;
+            if (courseContext.bestDistanceBand?.count && courseContext.bestDistanceBand.count >= 4) {
+              courseNote = `At this course, your best leave has been ${courseContext.bestDistanceBand.label}. Build tee shots and layups to that number when you can.`;
+            } else if (courseContext.saferTeeClub?.club) {
+              courseNote = `${courseContext.saferTeeClub.club} has been your best scoring tee club at this course. Use it when the hole rewards position.`;
+            } else if ((courseContext.putting.longPuttThreePuttPct ?? 0) >= 34) {
+              courseNote = 'On this course, long first putts have been the main green-side leak. Prioritize speed control early in the round.';
+            }
+            if (courseNote) {
+              setCaddieNote(courseNote);
+              setCaddieNoteLabel('Course Note');
+            }
+          }
         }
 
         const recentRounds = rounds.slice(0, 12);
+        const nudgeContext = buildInRoundNudgeContext(recentRounds);
         const holes = recentRounds.flatMap((round) => round.holes || []);
         const baselineGirHoles = holes.filter(
           (hole) => hole.greenHit !== null && hole.greenHit !== undefined
@@ -126,6 +146,19 @@ export function useRoundContext({
 
         if (!preRoundTip) {
           setPreRoundTip(tip);
+        }
+
+        if (!caddieNote) {
+          let nextCaddieNote: string | null = null;
+          if (nudgeContext.bestDistanceBand?.count && nudgeContext.bestDistanceBand.count >= 6) {
+            nextCaddieNote = `Best leave number lately is ${nudgeContext.bestDistanceBand.label}. Use the tee ball or layup to create that yardage when the hole gives you a choice.`;
+          } else if (nudgeContext.saferTeeClub?.club) {
+            nextCaddieNote = `${nudgeContext.saferTeeClub.club} has been your best scoring tee club recently. Good default when the hole asks for position over distance.`;
+          } else if ((nudgeContext.putting.longPuttThreePuttPct ?? 0) >= 34) {
+            nextCaddieNote = 'Long first putts have been costing strokes. Start the round with pace first, especially on the first few greens.';
+          }
+          setCaddieNote(nextCaddieNote);
+          setCaddieNoteLabel('Caddie Note');
         }
 
         if (currentWeather && !weatherContextTip) {
@@ -196,7 +229,7 @@ export function useRoundContext({
     return () => {
       isMounted = false;
     };
-  }, [courseId, currentWeather, preRoundTip, selectedTeeBox, showTeeSelection, weatherContextTip]);
+  }, [caddieNote, courseId, currentWeather, preRoundTip, selectedTeeBox, showTeeSelection, weatherContextTip]);
 
   return {
     historicalRounds,
@@ -205,6 +238,8 @@ export function useRoundContext({
     historicalBaseline,
     preRoundTip,
     weatherContextTip,
+    caddieNote,
+    caddieNoteLabel,
     setPreRoundTip,
     setWeatherContextTip,
   };

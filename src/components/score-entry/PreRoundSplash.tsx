@@ -13,6 +13,8 @@ interface PreRoundSplashProps {
   totalYards: number | null;
   distanceUnit: DistanceUnit;
   tip?: string | null;
+  caddieNote?: string | null;
+  caddieNoteLabel?: string | null;
   weatherSummary?: string | null;
   weatherContext?: string | null;
   prediction?: ScorePrediction | null;
@@ -31,6 +33,8 @@ export const PreRoundSplash: React.FC<PreRoundSplashProps> = ({
   totalYards,
   distanceUnit,
   tip,
+  caddieNote,
+  caddieNoteLabel,
   weatherSummary,
   weatherContext,
   prediction,
@@ -62,6 +66,16 @@ export const PreRoundSplash: React.FC<PreRoundSplashProps> = ({
                 <Text style={styles.preRoundSectionTitle}>Pre-Round Tip</Text>
               </View>
               <Text style={styles.preRoundSectionText}>{tip}</Text>
+            </View>
+          )}
+
+          {caddieNote && (
+            <View style={styles.preRoundSection}>
+              <View style={styles.preRoundSectionHeader}>
+                <Ionicons name="golf-outline" size={16} color="#FBBF24" />
+                <Text style={styles.preRoundSectionTitle}>{caddieNoteLabel || 'Caddie Note'}</Text>
+              </View>
+              <Text style={styles.preRoundSectionText}>{caddieNote}</Text>
             </View>
           )}
 

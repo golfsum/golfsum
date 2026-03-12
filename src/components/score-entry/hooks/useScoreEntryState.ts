@@ -7,8 +7,9 @@ import {
   type InProgressHole,
 } from '../../../services/inProgressRoundService';
 import { useHoleNavigation } from './useHoleNavigation';
-import { createInitialHoles, mergeDraftHoles } from '../scoreEntryUtils';
+import { applyGpsHoleSummaries, createInitialHoles, mergeDraftHoles } from '../scoreEntryUtils';
 import type { HoleScore } from '../types';
+import type { PendingGpsRoundData } from '../../../types';
 import { logger } from '../../../utils/logger';
 
 interface UseScoreEntryStateOptions {
@@ -18,6 +19,7 @@ interface UseScoreEntryStateOptions {
     teeName?: string;
     startingHole?: number;
   };
+  gpsRoundData?: PendingGpsRoundData | null;
   defaultTeeName?: string;
   resumeDraft?: InProgressRoundDraft | null;
   showTeeSelection: boolean;
@@ -50,6 +52,7 @@ export const useScoreEntryState = ({
   course,
   courseId,
   quickStart,
+  gpsRoundData,
   defaultTeeName,
   resumeDraft,
   showTeeSelection,
@@ -139,7 +142,7 @@ export const useScoreEntryState = ({
     setStartingHole(nextStartingHole);
     setShowTeeSelection(false);
 
-    const initialHoles = createInitialHoles(teeBox);
+    const initialHoles = applyGpsHoleSummaries(createInitialHoles(teeBox), gpsRoundData?.gpsHoleSummaries);
     const nextCurrentIndex = initialHoles.findIndex((hole) => hole.hole === nextStartingHole);
     setCurrentHole(nextCurrentIndex >= 0 ? nextCurrentIndex : 0);
     setHoles(initialHoles);

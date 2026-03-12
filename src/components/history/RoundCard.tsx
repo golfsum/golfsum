@@ -76,6 +76,27 @@ const RoundCardComponent: React.FC<RoundCardProps> = ({
   const firPercentage = firStats ? firStats.percent : null;
   const girPercentage = girStats ? girStats.percent : null;
   const scrambling = scramblingStats ? scramblingStats.percent : null;
+  const gpsGreenSummaries = round.gpsHoleSummaries ?? [];
+  const gpsTrackedGreens = gpsGreenSummaries.length;
+  const firstPuttValues = gpsGreenSummaries
+    .map((summary) => summary.firstPuttDistance)
+    .filter((value): value is number => value !== null && value !== undefined);
+  const avgFirstPuttDistance = firstPuttValues.length
+    ? Math.round(firstPuttValues.reduce((sum, value) => sum + value, 0) / firstPuttValues.length)
+    : null;
+  const pinCounts = gpsGreenSummaries.reduce<Record<'front' | 'middle' | 'back', number>>((acc, summary) => {
+    if (summary.pinLocation === 'front') acc.front += 1;
+    if (summary.pinLocation === 'middle') acc.middle += 1;
+    if (summary.pinLocation === 'back') acc.back += 1;
+    return acc;
+  }, { front: 0, middle: 0, back: 0 });
+  const toughestPin = (Object.entries(pinCounts) as Array<['front' | 'middle' | 'back', number]>)
+    .sort((a, b) => b[1] - a[1])[0];
+  const toughestPinLabel = toughestPin && toughestPin[1] > 0
+    ? toughestPin[0] === 'front' ? 'Front pin'
+      : toughestPin[0] === 'middle' ? 'Middle pin'
+        : 'Back pin'
+    : null;
 
   const hasAdvancedStats = (statPrefs.putts && round.stats.putts !== undefined) || firTracked || girTracked || scramblingTracked;
   const enabledStatsCount = Number(statPrefs.putts) + Number(statPrefs.fir) + Number(statPrefs.gir) + Number(statPrefs.scrambling);
@@ -352,6 +373,27 @@ const RoundCardComponent: React.FC<RoundCardProps> = ({
         ) : showNoStatsMessage ? (
           <View style={styles.statsNotTrackedContainer}>
             <Text style={styles.statsNotTrackedText}>Stats not tracked</Text>
+          </View>
+        ) : null}
+
+        {gpsTrackedGreens > 0 ? (
+          <View style={styles.gpsGreenRow}>
+            <View style={styles.gpsGreenPill}>
+              <Ionicons name="golf-outline" size={12} color="#10B981" />
+              <Text style={styles.gpsGreenPillText}>{gpsTrackedGreens} greens tracked</Text>
+            </View>
+            {avgFirstPuttDistance !== null ? (
+              <View style={styles.gpsGreenPill}>
+                <Ionicons name="resize-outline" size={12} color="#6B7280" />
+                <Text style={styles.gpsGreenPillText}>{avgFirstPuttDistance} ft first putt</Text>
+              </View>
+            ) : null}
+            {toughestPinLabel ? (
+              <View style={styles.gpsGreenPill}>
+                <Ionicons name="flag-outline" size={12} color="#6B7280" />
+                <Text style={styles.gpsGreenPillText}>{toughestPinLabel}</Text>
+              </View>
+            ) : null}
           </View>
         ) : null}
 

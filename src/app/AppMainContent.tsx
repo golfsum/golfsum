@@ -19,7 +19,7 @@ import { WebGpsRoundPreview } from '../screens/WebGpsRoundPreview';
 import { clearInProgressRound, InProgressRoundDraft } from '../services/inProgressRoundService';
 import { OSMGolfCourse } from '../services/openStreetMapService';
 import { CourseDetails } from '../services/golfCourseApiService';
-import { SavedRound, ScorecardResult, TabName, WeatherData } from '../types';
+import { PendingGpsRoundData, SavedRound, ScorecardResult, TabName, WeatherData } from '../types';
 import { PersonalBest } from '../services/personalBestService';
 import { UI_COPY } from '../constants/uiCopy';
 import { appStyles as styles } from './appStyles';
@@ -48,6 +48,7 @@ type AppMainContentProps = {
   scorecardImportMode: 'course' | 'completed';
   quickStartSettings: { teeName?: string; startingHole?: number };
   resumeDraft: InProgressRoundDraft | null;
+  pendingGpsRoundData: PendingGpsRoundData | null;
   onSetActiveTab: (tab: TabName) => void;
   onSetCurrentScreen: (screen: AppScreen) => void;
   onSetSelectedCourseData: (course: CourseDetails) => void;
@@ -84,6 +85,7 @@ type AppMainContentProps = {
     courseName?: string,
     settings?: { teeName?: string; startingHole?: number; tournamentMode?: boolean }
   ) => void;
+  onFinishGpsRound: (data: PendingGpsRoundData) => void;
 };
 
 let NativeGpsRoundScreen: React.ComponentType<{
@@ -93,6 +95,7 @@ let NativeGpsRoundScreen: React.ComponentType<{
   startingHole?: number;
   tournamentMode?: boolean;
   onBack: () => void;
+  onFinishRound: (data: PendingGpsRoundData) => void;
 }> | null = null;
 
 if (Platform.OS !== 'web') {
@@ -138,6 +141,7 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
               onRoundSaved={props.onRoundSaved}
               quickStart={props.quickStartSettings}
               resumeDraft={props.resumeDraft}
+              gpsRoundData={props.pendingGpsRoundData}
               onNavigateToProfile={() => props.onUpgrade('score_entry_lock')}
             />
           </View>
@@ -221,6 +225,7 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
         startingHole={props.gpsRoundCourse.startingHole}
         tournamentMode={props.gpsRoundCourse.tournamentMode}
         onBack={props.onBack}
+        onFinishRound={props.onFinishGpsRound}
       />
     );
   }

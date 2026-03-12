@@ -7,18 +7,24 @@
     "development": {
       "developmentClient": true,
       "distribution": "store",
-      "environment": "development"
+      "environment": "development",
+      "ios": {
+        "image": "latest"
+      }
     },
     "preview": {
       "distribution": "store",
-      "environment": "preview"
+      "environment": "preview",
+      "ios": {
+        "image": "latest"
+      }
     },
     "production": {
       "autoIncrement": true,
       "distribution": "store",
       "environment": "production",
       "ios": {
-        "image": "macos-sonoma-14.4-xcode-15.4"
+        "image": "latest"
       }
     }
   },

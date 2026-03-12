@@ -16,6 +16,8 @@ import { getNativeHoleCameraConfig, isCoordWithinBounds } from '../services/mapF
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { getElevationFeet } from '../services/weatherService';
 import { endLiveActivity, isLiveActivitySupported, upsertLiveActivity } from '../services/liveActivityService';
+import { getRounds } from '../services/roundsService';
+import { buildInRoundNudge, buildInRoundNudgeContext } from '../services/inRoundNudgeService';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 
 let MapboxGL = null;
@@ -288,6 +290,7 @@ export function GpsRoundScreen({
   startingHole = 1,
   tournamentMode = false,
   onBack,
+  onFinishRound,
 }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -306,12 +309,17 @@ export function GpsRoundScreen({
   const [overlayState, setOverlayState] = useState({ anySheet: false, shotFlow: 'idle', selectedClub: null });
   const [weather, setWeather] = useState(null);
   const [loggedShotsByHole, setLoggedShotsByHole] = useState({});
+  const [holeSummariesByHole, setHoleSummariesByHole] = useState({});
   const [lieToast, setLieToast] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [historyHoleIndex, setHistoryHoleIndex] = useState(null);
   const [elevationFt, setElevationFt] = useState(0);
   const [liveActivityEnabled, setLiveActivityEnabled] = useState(false);
+  const [coachingEnabled, setCoachingEnabled] = useState(true);
+  const [showGreenSheet, setShowGreenSheet] = useState(false);
+  const [recentRounds, setRecentRounds] = useState([]);
   const lieToastTimeoutRef = useRef(null);
+  const roundStartedAtRef = useRef(Date.now());
 
   const currentHole = course?.holes?.[currentHoleIndex] || null;
   const selectedTee = useMemo(() => {
@@ -352,11 +360,54 @@ export function GpsRoundScreen({
     [centerYards, playingDistance?.adjustedYards, tournamentMode, userClubs]
   );
   const currentHoleShots = loggedShotsByHole[currentHoleIndex] || [];
+  const currentHoleSummary = holeSummariesByHole[currentHoleIndex] || { firstPuttDistance: null, pinLocation: 'middle', putts: null };
+  const currentRoundShots = useMemo(
+    () => Object.values(loggedShotsByHole).flatMap((shots) => shots || []),
+    [loggedShotsByHole]
+  );
   const yardageMarkers = useMemo(() => getYardageMarkers(currentHole, teeBack, greenCenter), [currentHole, teeBack, greenCenter]);
   const hazardCarries = useMemo(
     () => getHazardCarries(currentHole, userPos, weather, shotBearingDeg, elevationFt),
     [currentHole, elevationFt, shotBearingDeg, userPos, weather]
   );
+  const nudgeContext = useMemo(() => buildInRoundNudgeContext(recentRounds), [recentRounds]);
+  const activeNudge = useMemo(() => {
+    if (!coachingEnabled || overlayState.anySheet || overlayState.shotFlow !== 'idle' || showGreenSheet) return null;
+    return buildInRoundNudge({
+      holeNumber: currentHole?.hole || currentHoleIndex + 1,
+      holePar: currentHole?.par || 4,
+      liveLie: liveLie?.lie || null,
+      selectedClub: overlayState.selectedClub || null,
+      suggestedClub: suggestedClub?.club || null,
+      centerYards,
+      playingYards: playingDistance?.adjustedYards ?? null,
+      tournamentMode,
+      weather,
+      hazardCarries,
+      currentRoundShots,
+      greenSummary: currentHoleSummary,
+      context: nudgeContext,
+    });
+  }, [
+    centerYards,
+    currentHole?.hole,
+    currentHole?.par,
+    currentHoleIndex,
+    currentHoleSummary,
+    currentRoundShots,
+    hazardCarries,
+    liveLie?.lie,
+    nudgeContext,
+    coachingEnabled,
+    overlayState.anySheet,
+    overlayState.selectedClub,
+    overlayState.shotFlow,
+    playingDistance?.adjustedYards,
+    suggestedClub?.club,
+    tournamentMode,
+    weather,
+    showGreenSheet,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -467,6 +518,20 @@ export function GpsRoundScreen({
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    getRounds()
+      .then((rounds) => {
+        if (active) setRecentRounds(rounds.filter((round) => round.courseId === courseId || round.courseName === courseName).slice(0, 12));
+      })
+      .catch(() => {
+        if (active) setRecentRounds([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [courseId, courseName]);
 
   useEffect(() => () => {
     if (lieToastTimeoutRef.current) clearTimeout(lieToastTimeoutRef.current);
@@ -631,9 +696,72 @@ export function GpsRoundScreen({
   const handleSelectHole = useCallback((nextIndex) => {
     setCurrentHoleIndex(nextIndex);
     setLiveLie(LIVE_LIE_DEFAULT);
+    setShowGreenSheet(false);
     setOverlayState({ anySheet: false, shotFlow: 'idle', selectedClub: null });
     overlayRef.current?.resetOverlay?.();
   }, []);
+
+  const handleFinishRound = useCallback(() => {
+    const gpsShots = Object.entries(loggedShotsByHole).flatMap(([holeIndex, shots]) =>
+      (shots || []).map((shot, index) => ({
+        id: String(shot.id || `${holeIndex}-${index}`),
+        holeNumber: Number(holeIndex) + 1,
+        shotNumber: typeof shot.num === 'number' ? shot.num : index + 1,
+        club: shot.abbr || 'Shot',
+        lie: shot.lie || null,
+        actualYards: typeof shot.actualYards === 'number' ? shot.actualYards : null,
+        playingYards: typeof shot.playingYards === 'number' ? shot.playingYards : null,
+        from: shot.from || null,
+        to: shot.to || null,
+        weather: shot.weather
+          ? {
+              windMph: Number.isFinite(shot.weather.windMph) ? shot.weather.windMph : null,
+              windDegrees: Number.isFinite(shot.weather.windDegrees) ? shot.weather.windDegrees : null,
+              tempF: Number.isFinite(shot.weather.tempF) ? shot.weather.tempF : null,
+              humidity: Number.isFinite(shot.weather.humidity) ? shot.weather.humidity : null,
+            }
+          : null,
+        loggedAt: shot.loggedAt || null,
+      }))
+    );
+
+    if (!gpsShots.length) {
+      Alert.alert('No GPS shots logged', 'Log at least one shot before continuing to score entry.');
+      return;
+    }
+
+    const gpsHoleSummaries = Object.entries(holeSummariesByHole)
+      .map(([holeIndex, summary]) => ({
+        holeNumber: Number(holeIndex) + 1,
+        firstPuttDistance: typeof summary.firstPuttDistance === 'number' ? summary.firstPuttDistance : null,
+        pinLocation: summary.pinLocation || null,
+        putts: typeof summary.putts === 'number' ? summary.putts : null,
+      }))
+      .filter((summary) => summary.firstPuttDistance !== null || summary.putts !== null || summary.pinLocation !== null);
+
+    const payload = {
+      courseId,
+      courseName: courseName || course?.courseName || course?.name || 'GPS Round',
+      teeName: selectedTee?.name || teeColor,
+      startingHole,
+      startedAt: roundStartedAtRef.current,
+      endedAt: Date.now(),
+      gpsShots,
+      gpsHoleSummaries,
+    };
+
+    Alert.alert(
+      'Finish GPS Round',
+      'Continue to score entry and save this round with the logged GPS shots?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          onPress: () => onFinishRound?.(payload),
+        },
+      ]
+    );
+  }, [course?.courseName, course?.name, courseId, courseName, holeSummariesByHole, loggedShotsByHole, onFinishRound, selectedTee?.name, startingHole, teeColor]);
 
   if (!MapboxGL) {
     return (
@@ -684,14 +812,21 @@ export function GpsRoundScreen({
             {cached ? 'Cached on device' : course?.source === 'LOCAL_SAMPLE' ? 'Local sample data' : 'Downloaded now'} • {selectedTee?.name || teeColor} • {selectedTee?.yards ? `${selectedTee.yards}c` : '--'}
           </Text>
         </View>
+        <TouchableOpacity
+          style={[styles.iconBtn, coachingEnabled && styles.iconBtnActive]}
+          onPress={() => setCoachingEnabled((value) => !value)}
+        >
+          <Ionicons name="bulb-outline" size={16} color={coachingEnabled ? colors.brand.primary : 'rgba(255,255,255,0.55)'} />
+        </TouchableOpacity>
         <TouchableOpacity style={styles.iconBtn} onPress={() => setShowHistory(true)}>
           <Ionicons name="time-outline" size={16} color="rgba(255,255,255,0.55)" />
         </TouchableOpacity>
-        <View
+        <TouchableOpacity
           style={[
             styles.scorePill,
             currentHoleShots.length > 0 ? styles.scorePillHot : styles.scorePillMuted,
           ]}
+          onPress={handleFinishRound}
         >
           <Text
             style={[
@@ -699,9 +834,9 @@ export function GpsRoundScreen({
               currentHoleShots.length > 0 ? styles.scorePillTextHot : styles.scorePillTextMuted,
             ]}
           >
-            {currentHoleShots.length > 0 ? `+${currentHoleShots.length}` : 'GPS'}
+            {currentHoleShots.length > 0 ? `Finish (${currentHoleShots.length})` : 'Finish'}
           </Text>
-        </View>
+        </TouchableOpacity>
       </View>
 
       <HoleHeader hole={currentHole} hazardTags={hazardTags} liveLie={liveLie} />
@@ -783,6 +918,10 @@ export function GpsRoundScreen({
                       abbr,
                       actualYards: shot.actualYards,
                       playingYards: shot.playingYards,
+                      from: shot.from || null,
+                      to: shot.to || null,
+                      weather: shot.weather || null,
+                      loggedAt: shot.loggedAt || null,
                       lie: lie.lie,
                       lieIcon:
                         lie.lie === 'Fairway' ? 'F'
@@ -851,7 +990,7 @@ export function GpsRoundScreen({
             </TouchableOpacity>
           </>
         )}
-        {!overlayState.anySheet && overlayState.shotFlow === 'idle' && currentHoleShots.length > 0 && !lieToast && (
+        {!overlayState.anySheet && overlayState.shotFlow === 'idle' && currentHoleShots.length > 0 && !lieToast && !activeNudge && (
           <View style={styles.shotRow}>
             {currentHoleShots.map((shot) => (
               <View key={shot.id} style={[styles.shotPill, shot.color ? { borderColor: shot.color } : null]}>
@@ -895,6 +1034,22 @@ export function GpsRoundScreen({
             </TouchableOpacity>
           </View>
         ) : null}
+        {activeNudge ? (
+          <View style={[
+            styles.nudgeCard,
+            activeNudge.tone === 'green' ? styles.nudgeCardGreen : activeNudge.tone === 'red' ? styles.nudgeCardRed : styles.nudgeCardAmber,
+          ]}>
+            <View style={[
+              styles.nudgeAccent,
+              activeNudge.tone === 'green' ? styles.nudgeAccentGreen : activeNudge.tone === 'red' ? styles.nudgeAccentRed : styles.nudgeAccentAmber,
+            ]} />
+            <View style={styles.nudgeCopy}>
+              <Text style={styles.nudgeTitle}>{activeNudge.title}</Text>
+              <Text style={styles.nudgeBody}>{activeNudge.body}</Text>
+              {activeNudge.support ? <Text style={styles.nudgeSupport}>{activeNudge.support}</Text> : null}
+            </View>
+          </View>
+        ) : null}
         <View style={styles.bottomMapBar}>
           <TouchableOpacity style={styles.teeJumpButton} onPress={() => jumpToPoi(teeBack)}>
             <Text style={styles.teeJumpText}>🏌️ Tee</Text>
@@ -902,6 +1057,11 @@ export function GpsRoundScreen({
           <TouchableOpacity style={styles.greenJumpButton} onPress={() => jumpToPoi(greenCenter)}>
             <Text style={styles.greenJumpText}>⛳ Green</Text>
           </TouchableOpacity>
+          {liveLie?.lie === 'Green' && (
+            <TouchableOpacity style={styles.greenMarkButton} onPress={() => setShowGreenSheet(true)}>
+              <Text style={styles.greenMarkText}>Mark Green</Text>
+            </TouchableOpacity>
+          )}
           <View style={styles.bottomSpacer} />
           {!overlayState.anySheet && overlayState.shotFlow === 'idle' && (
             <TouchableOpacity style={styles.logShotButton} onPress={() => overlayRef.current?.openClubPicker?.()}>
@@ -917,7 +1077,11 @@ export function GpsRoundScreen({
 
       <YardagePanel yardages={yardages} />
       <View style={styles.helperBar}>
-        <Text style={styles.helperText}>Tap to refocus • Double tap to reset • Hold to measure • Log Shot to save</Text>
+        <Text style={styles.helperText}>
+          {coachingEnabled
+            ? 'Coaching is on • Tap bulb to hide • Double tap to reset • Hold to measure'
+            : 'Coaching is off • Tap bulb to show • Double tap to reset • Hold to measure'}
+        </Text>
       </View>
 
       <Modal visible={showHistory} transparent animationType="fade" onRequestClose={() => setShowHistory(false)}>
@@ -984,6 +1148,119 @@ export function GpsRoundScreen({
           </View>
         </View>
       </Modal>
+
+      <Modal visible={showGreenSheet} transparent animationType="fade" onRequestClose={() => setShowGreenSheet(false)}>
+        <View style={styles.historyBackdrop}>
+          <TouchableOpacity style={styles.historyScrim} activeOpacity={1} onPress={() => setShowGreenSheet(false)} />
+          <View style={styles.historySheet}>
+            <View style={styles.historyHandle} />
+            <View style={styles.historyHeader}>
+              <View>
+                <Text style={styles.historyTitle}>Green Markers</Text>
+                <Text style={styles.historySubtitle}>Track the first putt, hole location, and putts on this green.</Text>
+              </View>
+              <TouchableOpacity style={styles.historyClose} onPress={() => setShowGreenSheet(false)}>
+                <Text style={styles.historyCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.greenSheetBody}>
+              <Text style={styles.greenSheetLabel}>Hole Location</Text>
+              <View style={styles.greenChoiceRow}>
+                {[
+                  { key: 'front', label: 'Front' },
+                  { key: 'middle', label: 'Middle' },
+                  { key: 'back', label: 'Back' },
+                ].map((option) => (
+                  <TouchableOpacity
+                    key={option.key}
+                    style={[
+                      styles.greenChoiceChip,
+                      currentHoleSummary.pinLocation === option.key && styles.greenChoiceChipActive,
+                    ]}
+                    onPress={() => setHoleSummariesByHole((prev) => ({
+                      ...prev,
+                      [currentHoleIndex]: {
+                        ...currentHoleSummary,
+                        pinLocation: option.key,
+                      },
+                    }))}
+                  >
+                    <Text style={[
+                      styles.greenChoiceText,
+                      currentHoleSummary.pinLocation === option.key && styles.greenChoiceTextActive,
+                    ]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.greenSheetLabel}>First Putt Distance</Text>
+              <View style={styles.greenStepperRow}>
+                <TouchableOpacity
+                  style={styles.greenStepperButton}
+                  onPress={() => setHoleSummariesByHole((prev) => ({
+                    ...prev,
+                    [currentHoleIndex]: {
+                      ...currentHoleSummary,
+                      firstPuttDistance: Math.max(0, (currentHoleSummary.firstPuttDistance ?? 0) - 5),
+                    },
+                  }))}
+                >
+                  <Text style={styles.greenStepperButtonText}>-5</Text>
+                </TouchableOpacity>
+                <View style={styles.greenStepperValueWrap}>
+                  <Text style={styles.greenStepperValue}>{currentHoleSummary.firstPuttDistance ?? 0}</Text>
+                  <Text style={styles.greenStepperUnit}>ft</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.greenStepperButton}
+                  onPress={() => setHoleSummariesByHole((prev) => ({
+                    ...prev,
+                    [currentHoleIndex]: {
+                      ...currentHoleSummary,
+                      firstPuttDistance: (currentHoleSummary.firstPuttDistance ?? 0) + 5,
+                    },
+                  }))}
+                >
+                  <Text style={styles.greenStepperButtonText}>+5</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.greenSheetLabel}>Putts</Text>
+              <View style={styles.greenChoiceRow}>
+                {[0, 1, 2, 3, 4].map((putts) => (
+                  <TouchableOpacity
+                    key={`putts-${putts}`}
+                    style={[
+                      styles.greenChoiceChip,
+                      currentHoleSummary.putts === putts && styles.greenChoiceChipActive,
+                    ]}
+                    onPress={() => setHoleSummariesByHole((prev) => ({
+                      ...prev,
+                      [currentHoleIndex]: {
+                        ...currentHoleSummary,
+                        putts,
+                      },
+                    }))}
+                  >
+                    <Text style={[
+                      styles.greenChoiceText,
+                      currentHoleSummary.putts === putts && styles.greenChoiceTextActive,
+                    ]}>
+                      {putts}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TouchableOpacity style={styles.greenDoneButton} onPress={() => setShowGreenSheet(false)}>
+                <Text style={styles.greenDoneButtonText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1034,6 +1311,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.bg.elevated,
+  },
+  iconBtnActive: {
+    borderWidth: 1,
+    borderColor: colors.brand.primaryBorder,
   },
   scorePill: {
     minWidth: 42,
@@ -1315,6 +1596,65 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.3)',
     fontSize: 12,
   },
+  nudgeCard: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    bottom: 62,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.bg.secondary,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    paddingVertical: 10,
+    paddingRight: 12,
+    zIndex: 10,
+  },
+  nudgeCardGreen: {
+    borderColor: colors.brand.primaryBorder,
+  },
+  nudgeCardAmber: {
+    borderColor: 'rgba(251,191,36,0.28)',
+  },
+  nudgeCardRed: {
+    borderColor: 'rgba(248,113,113,0.28)',
+  },
+  nudgeAccent: {
+    width: 3,
+    alignSelf: 'stretch',
+    marginRight: 10,
+    borderTopLeftRadius: radius.lg,
+    borderBottomLeftRadius: radius.lg,
+  },
+  nudgeAccentGreen: {
+    backgroundColor: colors.brand.primary,
+  },
+  nudgeAccentAmber: {
+    backgroundColor: '#FBBF24',
+  },
+  nudgeAccentRed: {
+    backgroundColor: '#F87171',
+  },
+  nudgeCopy: {
+    flex: 1,
+  },
+  nudgeTitle: {
+    color: colors.text.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  nudgeBody: {
+    color: '#E5E7EB',
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  nudgeSupport: {
+    color: colors.text.tertiary,
+    fontSize: 10,
+    marginTop: 4,
+  },
   bottomMapBar: {
     position: 'absolute',
     left: 10,
@@ -1350,6 +1690,19 @@ const styles = StyleSheet.create({
     color: colors.brand.primary,
     fontSize: 11,
     fontWeight: '500',
+  },
+  greenMarkButton: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  greenMarkText: {
+    color: '#E5E7EB',
+    fontSize: 11,
+    fontWeight: '600',
   },
   bottomSpacer: {
     flex: 1,
@@ -1503,6 +1856,99 @@ const styles = StyleSheet.create({
   historyScrollContent: {
     paddingHorizontal: 18,
     paddingBottom: 24,
+  },
+  greenSheetBody: {
+    paddingHorizontal: 18,
+    paddingBottom: 18,
+  },
+  greenSheetLabel: {
+    color: 'rgba(255,255,255,0.3)',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.1,
+    marginBottom: 10,
+    marginTop: 14,
+    textTransform: 'uppercase',
+  },
+  greenChoiceRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  greenChoiceChip: {
+    minWidth: 72,
+    borderRadius: 10,
+    backgroundColor: colors.bg.elevated,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  greenChoiceChipActive: {
+    backgroundColor: colors.brand.primaryMuted,
+    borderColor: colors.brand.primary,
+  },
+  greenChoiceText: {
+    color: '#CBD5E1',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  greenChoiceTextActive: {
+    color: '#FFFFFF',
+  },
+  greenStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.bg.elevated,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  greenStepperButton: {
+    width: 46,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: colors.bg.secondary,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  greenStepperButtonText: {
+    color: '#E5E7EB',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  greenStepperValueWrap: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 4,
+  },
+  greenStepperValue: {
+    color: '#FFFFFF',
+    fontSize: 26,
+    fontWeight: '800',
+  },
+  greenStepperUnit: {
+    color: colors.text.secondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  greenDoneButton: {
+    marginTop: 18,
+    backgroundColor: colors.brand.primary,
+    borderRadius: 12,
+    alignItems: 'center',
+    paddingVertical: 13,
+  },
+  greenDoneButtonText: {
+    color: colors.text.inverse,
+    fontSize: 14,
+    fontWeight: '800',
   },
   historyHoleBlock: {
     borderLeftWidth: 2,
