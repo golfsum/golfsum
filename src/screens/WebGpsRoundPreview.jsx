@@ -242,6 +242,8 @@ export function WebGpsRoundPreview({
   const [showGreenSheet, setShowGreenSheet] = useState(false);
   const [showGreenView, setShowGreenView] = useState(false);
   const [holeNoteClub, setHoleNoteClub] = useState(null);
+  const [holeNoteText, setHoleNoteText] = useState(null);
+  const [showCourseNotes, setShowCourseNotes] = useState(false);
   const [gpsActive, setGpsActive] = useState(true);
 
   const currentHole = course?.holes?.[currentHoleIndex] || null;
@@ -382,8 +384,13 @@ export function WebGpsRoundPreview({
     let active = true;
     if (!courseId || !currentHole?.hole) { setHoleNoteClub(null); return undefined; }
     getRecentHoleNote(courseId, currentHole.hole)
-      .then((note) => { if (active) setHoleNoteClub(note ? extractClubFromNote(note.text) : null); })
-      .catch(() => { if (active) setHoleNoteClub(null); });
+      .then((note) => {
+        if (active) {
+          setHoleNoteClub(note ? extractClubFromNote(note.text) : null);
+          setHoleNoteText(note?.text || null);
+        }
+      })
+      .catch(() => { if (active) { setHoleNoteClub(null); setHoleNoteText(null); } });
     return () => { active = false; };
   }, [courseId, currentHole?.hole]);
 
@@ -716,77 +723,61 @@ export function WebGpsRoundPreview({
             </View>
           )}
           <View style={styles.bottomMapBar}>
+            {/* Suggested club — tapping toggles course note */}
             <TouchableOpacity
-              style={styles.teeJumpButton}
-              onPress={() => setShowGreenView(false)}
+              style={[styles.suggestedBarChip, suggestedClub?.fromNote && styles.suggestedBarChipNote]}
+              onPress={() => setShowCourseNotes((v) => !v)}
             >
-              <Text style={styles.teeJumpText}>🏌️ Tee</Text>
+              <Text style={styles.suggestedBarLabel}>{suggestedClub?.fromNote ? '📝' : '⭐'}</Text>
+              <Text style={styles.suggestedBarClub}>{suggestedClub.abbr}</Text>
+              {suggestedClub.yards ? <Text style={styles.suggestedBarMeta}>{suggestedClub.yards}y</Text> : null}
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.teeJumpButton, showGreenView && styles.teeJumpButtonActive]}
-              onPress={() => setShowGreenView((v) => !v)}
-            >
-              <Ionicons name="map" size={13} color={showGreenView ? colors.brand.primary : 'rgba(255,255,255,0.55)'} />
-              <Text style={[styles.teeJumpText, showGreenView && { color: colors.brand.primary }]}>Green</Text>
-            </TouchableOpacity>
-            {liveLie?.lie === 'Green' && (
-              <TouchableOpacity style={styles.greenMarkButton} onPress={() => setShowGreenSheet(true)}>
-                <Text style={styles.greenMarkText}>Mark Green</Text>
+
+            {/* Putts stepper */}
+            <View style={styles.bottomPuttStepper}>
+              <TouchableOpacity
+                style={styles.bottomPuttBtn}
+                onPress={() => setHolePutts((prev) => ({ ...prev, [currentHoleIndex]: Math.max(0, currentPutts - 1) }))}
+              >
+                <Text style={styles.bottomPuttBtnText}>−</Text>
               </TouchableOpacity>
-            )}
-            <View style={styles.bottomSpacer} />
-            <TouchableOpacity style={styles.addShotButton} onPress={handleStartShot}>
-              <Ionicons name="add" size={22} color="#FFFFFF" />
-              <Text style={[styles.addShotButtonText, { color: '#FFFFFF' }]}>Add Shot</Text>
-            </TouchableOpacity>
+              <View style={styles.bottomPuttValueWrap}>
+                <Text style={styles.bottomPuttValue}>{currentPutts}</Text>
+                <Text style={styles.bottomPuttLabel}>PUTTS</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.bottomPuttBtn}
+                onPress={() => setHolePutts((prev) => ({ ...prev, [currentHoleIndex]: currentPutts + 1 }))}
+              >
+                <Text style={styles.bottomPuttBtnText}>+</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Right column: Green toggle (top) + Add Shot (bottom) */}
+            <View style={styles.bottomRightStack}>
+              <TouchableOpacity
+                style={[styles.greenViewBtn, showGreenView && styles.greenViewBtnActive]}
+                onPress={() => setShowGreenView((v) => !v)}
+              >
+                <Ionicons name="map" size={12} color={showGreenView ? colors.brand.primary : 'rgba(255,255,255,0.55)'} />
+                <Text style={[styles.greenViewBtnText, showGreenView && { color: colors.brand.primary }]}>Green</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.addShotButton} onPress={handleStartShot}>
+                <Ionicons name="add" size={18} color="#FFFFFF" />
+                <Text style={[styles.addShotButtonText, { color: '#FFFFFF' }]}>Add Shot</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
+
+        {showCourseNotes && (
+          <View style={styles.courseNotePanel}>
+            <Text style={styles.courseNoteTitle}>📝 Hole Note</Text>
+            <Text style={styles.courseNoteBody}>{holeNoteText || `Suggested: ${suggestedClub.name}`}</Text>
+          </View>
+        )}
 
         <YardagePanel yardages={yardages} />
-        <View style={styles.helperBar}>
-          <Text style={styles.helperText}>
-            {gpsActive
-              ? 'GPS on • Pick a club, tap the map to place shots, add putts, then advance.'
-              : 'Manual mode • GPS paused — yardages shown from tee. Tap GPS to re-enable.'}
-          </Text>
-        </View>
-
-        <View style={styles.previewCard}>
-          <Text style={styles.previewTitle}>Web GPS Preview</Text>
-          <Text style={styles.previewBody}>
-            Browser preview uses Pebble sample coordinates, but you can now log shots on the map, track putts, and move hole to hole like a lightweight round sim.
-          </Text>
-          <View style={styles.metricRow}>
-            <View style={styles.metric}>
-              <Text style={styles.metricLabel}>Selected Tee</Text>
-              <Text style={styles.metricValue}>{selectedTee?.name || teeColor}</Text>
-            </View>
-            <View style={styles.metric}>
-              <Text style={styles.metricLabel}>Scorecard Yards</Text>
-              <Text style={styles.metricValue}>{selectedTee?.yards ? `${selectedTee.yards}c` : '--'}</Text>
-            </View>
-          </View>
-          <View style={styles.metricRow}>
-            <View style={styles.metric}>
-              <Text style={styles.metricLabel}>Tournament</Text>
-              <Text style={styles.metricValue}>{tournamentMode ? 'On' : 'Off'}</Text>
-            </View>
-            <View style={styles.metric}>
-              <Text style={styles.metricLabel}>Tee</Text>
-              <Text style={styles.coordText}>
-                {teeBack ? `${teeBack.Latitude.toFixed(6)}, ${teeBack.Longitude.toFixed(6)}` : '--'}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.metricRow}>
-            <View style={styles.metric}>
-              <Text style={styles.metricLabel}>Green Center</Text>
-              <Text style={styles.coordText}>
-                {greenCenter ? `${greenCenter.Latitude.toFixed(6)}, ${greenCenter.Longitude.toFixed(6)}` : '--'}
-              </Text>
-            </View>
-          </View>
-        </View>
 
         <Modal visible={clubPickerOpen} transparent animationType="fade" onRequestClose={() => setClubPickerOpen(false)}>
           <View style={styles.modalBackdrop}>
@@ -1312,42 +1303,31 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginTop: 4,
   },
-  bottomMapBar: { position: 'absolute', left: 10, right: 10, bottom: 28, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  teeJumpButton: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.bg.secondary, borderWidth: 1, borderColor: colors.border.subtle, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
-  teeJumpButtonActive: { borderColor: colors.brand.primaryBorder },
-  teeJumpText: { color: 'rgba(255,255,255,0.55)', fontSize: 11, fontWeight: '500' },
-  greenMarkButton: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
-  greenMarkText: { color: '#E5E7EB', fontSize: 11, fontWeight: '600' },
-  bottomSpacer: { flex: 1 },
-  addShotButton: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brand.primary, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8 },
-  addShotButtonText: { color: '#FFFFFF', fontSize: 9, fontWeight: '700', marginTop: 2, letterSpacing: 0.3 },
-  helperBar: { backgroundColor: colors.bg.primary, paddingTop: 4, paddingBottom: 10, alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border.subtle },
-  helperText: { color: 'rgba(255,255,255,0.20)', fontSize: 10, letterSpacing: 0.2, textAlign: 'center' },
-  previewCard: {
-    marginHorizontal: 14,
-    marginTop: 4,
-    marginBottom: 10,
-    backgroundColor: '#111827',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    padding: 16,
-    gap: 12,
-  },
-  previewTitle: { color: '#E5E7EB', fontSize: 18, fontWeight: '700' },
-  previewBody: { color: '#9CA3AF', fontSize: 13, lineHeight: 20 },
-  metricRow: { flexDirection: 'row', gap: 12 },
-  metric: {
-    flex: 1,
-    backgroundColor: '#0F172A',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    padding: 12,
-  },
-  metricLabel: { color: '#6B7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 },
-  metricValue: { color: '#E5E7EB', fontSize: 18, fontWeight: '700' },
-  coordText: { color: '#CBD5E1', fontSize: 12, lineHeight: 18 },
+  bottomMapBar: { position: 'absolute', left: 10, right: 10, bottom: 10, flexDirection: 'row', alignItems: 'stretch', gap: 6 },
+  // Suggested club chip in bottom bar
+  suggestedBarChip: { flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, backgroundColor: colors.bg.secondary, borderWidth: 1, borderColor: colors.border.subtle, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, minWidth: 52 },
+  suggestedBarChipNote: { borderColor: colors.brand.primaryBorder, backgroundColor: colors.brand.primaryMuted },
+  suggestedBarLabel: { fontSize: 10 },
+  suggestedBarClub: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
+  suggestedBarMeta: { color: colors.text.secondary, fontSize: 9, fontWeight: '600' },
+  // Putts stepper in bottom bar
+  bottomPuttStepper: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg.secondary, borderWidth: 1, borderColor: colors.border.subtle, borderRadius: 10, paddingVertical: 6, gap: 8 },
+  bottomPuttBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.bg.elevated, borderWidth: 1, borderColor: colors.border.subtle, alignItems: 'center', justifyContent: 'center' },
+  bottomPuttBtnText: { color: '#E5E7EB', fontSize: 16, fontWeight: '700', lineHeight: 20 },
+  bottomPuttValueWrap: { alignItems: 'center', minWidth: 28 },
+  bottomPuttValue: { color: '#FFFFFF', fontSize: 18, fontWeight: '800', lineHeight: 22 },
+  bottomPuttLabel: { color: colors.text.secondary, fontSize: 8, fontWeight: '700', letterSpacing: 0.8 },
+  // Right stack: Green button + Add Shot
+  bottomRightStack: { flexDirection: 'column', gap: 4, alignItems: 'stretch' },
+  greenViewBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, backgroundColor: colors.bg.secondary, borderWidth: 1, borderColor: colors.border.subtle, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
+  greenViewBtnActive: { borderColor: colors.brand.primaryBorder },
+  greenViewBtnText: { color: 'rgba(255,255,255,0.55)', fontSize: 10, fontWeight: '600' },
+  addShotButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, backgroundColor: colors.bg.secondary, borderWidth: 1, borderColor: colors.border.subtle, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 },
+  addShotButtonText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
+  // Course note panel
+  courseNotePanel: { marginHorizontal: 14, marginTop: 4, backgroundColor: colors.brand.primaryMuted, borderWidth: 1, borderColor: colors.brand.primaryBorder, borderRadius: 10, padding: 10 },
+  courseNoteTitle: { color: colors.brand.primary, fontSize: 11, fontWeight: '700', marginBottom: 4 },
+  courseNoteBody: { color: colors.text.secondary, fontSize: 12, lineHeight: 18 },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',

@@ -10,9 +10,9 @@ export function YardagePanel({ yardages, teeName, scorecardYardage = null, holeP
   return (
     <View style={styles.panel}>
       <View style={styles.row}>
-        <Metric label="F" value={front} />
-        <Metric label="C" value={center} highlight />
-        <Metric label="B" value={back} />
+        <Metric label="Front" value={front} />
+        <Metric label="Center" value={center} highlight />
+        <Metric label="Back" value={back} />
       </View>
     </View>
   );
