@@ -18,6 +18,7 @@ import { getElevationFeet } from '../services/weatherService';
 import { endLiveActivity, isLiveActivitySupported, upsertLiveActivity } from '../services/liveActivityService';
 import { getRounds } from '../services/roundsService';
 import { buildInRoundNudge, buildInRoundNudgeContext } from '../services/inRoundNudgeService';
+import { getRecentHoleNote } from '../services/holeNotesService';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 
 let MapboxGL = null;
@@ -179,16 +180,32 @@ function getPlayingAdjustment(baseYards, weather, shotBearingDeg) {
   };
 }
 
-function pickSuggestedClub(targetYards, userClubs) {
+function pickSuggestedClub(targetYards, userClubs, holeNoteClub) {
   const entries = Object.entries(userClubs || {})
     .filter(([, yards]) => Number.isFinite(yards))
     .map(([club, yards]) => ({ club, yards: Number(yards) }))
     .sort((a, b) => b.yards - a.yards);
   if (!entries.length || !Number.isFinite(targetYards)) return null;
+
+  // If a hole note mentions a specific club, prefer it if it's in the user's bag
+  if (holeNoteClub) {
+    const noteClubLower = holeNoteClub.toLowerCase();
+    const noteMatch = entries.find((e) => e.club.toLowerCase() === noteClubLower);
+    if (noteMatch) return { ...noteMatch, fromNote: true };
+  }
+
   return entries.reduce((best, entry) => {
     if (!best) return entry;
     return Math.abs(entry.yards - targetYards) < Math.abs(best.yards - targetYards) ? entry : best;
   }, null);
+}
+
+const CLUB_PATTERN = /\b(driver|3w|3-wood|3 wood|5w|5-wood|5 wood|7w|7-wood|7 wood|2h|3h|4h|5h|2-hybrid|3-hybrid|4-hybrid|5-hybrid|2 hybrid|3 hybrid|4 hybrid|5 hybrid|1i|2i|3i|4i|5i|6i|7i|8i|9i|1-iron|2-iron|3-iron|4-iron|5-iron|6-iron|7-iron|8-iron|9-iron|1 iron|2 iron|3 iron|4 iron|5 iron|6 iron|7 iron|8 iron|9 iron|pw|pitching wedge|gw|gap wedge|52|50|aw|sw|sand wedge|54|56|lw|lob wedge|58|60)\b/i;
+
+function extractClubFromNote(noteText) {
+  if (!noteText) return null;
+  const match = noteText.match(CLUB_PATTERN);
+  return match ? match[1] : null;
 }
 
 async function getGpsWeather(lat, lng) {
@@ -291,6 +308,7 @@ export function GpsRoundScreen({
   tournamentMode = false,
   onBack,
   onFinishRound,
+  onSwitchToManual,
 }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -318,6 +336,7 @@ export function GpsRoundScreen({
   const [coachingEnabled, setCoachingEnabled] = useState(true);
   const [showGreenSheet, setShowGreenSheet] = useState(false);
   const [recentRounds, setRecentRounds] = useState([]);
+  const [holeNoteClub, setHoleNoteClub] = useState(null);
   const lieToastTimeoutRef = useRef(null);
   const roundStartedAtRef = useRef(Date.now());
 
@@ -356,8 +375,8 @@ export function GpsRoundScreen({
     };
   }, [centerYards, elevationFt, shotBearingDeg, tournamentMode, weather]);
   const suggestedClub = useMemo(
-    () => pickSuggestedClub(tournamentMode ? centerYards : playingDistance?.adjustedYards, userClubs),
-    [centerYards, playingDistance?.adjustedYards, tournamentMode, userClubs]
+    () => pickSuggestedClub(tournamentMode ? centerYards : playingDistance?.adjustedYards, userClubs, holeNoteClub),
+    [centerYards, holeNoteClub, playingDistance?.adjustedYards, tournamentMode, userClubs]
   );
   const currentHoleShots = loggedShotsByHole[currentHoleIndex] || [];
   const currentHoleSummary = holeSummariesByHole[currentHoleIndex] || { firstPuttDistance: null, pinLocation: 'middle', putts: null };
@@ -533,6 +552,26 @@ export function GpsRoundScreen({
     };
   }, [courseId, courseName]);
 
+  useEffect(() => {
+    let active = true;
+    const holeNum = currentHole?.hole || currentHoleIndex + 1;
+    if (!courseId || !holeNum) {
+      setHoleNoteClub(null);
+      return undefined;
+    }
+    getRecentHoleNote(courseId, holeNum)
+      .then((note) => {
+        if (!active) return;
+        setHoleNoteClub(note ? extractClubFromNote(note.text) : null);
+      })
+      .catch(() => {
+        if (!active) setHoleNoteClub(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [courseId, currentHole?.hole, currentHoleIndex]);
+
   useEffect(() => () => {
     if (lieToastTimeoutRef.current) clearTimeout(lieToastTimeoutRef.current);
   }, []);
@@ -675,11 +714,11 @@ export function GpsRoundScreen({
     return { type: 'FeatureCollection', features };
   }, [currentHole, greenCenter, teeBack, userPos]);
 
-  const jumpToPoi = useCallback((poi) => {
+  const jumpToPoi = useCallback((poi, zoomLevel = 17) => {
     if (!poi || !cameraRef.current) return;
     cameraRef.current?.setCamera({
       centerCoordinate: [poi.Longitude, poi.Latitude],
-      zoomLevel: 17,
+      zoomLevel,
       animationDuration: 800,
       animationMode: 'flyTo',
     });
@@ -821,6 +860,12 @@ export function GpsRoundScreen({
         <TouchableOpacity style={styles.iconBtn} onPress={() => setShowHistory(true)}>
           <Ionicons name="time-outline" size={16} color="rgba(255,255,255,0.55)" />
         </TouchableOpacity>
+        {onSwitchToManual && (
+          <TouchableOpacity style={styles.gpsPill} onPress={onSwitchToManual}>
+            <Ionicons name="navigate" size={11} color="#FFFFFF" />
+            <Text style={styles.gpsPillText}>GPS</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={[
             styles.scorePill,
@@ -983,7 +1028,7 @@ export function GpsRoundScreen({
               )}
             </View>
             <TouchableOpacity style={styles.suggestedChip} onPress={() => overlayRef.current?.openClubPicker?.()}>
-              <Text style={styles.suggestedLabel}>SUGGESTED</Text>
+              <Text style={styles.suggestedLabel}>{suggestedClub?.fromNote ? 'FROM NOTE' : 'SUGGESTED'}</Text>
               <Text style={styles.suggestedClub}>{suggestedClub?.club || 'Pick club'}</Text>
               {suggestedClub?.yards ? <Text style={styles.suggestedMeta}>{suggestedClub.yards}y</Text> : null}
               <Text style={styles.suggestedChevron}>›</Text>
@@ -1054,7 +1099,7 @@ export function GpsRoundScreen({
           <TouchableOpacity style={styles.teeJumpButton} onPress={() => jumpToPoi(teeBack)}>
             <Text style={styles.teeJumpText}>🏌️ Tee</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.greenJumpButton} onPress={() => jumpToPoi(greenCenter)}>
+          <TouchableOpacity style={styles.greenJumpButton} onPress={() => jumpToPoi(greenCenter, 19.2)}>
             <Text style={styles.greenJumpText}>⛳ Green</Text>
           </TouchableOpacity>
           {liveLie?.lie === 'Green' && (
@@ -1064,9 +1109,9 @@ export function GpsRoundScreen({
           )}
           <View style={styles.bottomSpacer} />
           {!overlayState.anySheet && overlayState.shotFlow === 'idle' && (
-            <TouchableOpacity style={styles.logShotButton} onPress={() => overlayRef.current?.openClubPicker?.()}>
-              <Ionicons name="add" size={13} color="#FFFFFF" />
-              <Text style={styles.logShotButtonText}>Log Shot</Text>
+            <TouchableOpacity style={styles.addShotButton} onPress={() => overlayRef.current?.openClubPicker?.()}>
+              <Ionicons name="add" size={22} color="#FFFFFF" />
+              <Text style={styles.addShotButtonText}>Add Shot</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -1315,6 +1360,22 @@ const styles = StyleSheet.create({
   iconBtnActive: {
     borderWidth: 1,
     borderColor: colors.brand.primaryBorder,
+  },
+  gpsPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: 30,
+    borderRadius: 15,
+    paddingHorizontal: 10,
+    backgroundColor: colors.brand.primary,
+    marginLeft: 2,
+  },
+  gpsPillText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   scorePill: {
     minWidth: 42,
@@ -1679,17 +1740,17 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   greenJumpButton: {
-    backgroundColor: colors.brand.primaryMuted,
-    borderWidth: 1,
-    borderColor: colors.brand.primaryBorder,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
   greenJumpText: {
-    color: colors.brand.primary,
+    color: '#FFFFFF',
     fontSize: 11,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   greenMarkButton: {
     backgroundColor: 'rgba(255,255,255,0.06)',
@@ -1707,24 +1768,25 @@ const styles = StyleSheet.create({
   bottomSpacer: {
     flex: 1,
   },
-  logShotButton: {
-    flexDirection: 'row',
+  addShotButton: {
     alignItems: 'center',
-    gap: 5,
+    justifyContent: 'center',
     backgroundColor: colors.brand.primary,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     shadowColor: colors.brand.primary,
     shadowOpacity: 0.35,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 3 },
     elevation: 6,
   },
-  logShotButtonText: {
+  addShotButtonText: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: '700',
+    marginTop: 2,
+    letterSpacing: 0.3,
   },
   mapboxWordmark: {
     position: 'absolute',
