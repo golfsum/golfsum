@@ -207,6 +207,7 @@ export function WebGpsRoundPreview({
   startingHole = 1,
   tournamentMode = false,
   onBack,
+  onSwitchToManual,
 }) {
   const { width, height } = useWindowDimensions();
   const [loading, setLoading] = useState(true);
@@ -447,9 +448,10 @@ export function WebGpsRoundPreview({
               {cached ? 'Cached on device' : course?.source === 'LOCAL_SAMPLE' ? 'Local sample data' : 'Loaded now'} • {selectedTee?.name || teeColor} • Hole {currentHoleIndex + 1}
             </Text>
           </View>
-          <View style={styles.scorePill}>
-            <Text style={styles.scorePillText}>GPS</Text>
-          </View>
+          <TouchableOpacity style={styles.gpsPill} onPress={onSwitchToManual}>
+            <Ionicons name="navigate" size={11} color="#FFFFFF" />
+            <Text style={styles.gpsPillText}>GPS</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={[styles.iconBtn, coachingEnabled && styles.iconBtnActive]} onPress={() => setCoachingEnabled((value) => !value)}>
             <Ionicons name="bulb-outline" size={16} color={coachingEnabled ? colors.brand.primary : 'rgba(255,255,255,0.55)'} />
           </TouchableOpacity>
@@ -688,8 +690,9 @@ export function WebGpsRoundPreview({
               </TouchableOpacity>
             )}
             <View style={styles.bottomSpacer} />
-            <TouchableOpacity style={styles.logShotButton} onPress={handleStartShot}>
-              <Text style={styles.logShotButtonText}>+ Log Shot</Text>
+            <TouchableOpacity style={styles.addShotButton} onPress={handleStartShot}>
+              <Ionicons name="add" size={22} color="#FFFFFF" />
+              <Text style={styles.addShotButtonText}>Add Shot</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -924,8 +927,8 @@ const styles = StyleSheet.create({
   iconBtnActive: { borderWidth: 1, borderColor: colors.brand.primaryBorder },
   courseName: { color: colors.text.primary, fontSize: 13, fontWeight: '600', letterSpacing: -0.2 },
   subMeta: { color: colors.text.secondary, fontSize: 10, marginTop: 1 },
-  scorePill: { minWidth: 42, height: 30, borderRadius: 8, paddingHorizontal: 10, backgroundColor: colors.bg.elevated, borderWidth: 1, borderColor: colors.border.subtle, alignItems: 'center', justifyContent: 'center' },
-  scorePillText: { color: colors.text.secondary, fontSize: 13, fontWeight: '700' },
+  gpsPill: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 30, borderRadius: 15, paddingHorizontal: 10, backgroundColor: colors.brand.primary, marginLeft: 2 },
+  gpsPillText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
   loadingText: { color: '#9CA3AF', marginTop: 12, fontSize: 14 },
   errorText: { color: '#FCA5A5', textAlign: 'center', lineHeight: 20, marginBottom: 14 },
   backBtn: {
@@ -1317,13 +1320,13 @@ const styles = StyleSheet.create({
   bottomMapBar: { position: 'absolute', left: 10, right: 10, bottom: 28, flexDirection: 'row', alignItems: 'center', gap: 6 },
   teeJumpButton: { backgroundColor: colors.bg.secondary, borderWidth: 1, borderColor: colors.border.subtle, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
   teeJumpText: { color: colors.text.secondary, fontSize: 11, fontWeight: '500' },
-  greenJumpButton: { backgroundColor: colors.brand.primaryMuted, borderWidth: 1, borderColor: colors.brand.primaryBorder, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
-  greenJumpText: { color: colors.brand.primary, fontSize: 11, fontWeight: '500' },
+  greenJumpButton: { backgroundColor: 'rgba(0,0,0,0.75)', borderWidth: 1.5, borderColor: '#FFFFFF', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  greenJumpText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600' },
   greenMarkButton: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
   greenMarkText: { color: '#E5E7EB', fontSize: 11, fontWeight: '600' },
   bottomSpacer: { flex: 1 },
-  logShotButton: { backgroundColor: colors.brand.primary, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 5 },
-  logShotButtonText: { color: colors.text.inverse, fontSize: 11, fontWeight: '700' },
+  addShotButton: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brand.primary, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8 },
+  addShotButtonText: { color: '#FFFFFF', fontSize: 9, fontWeight: '700', marginTop: 2, letterSpacing: 0.3 },
   helperBar: { backgroundColor: colors.bg.primary, paddingTop: 4, paddingBottom: 10, alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border.subtle },
   helperText: { color: 'rgba(255,255,255,0.20)', fontSize: 10, letterSpacing: 0.2, textAlign: 'center' },
   roundCard: {
