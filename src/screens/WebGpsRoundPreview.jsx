@@ -24,7 +24,7 @@ import { MAPBOX_PUBLIC_TOKEN } from '../config/mapbox';
 import { getStaticMapCameraConfig } from '../services/mapFraming';
 import { buildInRoundNudge } from '../services/inRoundNudgeService';
 import { getRecentHoleNote } from '../services/holeNotesService';
-import { colors } from '../theme/tokens';
+import { colors, spacing } from '../theme/tokens';
 
 const CLUB_PATTERN = /\b(driver|3w|3 wood|5w|5 wood|2i|3i|4i|5i|6i|7i|8i|9i|pw|gw|aw|sw|lw|60|58|56|54|52|50|48|lob wedge|gap wedge|pitching wedge|sand wedge)\b/i;
 
@@ -678,12 +678,21 @@ export function WebGpsRoundPreview({
               <Text style={styles.weatherText}>Tournament mode</Text>
             )}
           </View>
-          <View style={styles.distanceBadge}>
-            <Text style={styles.distanceBadgeLabel}>{tournamentMode ? 'GPS' : 'PLAYING'}</Text>
-            <Text style={styles.distanceValue}>{tournamentMode ? yardages.center : Math.max(0, yardages.center + 2)}</Text>
-            <Text style={styles.distGps}>GPS {yardages.center}</Text>
-            <Text style={styles.distanceUnit}>yds</Text>
-            {!tournamentMode && <Text style={styles.distanceAdjust}>W +4 · T -2</Text>}
+          <View style={styles.mapRightCol}>
+            <View style={styles.distanceBadge}>
+              <Text style={styles.distanceBadgeLabel}>{tournamentMode ? 'GPS' : 'PLAYING'}</Text>
+              <Text style={styles.distanceValue}>{tournamentMode ? yardages.center : Math.max(0, yardages.center + 2)}</Text>
+              <Text style={styles.distGps}>GPS {yardages.center}</Text>
+              <Text style={styles.distanceUnit}>yds</Text>
+              {!tournamentMode && <Text style={styles.distanceAdjust}>W +4 · T -2</Text>}
+            </View>
+            <TouchableOpacity
+              style={[styles.greenViewBtn, showGreenView && styles.greenViewBtnActive]}
+              onPress={() => { setShowGreenView((v) => !v); setGreenPinPosition(null); }}
+            >
+              <Ionicons name="map" size={12} color={showGreenView ? colors.brand.primary : 'rgba(255,255,255,0.55)'} />
+              <Text style={[styles.greenViewBtnText, showGreenView && { color: colors.brand.primary }]}>Green</Text>
+            </TouchableOpacity>
           </View>
           {!clubPickerOpen && shotFlow === 'idle' && currentHoleShots.length > 0 && !activeNudge && (
             <View style={styles.shotRow}>
@@ -725,20 +734,36 @@ export function WebGpsRoundPreview({
           )}
         </View>
 
-        {/* Bottom control bar — outside map so it doesn't overlap Mapbox watermark */}
+        {/* Course notes nudge — above the control bar */}
+        {showNudge && activeNudge && shotFlow === 'idle' && !clubPickerOpen && !showGreenSheet && (
+          <View style={[
+            styles.nudgeCard,
+            activeNudge.tone === 'green' ? styles.nudgeCardGreen : activeNudge.tone === 'red' ? styles.nudgeCardRed : styles.nudgeCardAmber,
+          ]}>
+            <View style={[
+              styles.nudgeAccent,
+              activeNudge.tone === 'green' ? styles.nudgeAccentGreen : activeNudge.tone === 'red' ? styles.nudgeAccentRed : styles.nudgeAccentAmber,
+            ]} />
+            <View style={styles.nudgeCopy}>
+              <Text style={styles.nudgeTitle}>{activeNudge.title}</Text>
+              <Text style={styles.nudgeBody}>{activeNudge.body}</Text>
+              {activeNudge.support ? <Text style={styles.nudgeSupport}>{activeNudge.support}</Text> : null}
+            </View>
+          </View>
+        )}
+
+        {/* Bottom control bar — 3 equal columns aligned with Front / Center / Back */}
         <View style={styles.bottomMapBar}>
-          {/* Suggested chip — toggles course notes */}
+          {/* Suggested — aligns with Front */}
           <TouchableOpacity
             style={[styles.suggestedChip, suggestedClub?.fromNote && styles.suggestedChipNote, showNudge && styles.suggestedChipActive]}
             onPress={() => setShowNudge((v) => !v)}
           >
             <Text style={styles.suggestedLabel}>{suggestedClub?.fromNote ? '📝 NOTE' : 'SUGGESTED'}</Text>
-            <Text style={styles.suggestedClubText}>{suggestedClub.name}</Text>
+            <Text style={styles.suggestedClubText} numberOfLines={1}>{suggestedClub.name}</Text>
           </TouchableOpacity>
 
-          <View style={styles.bottomSpacer} />
-
-          {/* Putts stepper — center */}
+          {/* Putts — aligns with Center */}
           <View style={styles.bottomPuttStepper}>
             <TouchableOpacity
               style={styles.bottomPuttBtn}
@@ -758,41 +783,12 @@ export function WebGpsRoundPreview({
             </TouchableOpacity>
           </View>
 
-          <View style={styles.bottomSpacer} />
-
-          {/* Green toggle */}
-          <TouchableOpacity
-            style={[styles.greenViewBtn, showGreenView && styles.greenViewBtnActive]}
-            onPress={() => { setShowGreenView((v) => !v); setGreenPinPosition(null); }}
-          >
-            <Ionicons name="map" size={12} color={showGreenView ? colors.brand.primary : 'rgba(255,255,255,0.55)'} />
-            <Text style={[styles.greenViewBtnText, showGreenView && { color: colors.brand.primary }]}>Green</Text>
-          </TouchableOpacity>
-
-          {/* Add Shot */}
+          {/* Add Shot — aligns with Back */}
           <TouchableOpacity style={styles.addShotButton} onPress={handleStartShot}>
-            <Ionicons name="add" size={18} color="#FFFFFF" />
-            <Text style={[styles.addShotButtonText, { color: '#FFFFFF' }]}>Add Shot</Text>
+            <Ionicons name="add" size={16} color="#FFFFFF" />
+            <Text style={styles.addShotButtonText}>Add Shot</Text>
           </TouchableOpacity>
         </View>
-
-        {/* Course notes nudge — shown when suggested chip is toggled on */}
-        {showNudge && activeNudge && shotFlow === 'idle' && !clubPickerOpen && !showGreenSheet && (
-          <View style={[
-            styles.nudgeCard,
-            activeNudge.tone === 'green' ? styles.nudgeCardGreen : activeNudge.tone === 'red' ? styles.nudgeCardRed : styles.nudgeCardAmber,
-          ]}>
-            <View style={[
-              styles.nudgeAccent,
-              activeNudge.tone === 'green' ? styles.nudgeAccentGreen : activeNudge.tone === 'red' ? styles.nudgeAccentRed : styles.nudgeAccentAmber,
-            ]} />
-            <View style={styles.nudgeCopy}>
-              <Text style={styles.nudgeTitle}>{activeNudge.title}</Text>
-              <Text style={styles.nudgeBody}>{activeNudge.body}</Text>
-              {activeNudge.support ? <Text style={styles.nudgeSupport}>{activeNudge.support}</Text> : null}
-            </View>
-          </View>
-        )}
 
         <YardagePanel yardages={yardages} />
 
@@ -950,6 +946,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#111827',
     position: 'relative',
+    paddingBottom: 24,
   },
   mapImage: {
     width: '100%',
@@ -1028,10 +1025,14 @@ const styles = StyleSheet.create({
   },
   weatherText: { color: colors.text.primary, fontSize: 11, fontWeight: '500' },
   weatherDivider: { width: 1, height: 10, backgroundColor: 'rgba(255,255,255,0.12)', marginHorizontal: 6 },
-  distanceBadge: {
+  mapRightCol: {
     position: 'absolute',
     right: 10,
     top: 10,
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  distanceBadge: {
     backgroundColor: colors.bg.secondary,
     borderRadius: 11,
     borderWidth: 1,
@@ -1047,13 +1048,15 @@ const styles = StyleSheet.create({
   distanceUnit: { color: colors.text.secondary, fontSize: 9, letterSpacing: 1, marginBottom: 3 },
   distanceAdjust: { color: colors.brand.primary, fontSize: 8, fontWeight: '600', lineHeight: 11, textAlign: 'center' },
   suggestedChip: {
+    flex: 1,
     backgroundColor: colors.bg.secondary,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: colors.border.subtle,
     paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: 6,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   suggestedChipNote: { borderColor: colors.brand.primaryBorder },
   suggestedChipActive: { backgroundColor: colors.brand.primaryMuted, borderColor: colors.brand.primaryBorder },
@@ -1336,8 +1339,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginTop: 4,
   },
-  bottomMapBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: colors.bg.primary, borderTopWidth: 1, borderTopColor: colors.border.subtle },
-  bottomSpacer: { flex: 1 },
+  bottomMapBar: { flexDirection: 'row', alignItems: 'stretch', gap: 8, paddingHorizontal: spacing.md, paddingVertical: 8, backgroundColor: colors.bg.primary, borderTopWidth: 1, borderTopColor: colors.border.subtle },
   // Suggested club chip in bottom bar
   suggestedBarChip: { flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, backgroundColor: colors.bg.secondary, borderWidth: 1, borderColor: colors.border.subtle, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, minWidth: 52 },
   suggestedBarChipNote: { borderColor: colors.brand.primaryBorder, backgroundColor: colors.brand.primaryMuted },
@@ -1345,7 +1347,7 @@ const styles = StyleSheet.create({
   suggestedBarClub: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
   suggestedBarMeta: { color: colors.text.secondary, fontSize: 9, fontWeight: '600' },
   // Putts stepper in bottom bar
-  bottomPuttStepper: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg.secondary, borderWidth: 1, borderColor: colors.border.subtle, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 8, gap: 8 },
+  bottomPuttStepper: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg.secondary, borderWidth: 1, borderColor: colors.border.subtle, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 4, gap: 6 },
   bottomPuttBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.bg.elevated, borderWidth: 1, borderColor: colors.border.subtle, alignItems: 'center', justifyContent: 'center' },
   bottomPuttBtnText: { color: '#E5E7EB', fontSize: 16, fontWeight: '700', lineHeight: 20 },
   bottomPuttValueWrap: { alignItems: 'center', minWidth: 28 },
@@ -1353,10 +1355,10 @@ const styles = StyleSheet.create({
   bottomPuttLabel: { color: colors.text.secondary, fontSize: 8, fontWeight: '700', letterSpacing: 0.8 },
   // Right stack: Green button + Add Shot
   bottomRightStack: { flexDirection: 'column', gap: 4, alignItems: 'stretch' },
-  greenViewBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, backgroundColor: colors.bg.secondary, borderWidth: 1, borderColor: colors.border.subtle, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
+  greenViewBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, backgroundColor: colors.bg.secondary, borderWidth: 1, borderColor: colors.border.subtle, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, minWidth: 58 },
   greenViewBtnActive: { borderColor: colors.brand.primaryBorder },
   greenViewBtnText: { color: 'rgba(255,255,255,0.55)', fontSize: 10, fontWeight: '600' },
-  addShotButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, backgroundColor: colors.bg.secondary, borderWidth: 1, borderColor: colors.border.subtle, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 },
+  addShotButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, backgroundColor: colors.bg.secondary, borderWidth: 1, borderColor: colors.border.subtle, borderRadius: 10, paddingHorizontal: 4, paddingVertical: 7 },
   addShotButtonText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
   // Course note panel
   courseNotePanel: { marginHorizontal: 14, marginTop: 4, backgroundColor: colors.brand.primaryMuted, borderWidth: 1, borderColor: colors.brand.primaryBorder, borderRadius: 10, padding: 10 },
