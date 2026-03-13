@@ -327,10 +327,14 @@ function buildNameVariants(name: string): string[] {
     'golf links', 'golf course', 'golf club', 'country club',
     'links', 'course', 'club', 'gc', 'cc',
   ];
+  // Municipal prefixes common in OSM names: "City of X", "Town of X", etc.
+  const municipalPrefixes = ['city of ', 'town of ', 'village of ', 'county of ', 'township of '];
+
   const clean = name.trim();
   const lower = clean.toLowerCase();
   const variants: string[] = [clean];
 
+  // Strip trailing golf suffix (e.g. "Haven Golf Club" → "Haven")
   for (const suffix of suffixes) {
     if (lower.endsWith(suffix)) {
       const stripped = clean.slice(0, clean.length - suffix.length).trim();
@@ -339,10 +343,21 @@ function buildNameVariants(name: string): string[] {
     }
   }
 
-  // Also try first two words only
+  // Strip municipal prefix (e.g. "City of Green Valley" → "Green Valley")
+  for (const prefix of municipalPrefixes) {
+    if (lower.startsWith(prefix)) {
+      const stripped = clean.slice(prefix.length).trim();
+      if (stripped.length > 2) variants.push(stripped);
+      break;
+    }
+  }
+
   const words = clean.split(/\s+/);
-  if (words.length > 2) {
-    variants.push(words.slice(0, 2).join(' '));
+  if (words.length > 3) {
+    variants.push(words.slice(0, 3).join(' ')); // first 3 words
+    variants.push(words.slice(-2).join(' '));    // last 2 words (often the real name)
+  } else if (words.length === 3) {
+    variants.push(words.slice(0, 2).join(' ')); // first 2 words
   }
 
   // Deduplicate preserving order
