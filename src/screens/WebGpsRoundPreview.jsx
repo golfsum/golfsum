@@ -690,8 +690,14 @@ export function WebGpsRoundPreview({
               style={[styles.greenViewBtn, showGreenView && styles.greenViewBtnActive]}
               onPress={() => { setShowGreenView((v) => !v); setGreenPinPosition(null); }}
             >
-              <Ionicons name="map" size={12} color={showGreenView ? colors.brand.primary : 'rgba(255,255,255,0.55)'} />
-              <Text style={[styles.greenViewBtnText, showGreenView && { color: colors.brand.primary }]}>Green</Text>
+              <Ionicons
+                name={showGreenView ? 'expand-outline' : 'map'}
+                size={12}
+                color={showGreenView ? colors.brand.primary : 'rgba(255,255,255,0.55)'}
+              />
+              <Text style={[styles.greenViewBtnText, showGreenView && { color: colors.brand.primary }]}>
+                {showGreenView ? 'Overview' : 'Green'}
+              </Text>
             </TouchableOpacity>
           </View>
           {!clubPickerOpen && shotFlow === 'idle' && currentHoleShots.length > 0 && !activeNudge && (
