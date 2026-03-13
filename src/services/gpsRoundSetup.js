@@ -95,12 +95,21 @@ export async function loadGpsRoundSetup(courseId) {
 
   const mockCourse = getMockGpsCourse(courseId);
   if (!mockCourse) {
-    if (Platform.OS === 'web') {
-      // On web, CORS blocks all API calls — return a shell so the GPS screen
-      // can still open. Tee/hole data will load on device.
-      return { course: null, cached: false, teeOptions: [], holeCount: 18 };
-    }
-    throw new Error('Course not found. Make sure EXPO_PUBLIC_GOLFAPI_IO_TOKEN is set.');
+    // Course not found in any source — return a shell with standard tee options
+    // so the GPS round can still start. Hole GPS data (distances to green) won't
+    // be available, but the map and scoring will work normally.
+    return {
+      course: null,
+      cached: false,
+      teeOptions: [
+        { name: 'Black', color: '#1F2937', totalYards: 0 },
+        { name: 'Blue', color: '#3B82F6', totalYards: 0 },
+        { name: 'White', color: '#F9FAFB', totalYards: 0 },
+        { name: 'Yellow', color: '#F59E0B', totalYards: 0 },
+        { name: 'Red', color: '#EF4444', totalYards: 0 },
+      ],
+      holeCount: 18,
+    };
   }
   await saveCourse(courseId, mockCourse);
   return {
