@@ -244,6 +244,7 @@ export function WebGpsRoundPreview({
   const [greenPinPosition, setGreenPinPosition] = useState(null);
   const [holeNoteClub, setHoleNoteClub] = useState(null);
   const [gpsActive, setGpsActive] = useState(true);
+  const [showNudge, setShowNudge] = useState(false);
 
   const currentHole = course?.holes?.[currentHoleIndex] || null;
   const hazardTags = useMemo(() => getHazardTags(currentHole), [currentHole]);
@@ -684,12 +685,6 @@ export function WebGpsRoundPreview({
             <Text style={styles.distanceUnit}>yds</Text>
             {!tournamentMode && <Text style={styles.distanceAdjust}>W +4 · T -2</Text>}
           </View>
-          <TouchableOpacity style={[styles.suggestedChip, suggestedClub?.fromNote && styles.suggestedChipNote]} onPress={handleStartShot}>
-            <Text style={styles.suggestedLabel}>{suggestedClub?.fromNote ? '📝 FROM NOTE' : 'SUGGESTED'}</Text>
-            <Text style={styles.suggestedClub}>{suggestedClub.name}</Text>
-            {suggestedClub.yards ? <Text style={styles.suggestedMeta}>{suggestedClub.yards}y</Text> : null}
-            <Text style={styles.suggestedChevron}>›</Text>
-          </TouchableOpacity>
           {!clubPickerOpen && shotFlow === 'idle' && currentHoleShots.length > 0 && !activeNudge && (
             <View style={styles.shotRow}>
               {currentHoleShots.map((shot) => (
@@ -732,7 +727,18 @@ export function WebGpsRoundPreview({
 
         {/* Bottom control bar — outside map so it doesn't overlap Mapbox watermark */}
         <View style={styles.bottomMapBar}>
-          {/* Putts stepper */}
+          {/* Suggested chip — toggles course notes */}
+          <TouchableOpacity
+            style={[styles.suggestedChip, suggestedClub?.fromNote && styles.suggestedChipNote, showNudge && styles.suggestedChipActive]}
+            onPress={() => setShowNudge((v) => !v)}
+          >
+            <Text style={styles.suggestedLabel}>{suggestedClub?.fromNote ? '📝 NOTE' : 'SUGGESTED'}</Text>
+            <Text style={styles.suggestedClubText}>{suggestedClub.name}</Text>
+          </TouchableOpacity>
+
+          <View style={styles.bottomSpacer} />
+
+          {/* Putts stepper — center */}
           <View style={styles.bottomPuttStepper}>
             <TouchableOpacity
               style={styles.bottomPuttBtn}
@@ -770,8 +776,8 @@ export function WebGpsRoundPreview({
           </TouchableOpacity>
         </View>
 
-        {/* Course notes nudge — below the bar, not overlapping map */}
-        {activeNudge && shotFlow === 'idle' && !clubPickerOpen && !showGreenSheet && (
+        {/* Course notes nudge — shown when suggested chip is toggled on */}
+        {showNudge && activeNudge && shotFlow === 'idle' && !clubPickerOpen && !showGreenSheet && (
           <View style={[
             styles.nudgeCard,
             activeNudge.tone === 'green' ? styles.nudgeCardGreen : activeNudge.tone === 'red' ? styles.nudgeCardRed : styles.nudgeCardAmber,
@@ -1041,23 +1047,18 @@ const styles = StyleSheet.create({
   distanceUnit: { color: colors.text.secondary, fontSize: 9, letterSpacing: 1, marginBottom: 3 },
   distanceAdjust: { color: colors.brand.primary, fontSize: 8, fontWeight: '600', lineHeight: 11, textAlign: 'center' },
   suggestedChip: {
-    position: 'absolute',
-    left: 10,
-    bottom: 92,
     backgroundColor: colors.bg.secondary,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: colors.border.subtle,
-    paddingTop: 6,
-    paddingBottom: 6,
-    paddingLeft: 9,
-    paddingRight: 22,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    alignItems: 'center',
   },
   suggestedChipNote: { borderColor: colors.brand.primaryBorder },
+  suggestedChipActive: { backgroundColor: colors.brand.primaryMuted, borderColor: colors.brand.primaryBorder },
   suggestedLabel: { color: 'rgba(255,255,255,0.3)', fontSize: 8, fontWeight: '700', letterSpacing: 1.2, marginBottom: 1 },
-  suggestedClub: { color: colors.text.primary, fontSize: 12, fontWeight: '600' },
-  suggestedMeta: { color: 'rgba(255,255,255,0.28)', fontSize: 10, marginTop: 1 },
-  suggestedChevron: { position: 'absolute', right: 7, top: 14, color: 'rgba(255,255,255,0.3)', fontSize: 14 },
+  suggestedClubText: { color: colors.text.primary, fontSize: 12, fontWeight: '700' },
   playerRing: {
     position: 'absolute',
     width: 24,
