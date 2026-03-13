@@ -1,7 +1,8 @@
 import { Platform } from 'react-native';
-import { getCourse, saveCourse } from './courseCache';
+import { getCourse, saveCourse, getCourseFromFirestore, saveCourseToFirestore } from './courseCache';
 import { fetchCourseHolesFromBackend } from './golfApi';
 import { getMockGpsCourse } from './gpsMockCourses';
+import { getCourseDetail } from './golfApiIoService';
 
 function normalizeTeeName(name) {
   return String(name || '').trim().toLowerCase();
@@ -33,6 +34,7 @@ export async function loadGpsRoundSetup(courseId) {
     throw new Error('Missing course ID');
   }
 
+  // 1. Local device cache
   const local = await getCourse(courseId);
   if (local) {
     return {
@@ -43,25 +45,63 @@ export async function loadGpsRoundSetup(courseId) {
     };
   }
 
-  // On web, Firebase callable functions are blocked by CORS in local dev.
-  // Skip straight to mock lookup; on native, try remote first.
+  // 2. Firestore community cache
+  const firestored = await getCourseFromFirestore(courseId);
+  if (firestored) {
+    await saveCourse(courseId, firestored); // backfill local cache
+    return {
+      course: firestored,
+      cached: true,
+      teeOptions: getGpsTeeOptions(firestored),
+      holeCount: Array.isArray(firestored?.holes) ? firestored.holes.length : 0,
+    };
+  }
+
+  // 3. Firebase Function → golfapi.io (server-side, works on all platforms including web)
+  try {
+    const remote = await fetchCourseHolesFromBackend(courseId);
+    await saveCourse(courseId, remote);
+    saveCourseToFirestore(courseId, remote).catch(() => {}); // fire-and-forget
+    return {
+      course: remote,
+      cached: false,
+      teeOptions: getGpsTeeOptions(remote),
+      holeCount: Array.isArray(remote?.holes) ? remote.holes.length : 0,
+    };
+  } catch (_) {
+    // fall through to golfapi.io direct (native only — blocked by CORS on web)
+  }
+
+  // 4. golfapi.io direct (native fallback only — CORS blocked on web)
   if (Platform.OS !== 'web') {
+    const apiId = courseId.startsWith('golfapiio_') ? courseId.slice('golfapiio_'.length) : courseId;
     try {
-      const remote = await fetchCourseHolesFromBackend(courseId);
-      await saveCourse(courseId, remote);
-      return {
-        course: remote,
-        cached: false,
-        teeOptions: getGpsTeeOptions(remote),
-        holeCount: Array.isArray(remote?.holes) ? remote.holes.length : 0,
-      };
+      const detail = await getCourseDetail(apiId);
+      if (detail) {
+        const course = { ...detail, holes: detail.holesData };
+        await saveCourse(courseId, course);
+        saveCourseToFirestore(courseId, course).catch(() => {});
+        return {
+          course,
+          cached: false,
+          teeOptions: getGpsTeeOptions(course),
+          holeCount: course.holes.length,
+        };
+      }
     } catch (_) {
       // fall through to mock
     }
   }
 
   const mockCourse = getMockGpsCourse(courseId);
-  if (!mockCourse) throw new Error('Course data not available for web preview.');
+  if (!mockCourse) {
+    if (Platform.OS === 'web') {
+      // On web, CORS blocks all API calls — return a shell so the GPS screen
+      // can still open. Tee/hole data will load on device.
+      return { course: null, cached: false, teeOptions: [], holeCount: 18 };
+    }
+    throw new Error('Course not found. Make sure EXPO_PUBLIC_GOLFAPI_IO_TOKEN is set.');
+  }
   await saveCourse(courseId, mockCourse);
   return {
     course: mockCourse,

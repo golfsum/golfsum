@@ -26,6 +26,8 @@ const GOLF_COURSE_API_URL = 'https://api.golfcourseapi.com/v1';
 const CACHE_KEY = '@GolfSum:CourseCache';
 const RECENT_COURSES_KEY = '@GolfSum:RecentCourses';
 const FAVORITE_COURSES_KEY = '@GolfSum:FavoriteCourses';
+const NEARBY_CACHE_KEY = '@GolfSum:NearbyCoursesCache';
+const NEARBY_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 const COURSE_SOURCE = 'GOLF_COURSE_API';
 const CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -361,6 +363,172 @@ export const searchCoursesByLocation = async (
   } catch (error) {
     logger.error('Error searching courses by location:', error);
     throw error;
+  }
+};
+
+interface NearbyCache {
+  lat: number;
+  lng: number;
+  radiusMiles: number;
+  cachedAt: number;
+  courses: GolfCourse[];
+}
+
+/**
+ * Search for golf courses near a GPS coordinate.
+ *
+ * Strategy (in order):
+ *   1. Local nearby cache (valid for 12 h, within 2 miles of last search point)
+ *   2. Locally cached CourseDetails filtered by distance
+ *   3. Firestore community catalog filtered by distance (cross-device)
+ *   4. API text search using reverse-geocoded city/state
+ *
+ * Results from step 4 are saved to both the local course cache and Firestore.
+ */
+export const searchCoursesNearby = async (
+  latitude: number,
+  longitude: number,
+  radiusMiles: number = 25
+): Promise<GolfCourse[]> => {
+  // 1. Nearby result cache (avoid hitting API repeatedly for same area)
+  try {
+    const raw = await Storage.getItem(NEARBY_CACHE_KEY);
+    if (raw) {
+      const cached: NearbyCache = JSON.parse(raw);
+      const age = Date.now() - cached.cachedAt;
+      const drift = calculateDistance(latitude, longitude, cached.lat, cached.lng);
+      if (age < NEARBY_CACHE_TTL_MS && drift < 2 && cached.radiusMiles >= radiusMiles) {
+        logger.debug(`✅ Nearby courses from local cache (${cached.courses.length} results, ${Math.round(age / 60000)} min old)`);
+        return cached.courses;
+      }
+    }
+  } catch {
+    // cache miss — continue
+  }
+
+  const allResults: Record<string, GolfCourse> = {};
+
+  // 2. Scan local CourseDetails cache for courses with known coordinates
+  try {
+    const raw = await Storage.getItem(CACHE_KEY);
+    if (raw) {
+      const cacheData: Record<string, CachedCourse> = JSON.parse(raw);
+      Object.values(cacheData).forEach(({ course }) => {
+        if (Number.isFinite(course.latitude) && Number.isFinite(course.longitude)) {
+          const dist = calculateDistance(latitude, longitude, course.latitude!, course.longitude!);
+          if (dist <= radiusMiles) {
+            allResults[course.id] = { ...course, distance: dist };
+          }
+        }
+      });
+      logger.debug(`📦 ${Object.keys(allResults).length} courses from local cache within ${radiusMiles} mi`);
+    }
+  } catch {
+    // ignore
+  }
+
+  // 3. Firestore community catalog (works across devices)
+  try {
+    const { getNearbyCommunityCourses } = await import('./courseCatalogService');
+    const firestoreCourses = await getNearbyCommunityCourses(latitude, longitude, radiusMiles);
+    firestoreCourses.forEach((c) => {
+      allResults[c.id] = { ...allResults[c.id], ...c };
+    });
+    logger.debug(`☁️ ${firestoreCourses.length} courses from Firestore catalog within ${radiusMiles} mi`);
+  } catch {
+    // ignore — offline or unauthenticated
+  }
+
+  // 4. API: reverse geocode → city/state → text search
+  if (API_KEY) {
+    try {
+      const geo = await reverseGeocode(latitude, longitude);
+      if (geo) {
+        logger.debug(`📍 Reverse geocoded to: ${geo.city}, ${geo.state}`);
+        const query = [geo.city, geo.state].filter(Boolean).join(', ');
+        const response = await fetchWithTimeout(
+          `${GOLF_COURSE_API_URL}/search?search_query=${encodeURIComponent(query)}`,
+          {
+            method: 'GET',
+            headers: { 'Authorization': getAuthHeaderValue(), 'Content-Type': 'application/json' },
+          }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          const apiCourses: GolfCourse[] = (data.courses || []).map((c: any) => ({
+            id: String(c.id),
+            name: normalizeCourseName(c.course_name || c.club_name || ''),
+            city: c.location?.city || '',
+            state: c.location?.state || '',
+            country: c.location?.country || 'United States',
+            holes: 18,
+            par: 72,
+            latitude: c.location?.latitude,
+            longitude: c.location?.longitude,
+          }));
+
+          // Filter by actual distance and save each to both caches
+          for (const course of apiCourses) {
+            if (Number.isFinite(course.latitude) && Number.isFinite(course.longitude)) {
+              course.distance = calculateDistance(latitude, longitude, course.latitude!, course.longitude!);
+              if (course.distance <= radiusMiles) {
+                allResults[course.id] = course;
+              }
+            } else {
+              // No coordinates from API — include in results but no distance sort
+              if (!allResults[course.id]) {
+                allResults[course.id] = course;
+              }
+            }
+          }
+
+          // Fire-and-forget: save each API result to Firestore for future cross-device lookup
+          apiCourses
+            .filter((c) => (c.distance ?? 999) <= radiusMiles)
+            .forEach((c) => {
+              saveToFirebase(c as unknown as CourseDetails, COURSE_SOURCE);
+            });
+
+          logger.debug(`🌐 API returned ${apiCourses.length} courses for "${query}"`);
+        }
+      }
+    } catch (err) {
+      logger.warn('Nearby API search failed:', err);
+    }
+  }
+
+  const sorted = Object.values(allResults).sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999));
+
+  // Persist nearby cache
+  try {
+    const entry: NearbyCache = { lat: latitude, lng: longitude, radiusMiles, cachedAt: Date.now(), courses: sorted };
+    await Storage.setItem(NEARBY_CACHE_KEY, JSON.stringify(entry));
+  } catch {
+    // ignore
+  }
+
+  logger.debug(`✅ searchCoursesNearby: ${sorted.length} total results within ${radiusMiles} mi`);
+  return sorted;
+};
+
+/**
+ * Reverse geocode a lat/lng to city + state using OpenStreetMap Nominatim.
+ * Free, no API key needed, reasonable rate limits for this use case.
+ */
+const reverseGeocode = async (lat: number, lng: number): Promise<{ city: string; state: string } | null> => {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`;
+    const response = await fetchWithTimeout(url, {
+      headers: { 'User-Agent': 'GolfSum/1.0' },
+    }, 5000);
+    if (!response.ok) return null;
+    const data = await response.json();
+    const addr = data.address || {};
+    const city = addr.city || addr.town || addr.village || addr.hamlet || addr.county || '';
+    const state = addr.state || '';
+    return city || state ? { city, state } : null;
+  } catch {
+    return null;
   }
 };
 

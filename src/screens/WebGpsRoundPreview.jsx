@@ -356,10 +356,13 @@ export function WebGpsRoundPreview({
 
   const isCompact = width < 700;
   const horizontalPadding = isCompact ? 16 : 28;
-  const mapAspectRatio = 0.58; // width / height
+  const mapAspectRatio = 0.58; // width / height (portrait — golf holes are tall)
   const maxMapWidth = isCompact ? 460 : 720;
   const mapWidth = Math.min(width - horizontalPadding * 2, maxMapWidth);
-  const mapHeight = Math.round(mapWidth / mapAspectRatio);
+  // Cap map height so it never overflows the screen.
+  // Fixed UI overhead: topBar(50) + holeHeader(48) + holeDots(44) + bottomBar(58) + yardagePanel(48) + margins(32)
+  const UI_OVERHEAD = 280;
+  const mapHeight = Math.min(Math.round(mapWidth / mapAspectRatio), height - UI_OVERHEAD);
   const holeImageUrl = useMemo(
     () => buildStaticMapUrl(currentHole, mapWidth, mapHeight),
     [currentHole, mapWidth, mapHeight]
@@ -681,8 +684,12 @@ export function WebGpsRoundPreview({
           <View style={styles.mapRightCol}>
             <View style={styles.distanceBadge}>
               <Text style={styles.distanceBadgeLabel}>{tournamentMode ? 'GPS' : 'PLAYING'}</Text>
-              <Text style={styles.distanceValue}>{tournamentMode ? yardages.center : Math.max(0, yardages.center + 2)}</Text>
-              <Text style={styles.distGps}>GPS {yardages.center}</Text>
+              <Text style={styles.distanceValue}>
+                {Number.isFinite(yardages.center)
+                  ? (tournamentMode ? yardages.center : Math.max(0, yardages.center + 2))
+                  : '--'}
+              </Text>
+              <Text style={styles.distGps}>GPS {Number.isFinite(yardages.center) ? yardages.center : '--'}</Text>
               <Text style={styles.distanceUnit}>yds</Text>
               {!tournamentMode && <Text style={styles.distanceAdjust}>W +4 · T -2</Text>}
             </View>
@@ -1037,6 +1044,7 @@ const styles = StyleSheet.create({
     top: 10,
     alignItems: 'flex-end',
     gap: 6,
+    zIndex: 10,
   },
   distanceBadge: {
     backgroundColor: colors.bg.secondary,
@@ -1139,7 +1147,8 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.14)',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 14,
     paddingHorizontal: 18,
   },
   mapTapPrompt: {
@@ -1147,12 +1156,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     textAlign: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 4,
+    overflow: 'hidden',
   },
   mapTapSubprompt: {
     color: 'rgba(255,255,255,0.74)',
     fontSize: 12,
-    marginTop: 6,
     textAlign: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+    paddingTop: 2,
+    overflow: 'hidden',
   },
   shotRow: {
     position: 'absolute',
@@ -1212,7 +1232,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 10,
     right: 10,
-    bottom: 70,
+    bottom: 30,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.82)',

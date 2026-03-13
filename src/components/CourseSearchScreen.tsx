@@ -15,7 +15,6 @@ import { formatCourseName } from '../utils/courseName';
 import * as Location from 'expo-location';
 import {
   searchCourses,
-  searchCoursesWithFallback,
   searchCoursesByLocation,
   calculateDistance,
   getRecentCourses,
@@ -32,6 +31,11 @@ import {
   searchGolfCoursesByName,
   OSMGolfCourse,
 } from '../services/openStreetMapService';
+import {
+  resolveOsmCourseToGolfApiIo,
+  searchCoursesByName as golfApiIoSearch,
+  fetchCourseAsDetails as golfApiIoFetchDetails,
+} from '../services/golfApiIoService';
 import { findCommunityCoursesByName } from '../services/courseCatalogService';
 import type { SavedRound } from '../types';
 import { getDefaultProfile } from '../types';
@@ -393,18 +397,17 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
 
       try {
         const setup = await loadGpsRoundSetup(resolvedCourseId);
-        const defaultTee = setup.teeOptions[0]?.name || 'Blue';
+        const defaultTee = setup.teeOptions[0]?.name || '';
         setGpsTeeOptions(setup.teeOptions);
         setSelectedGpsTee(defaultTee);
         setGpsHoleCount(setup.holeCount || 18);
       } catch (err) {
-        setGpsSetupVisible(false);
-        logger.error('Error loading GPS round setup:', err);
-        const msg = err instanceof Error ? err.message : 'Unable to load tee box data.';
-        if (Platform.OS === 'web') {
-          window.alert(`GPS Setup: ${msg}`);
-        } else {
-          Alert.alert('GPS Setup', msg);
+        logger.warn('GPS tee data unavailable — continuing without tee options:', err);
+        // On web, CORS blocks API calls so tee data can't load.
+        // Keep the modal open so the user can still start the round.
+        if (Platform.OS !== 'web') {
+          setGpsSetupVisible(false);
+          Alert.alert('GPS Setup', err instanceof Error ? err.message : 'Unable to load tee box data.');
         }
       } finally {
         setGpsSetupLoading(false);
@@ -414,30 +417,37 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
 
   const handleOsmGpsRoundPress = (course: OSMGolfCourse) => {
     if (!onGpsRoundStart) return;
-    const mockRoute = getMockGpsRoute(course.name);
-    if (!mockRoute) {
-      Alert.alert('GPS Preview', 'GPS preview is only mocked for Pebble Beach right now.');
-      return;
-    }
     handleStartNewSelection(async () => {
       setGpsSetupVisible(true);
       setGpsSetupLoading(true);
-      setGpsSetupCourse({ courseId: mockRoute.courseId, courseName: mockRoute.courseName });
+      setGpsSetupCourse({ courseId: course.id, courseName: course.name });
       setGpsStartingHole(1);
       setGpsTournamentMode(false);
       setGpsTeeOptions([]);
       setSelectedGpsTee('');
 
       try {
-        const setup = await loadGpsRoundSetup(mockRoute.courseId);
-        const defaultTee = setup.teeOptions[0]?.name || 'Blue';
+        // Resolve OSM course to golfapi.io course for GPS hole data
+        const match = await resolveOsmCourseToGolfApiIo(
+          course.name,
+          course.latitude,
+          course.longitude
+        );
+        const resolvedId = match?.id ?? course.id;
+        const resolvedName = match?.name ?? course.name;
+        setGpsSetupCourse({ courseId: resolvedId, courseName: resolvedName });
+
+        const setup = await loadGpsRoundSetup(resolvedId);
+        const defaultTee = setup.teeOptions[0]?.name || '';
         setGpsTeeOptions(setup.teeOptions);
         setSelectedGpsTee(defaultTee);
         setGpsHoleCount(setup.holeCount || 18);
       } catch (err) {
-        setGpsSetupVisible(false);
-        logger.error('Error loading GPS preview setup:', err);
-        Alert.alert('GPS Setup', err instanceof Error ? err.message : 'Unable to load tee box data.');
+        logger.warn('GPS tee data unavailable — continuing without tee options:', err);
+        if (Platform.OS !== 'web') {
+          setGpsSetupVisible(false);
+          Alert.alert('GPS Setup', err instanceof Error ? err.message : 'Unable to load tee box data.');
+        }
       } finally {
         setGpsSetupLoading(false);
       }
@@ -659,40 +669,36 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
         } else {
           setOsmResults(osmCourses);
           logger.debug(`✅ Showing ${osmCourses.length} nearby courses from OSM`);
+          // Warm golfapi.io cache for top nearby courses in the background
+          osmCourses.slice(0, 5).forEach((c) =>
+            golfApiIoSearch(c.name, c.latitude, c.longitude).catch(() => {})
+          );
         }
       } catch (osmError) {
-        logger.error('OSM nearby search failed:', osmError);
-        logger.debug('⚠️ OSM unavailable, falling back to search by location name');
-        
-        // Show brief message that we're trying alternative method
-        setError('Finding nearby courses using alternative method...');
-        
-        // Fallback: Get location name and search GolfCourseAPI
+        logger.warn('OSM nearby search failed — falling back to golfapi.io:', osmError);
+        setError('Finding nearby courses...');
+
         try {
-          const [geocode] = await Location.reverseGeocodeAsync({ latitude, longitude });
-          if (geocode) {
-            const city = geocode.city || geocode.subregion || '';
-            const state = geocode.region || '';
-            
-            if (city && state) {
-              logger.debug(`🔍 Searching GolfCourseAPI for: ${city}, ${state}`);
-              const apiResults = await searchCoursesByLocation(latitude, longitude, city, state);
-              
-              if (apiResults.length > 0) {
-                setNearbyCourses(apiResults);
-                setError(null); // Clear error message
-                logger.debug(`✅ Found ${apiResults.length} courses from GolfCourseAPI (fallback)`);
-              } else {
-                setError('No courses found nearby. Try searching by name.');
-              }
-            } else {
-              throw new Error('Unable to determine location');
-            }
+          const apiResults = await golfApiIoSearch('golf', latitude, longitude);
+          if (apiResults.length > 0) {
+            // Map golfapi.io results to OSMGolfCourse shape for display
+            const mapped: OSMGolfCourse[] = apiResults.map((c) => ({
+              id: `golfapiio_${c.id}`,
+              name: c.name,
+              latitude: c.latitude,
+              longitude: c.longitude,
+              city: c.city,
+              country: c.country,
+              holes: c.holes,
+            }));
+            setOsmResults(mapped);
+            setError(null);
+            logger.debug(`✅ golfapi.io fallback: ${mapped.length} nearby courses`);
           } else {
-            throw new Error('Unable to geocode location');
+            setError('No courses found nearby. Try searching by name.');
           }
         } catch (fallbackError) {
-          logger.error('Fallback search also failed:', fallbackError);
+          logger.error('golfapi.io fallback also failed:', fallbackError);
           setError('Unable to find nearby courses. Please try searching by name instead.');
         }
       }
@@ -754,25 +760,28 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
     setError(null);
 
     try {
-      logger.debug(`🔍 Fetching details for: "${osmCourse.name}" from GolfCourseAPI...`);
-      
-      // Smart search: tries multiple name variants (full name, stripped suffixes, etc.)
-      const apiResults = await searchCoursesWithFallback(
+      logger.debug(`🔍 Fetching details for: "${osmCourse.name}" from golfapi.io...`);
+
+      const match = await resolveOsmCourseToGolfApiIo(
         osmCourse.name,
         osmCourse.latitude,
         osmCourse.longitude
       );
-      
-      if (apiResults.length > 0) {
-        // Found matching course in API
-        const bestMatch = apiResults[0]; // Take the closest/best match
-        logger.debug(`✅ Found course in API: "${bestMatch.name}" (id: ${bestMatch.id})`);
-        
-        // Fetch full details, save to catalog/cache, then navigate
-        await proceedWithCourseSelection(bestMatch.id);
+
+      if (match) {
+        logger.debug(`✅ Found course on golfapi.io: "${match.name}" (id: ${match.id})`);
+        const details = await golfApiIoFetchDetails(match.id);
+        if (details) {
+          if (onCommunityCourseSelected) {
+            onCommunityCourseSelected(details);
+          } else {
+            onCourseSelected(details.id);
+          }
+        } else {
+          await proceedWithCourseSelection(match.id);
+        }
       } else {
-        // Not found in API - show manual entry option
-      logger.debug(`⚠️ Course "${osmCourse.name}" not found in GolfCourseAPI after trying all variants`);
+        logger.debug(`⚠️ Course "${osmCourse.name}" not found on golfapi.io`);
         
         Alert.alert(
           FEEDBACK_COPY.alerts.courseNotInDatabaseTitle,
@@ -856,7 +865,7 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
           </Text>
         )}
       </View>
-      {onGpsRoundStart && getMockGpsRoute(course.name) && (
+      {onGpsRoundStart && (
         <TouchableOpacity
           style={styles.gpsStartButton}
           onPress={() => handleOsmGpsRoundPress(course)}

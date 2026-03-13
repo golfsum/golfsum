@@ -185,3 +185,61 @@ export const findCommunityCoursesByName = async (
     .filter(Boolean)
     .map((fields: any) => convertFromFirestoreFields(fields) as CommunityCourse);
 };
+
+/**
+ * Fetch all courses from Firestore that have coordinates and filter by distance.
+ * Firestore has no native geo query, so we fetch the most recently updated
+ * courses (up to 100) and filter client-side.
+ */
+export const getNearbyCommunityCourses = async (
+  lat: number,
+  lng: number,
+  radiusMiles: number = 25
+): Promise<CommunityCourse[]> => {
+  if (!isAuthenticated()) return [];
+
+  const haversine = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 3959;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  try {
+    const response = await fetchWithTimeout(`${FIRESTORE_BASE_URL}/${COURSES_COLLECTION}:runQuery`, {
+      method: 'POST',
+      headers: await getHeaders(),
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId: COURSES_COLLECTION }],
+          orderBy: [{ field: { fieldPath: 'updatedAt' }, direction: 'DESCENDING' }],
+          limit: 100,
+        },
+      }),
+    });
+
+    if (!response.ok) return [];
+
+    const data = await response.json();
+    if (!Array.isArray(data)) return [];
+
+    return data
+      .map((entry: any) => entry.document?.fields)
+      .filter(Boolean)
+      .map((fields: any) => convertFromFirestoreFields(fields) as CommunityCourse)
+      .filter((c) => Number.isFinite(c.latitude) && Number.isFinite(c.longitude))
+      .map((c) => ({
+        ...c,
+        distance: haversine(lat, lng, c.latitude!, c.longitude!),
+      }))
+      .filter((c) => c.distance <= radiusMiles)
+      .sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999));
+  } catch {
+    return [];
+  }
+};
