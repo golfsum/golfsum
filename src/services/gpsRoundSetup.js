@@ -56,27 +56,13 @@ export async function loadGpsRoundSetup(courseId) {
     };
   }
 
-  // 3. Firebase Function → golfapi.io (server-side, works on all platforms including web)
-  try {
-    const remote = await fetchCourseHolesFromBackend(courseId);
-    await saveCourse(courseId, remote);
-    saveCourseToFirestore(courseId, remote).catch(() => {}); // fire-and-forget
-    return {
-      course: remote,
-      cached: false,
-      teeOptions: getGpsTeeOptions(remote),
-      holeCount: Array.isArray(remote?.holes) ? remote.holes.length : 0,
-    };
-  } catch (_) {
-    // fall through to golfapi.io direct (native only — blocked by CORS on web)
-  }
-
-  // 4. golfapi.io direct (native fallback only — CORS blocked on web)
+  // 3. golfapi.io direct (primary source — native only due to CORS)
+  //    Try this BEFORE the Firebase Function since it doesn't require Firebase config.
   if (Platform.OS !== 'web') {
     const apiId = courseId.startsWith('golfapiio_') ? courseId.slice('golfapiio_'.length) : courseId;
     try {
       const detail = await getCourseDetail(apiId);
-      if (detail) {
+      if (detail && detail.holesData && detail.holesData.length > 0) {
         const course = { ...detail, holes: detail.holesData };
         await saveCourse(courseId, course);
         saveCourseToFirestore(courseId, course).catch(() => {});
@@ -88,8 +74,23 @@ export async function loadGpsRoundSetup(courseId) {
         };
       }
     } catch (_) {
-      // fall through to mock
+      // fall through to Firebase Function
     }
+  }
+
+  // 4. Firebase Function → server-side fetch (works on all platforms including web)
+  try {
+    const remote = await fetchCourseHolesFromBackend(courseId);
+    await saveCourse(courseId, remote);
+    saveCourseToFirestore(courseId, remote).catch(() => {}); // fire-and-forget
+    return {
+      course: remote,
+      cached: false,
+      teeOptions: getGpsTeeOptions(remote),
+      holeCount: Array.isArray(remote?.holes) ? remote.holes.length : 0,
+    };
+  } catch (_) {
+    // fall through to shell
   }
 
   // Course not found in any source — return a shell with standard tee options
@@ -99,11 +100,9 @@ export async function loadGpsRoundSetup(courseId) {
     course: null,
     cached: false,
     teeOptions: [
-      { name: 'Black', color: '#1F2937', totalYards: 0 },
-      { name: 'Blue', color: '#3B82F6', totalYards: 0 },
-      { name: 'White', color: '#F9FAFB', totalYards: 0 },
-      { name: 'Yellow', color: '#F59E0B', totalYards: 0 },
-      { name: 'Red', color: '#EF4444', totalYards: 0 },
+      { name: 'Back', color: '#1F2937', totalYards: 0 },
+      { name: 'Middle', color: '#F9FAFB', totalYards: 0 },
+      { name: 'Front', color: '#EF4444', totalYards: 0 },
     ],
     holeCount: 18,
   };

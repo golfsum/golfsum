@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getCourse, saveCourse } from '../services/courseCache';
 import { fetchCourseHolesFromBackend } from '../services/golfApi';
+import { getCourseDetail } from '../services/golfApiIoService';
 import { requestGpsPermission, watchUserPosition } from '../services/gps';
 import { haversineYards } from '../services/haversine';
 import { MAPBOX_PUBLIC_TOKEN } from '../config/mapbox';
@@ -656,20 +657,38 @@ export function GpsRoundScreen({
     setLoading(true);
     setError('');
     try {
+      // 1. Local device cache
       const local = await getCourse(courseId);
       if (local) {
         setCourse(local);
         setCached(true);
-      } else {
-        try {
-          const remote = await fetchCourseHolesFromBackend(courseId);
-          await saveCourse(courseId, remote);
-          setCourse(remote);
+        return;
+      }
+
+      // 2. golfapi.io direct (native only — CORS-blocked on web)
+      const apiId = courseId.startsWith('golfapiio_') ? courseId.slice('golfapiio_'.length) : courseId;
+      try {
+        const detail = await getCourseDetail(apiId);
+        if (detail && detail.holesData && detail.holesData.length > 0) {
+          const gpsData = { ...detail, holes: detail.holesData };
+          await saveCourse(courseId, gpsData);
+          setCourse(gpsData);
           setCached(false);
-        } catch (_remoteErr) {
-          // No course found anywhere — continue with null so GPS round still starts.
-          setCached(false);
+          return;
         }
+      } catch (_) {
+        // fall through to Firebase Function
+      }
+
+      // 3. Firebase Function (server-side fallback)
+      try {
+        const remote = await fetchCourseHolesFromBackend(courseId);
+        await saveCourse(courseId, remote);
+        setCourse(remote);
+        setCached(false);
+      } catch (_remoteErr) {
+        // No course found anywhere — continue with null so GPS round still starts.
+        setCached(false);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load course');

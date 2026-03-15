@@ -3,8 +3,12 @@
 const iosGoogleClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
 const allowCleartextTraffic = process.env.EXPO_PUBLIC_ALLOW_CLEARTEXT_TRAFFIC === 'true';
 const mapboxDownloadToken = process.env.MAPBOX_DOWNLOADS_TOKEN || process.env.MAPBOX_DOWNLOAD_TOKEN || '';
+// Only enable @rnmapbox/maps plugin during EAS native builds.
+// The config plugin crashes on web/local dev because it expects native
+// build artifacts (RNMapboxMapsImpl) that don't exist outside of prebuild.
+const isEasBuild = !!process.env.EAS_BUILD;
 
-if (mapboxDownloadToken) {
+if (mapboxDownloadToken && isEasBuild) {
   process.env.RNMAPBOX_MAPS_DOWNLOAD_TOKEN = mapboxDownloadToken;
 }
 
@@ -93,7 +97,7 @@ module.exports = function(env) {
       'expo-notifications',
       '@react-native-community/datetimepicker',
       'expo-apple-authentication',
-      ...(mapboxDownloadToken ? ['@rnmapbox/maps'] : []),
+      ...(mapboxDownloadToken && isEasBuild ? ['@rnmapbox/maps'] : []),
     ],
   };
 };
