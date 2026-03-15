@@ -2,7 +2,7 @@
 // and auto-registers the reversed client ID as a URL scheme (required for Google Sign-In on iOS).
 const iosGoogleClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
 const allowCleartextTraffic = process.env.EXPO_PUBLIC_ALLOW_CLEARTEXT_TRAFFIC === 'true';
-const mapboxDownloadToken = process.env.MAPBOX_DOWNLOAD_TOKEN || '';
+const mapboxDownloadToken = process.env.MAPBOX_DOWNLOADS_TOKEN || process.env.MAPBOX_DOWNLOAD_TOKEN || '';
 
 if (mapboxDownloadToken) {
   process.env.RNMAPBOX_MAPS_DOWNLOAD_TOKEN = mapboxDownloadToken;

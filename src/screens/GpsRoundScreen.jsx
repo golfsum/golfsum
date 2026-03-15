@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getCourse, saveCourse } from '../services/courseCache';
 import { fetchCourseHolesFromBackend } from '../services/golfApi';
@@ -11,7 +12,6 @@ import { HoleDots } from '../components/gps/HoleDots';
 import { YardagePanel } from '../components/gps/YardagePanel';
 import GpsOverlay from '../components/gps/GpsOverlay';
 import { getUserProfile } from '../services/userService';
-import { getMockGpsCourse } from '../services/gpsMockCourses';
 import { getNativeHoleCameraConfig, isCoordWithinBounds } from '../services/mapFraming';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { getElevationFeet } from '../services/weatherService';
@@ -19,7 +19,22 @@ import { endLiveActivity, isLiveActivitySupported, upsertLiveActivity } from '..
 import { getRounds } from '../services/roundsService';
 import { buildInRoundNudge, buildInRoundNudgeContext } from '../services/inRoundNudgeService';
 import { getRecentHoleNote } from '../services/holeNotesService';
+import { fetchCourseStats, getSuggestedClub } from '../services/courseStatsService';
+import { ClubHistorySheet } from '../components/gps/ClubHistorySheet';
+import { getCurrentUser } from '../services/firebaseAuthService';
 import { colors, radius, spacing, typography } from '../theme/tokens';
+import {
+  buildShotLineCoords,
+  distanceYardsBetween,
+  getBestApproachDistance,
+  getPar5Marker2Info,
+  getSafeModeDistance,
+  lineMidpoint,
+  pointAtDistanceAlongLine,
+  pointAtDistanceFromEnd,
+} from '../services/shotLineUtils';
+import { LayupMarkerView } from '../components/gps/LayupMarkerView';
+import { ModeToggle } from '../components/gps/ModeToggle';
 
 let MapboxGL = null;
 try {
@@ -189,8 +204,8 @@ function pickSuggestedClub(targetYards, userClubs, holeNoteClub) {
 
   // If a hole note mentions a specific club, prefer it if it's in the user's bag
   if (holeNoteClub) {
-    const noteClubLower = holeNoteClub.toLowerCase();
-    const noteMatch = entries.find((e) => e.club.toLowerCase() === noteClubLower);
+    const noteNorm = holeNoteClub.toLowerCase().replace(/[-\s]/g, '');
+    const noteMatch = entries.find((e) => e.club.toLowerCase().replace(/[-\s]/g, '') === noteNorm);
     if (noteMatch) return { ...noteMatch, fromNote: true };
   }
 
@@ -202,10 +217,35 @@ function pickSuggestedClub(targetYards, userClubs, holeNoteClub) {
 
 const CLUB_PATTERN = /\b(driver|3w|3-wood|3 wood|5w|5-wood|5 wood|7w|7-wood|7 wood|2h|3h|4h|5h|2-hybrid|3-hybrid|4-hybrid|5-hybrid|2 hybrid|3 hybrid|4 hybrid|5 hybrid|1i|2i|3i|4i|5i|6i|7i|8i|9i|1-iron|2-iron|3-iron|4-iron|5-iron|6-iron|7-iron|8-iron|9-iron|1 iron|2 iron|3 iron|4 iron|5 iron|6 iron|7 iron|8 iron|9 iron|pw|pitching wedge|gw|gap wedge|52|50|aw|sw|sand wedge|54|56|lw|lob wedge|58|60)\b/i;
 
+// Normalise verbose club names from notes to the short keys used in clubDistances
+// e.g. "7 iron" → "7i", "pitching wedge" → "PW", "3-wood" → "3W", "driver" → "Driver"
+function normalizeClubName(raw) {
+  if (!raw) return null;
+  const s = raw.trim().toLowerCase();
+  if (s === 'driver') return 'Driver';
+  // "7 iron" / "7-iron" → "7i"
+  const ironMatch = s.match(/^(\d)\s*[-\s]?\s*iron$/);
+  if (ironMatch) return `${ironMatch[1]}i`;
+  // "3 wood" / "3-wood" → "3W"
+  const woodMatch = s.match(/^(\d)\s*[-\s]?\s*wood$/);
+  if (woodMatch) return `${woodMatch[1]}W`;
+  // "3 hybrid" / "3-hybrid" → "3H"
+  const hybridMatch = s.match(/^(\d)\s*[-\s]?\s*hybrid$/);
+  if (hybridMatch) return `${hybridMatch[1]}H`;
+  // "pitching wedge" → "PW", "gap wedge" → "GW", "sand wedge" → "SW", "lob wedge" → "LW"
+  const wedgeMap = { pitching: 'PW', gap: 'GW', sand: 'SW', lob: 'LW' };
+  const wedgeMatch = s.match(/^(pitching|gap|sand|lob)\s+wedge$/);
+  if (wedgeMatch) return wedgeMap[wedgeMatch[1]];
+  // Degree-based wedges: "52" → "52", "56" → "56"
+  if (/^\d{2}$/.test(s)) return s;
+  // Already short form — uppercase first letter: "pw" → "PW", "7i" → "7i", "3w" → "3W"
+  return raw.toUpperCase();
+}
+
 function extractClubFromNote(noteText) {
   if (!noteText) return null;
   const match = noteText.match(CLUB_PATTERN);
-  return match ? match[1] : null;
+  return match ? normalizeClubName(match[1]) : null;
 }
 
 async function getGpsWeather(lat, lng) {
@@ -323,6 +363,7 @@ export function GpsRoundScreen({
   const frameBoundsRef = useRef(null);
   const lastMapTapRef = useRef(0);
   const [userClubs, setUserClubs] = useState(null);
+  const [activeBag, setActiveBag] = useState(null); // BagItem[] for club rail
   const [liveLie, setLiveLie] = useState(LIVE_LIE_DEFAULT);
   const [overlayState, setOverlayState] = useState({ anySheet: false, shotFlow: 'idle', selectedClub: null });
   const [weather, setWeather] = useState(null);
@@ -337,8 +378,33 @@ export function GpsRoundScreen({
   const [showGreenSheet, setShowGreenSheet] = useState(false);
   const [recentRounds, setRecentRounds] = useState([]);
   const [holeNoteClub, setHoleNoteClub] = useState(null);
+  const [courseStats, setCourseStats] = useState({});
+  const [showClubHistory, setShowClubHistory] = useState(false);
+  // Shot line / lay-up marker state
+  const [shotLineMode, setShotLineMode] = useState('scoring'); // 'scoring' | 'safe'
+  const [layup1Position, setLayup1Position] = useState(null);
+  const [layup1DistFromTee, setLayup1DistFromTee] = useState(null);
+  const [layup1DistToNext, setLayup1DistToNext] = useState(null);
+  const [layup2Position, setLayup2Position] = useState(null);
+  const [layup2DistFromM1, setLayup2DistFromM1] = useState(null);
+  const [layup2DistToGreen, setLayup2DistToGreen] = useState(null);
+  const [layup2Type, setLayup2Type] = useState('layup'); // 'layup' | 'go_for_it'
+  const [approachClub, setApproachClub] = useState(null);
   const lieToastTimeoutRef = useRef(null);
   const roundStartedAtRef = useRef(Date.now());
+
+  // Dynamic map height — fills exact available space without scrolling on any device.
+  // Use onLayout on each zone to verify these constants on physical hardware,
+  // then remove the onLayout handlers once confirmed.
+  const { height: screenHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const NAV_BAR_HEIGHT = 120;    // topBar(~46) + HoleHeader(~30) + HoleDots(~44)
+  const YARDAGE_BAR_HEIGHT = 64; // YardagePanel
+  const HELPER_BAR_HEIGHT = 28;  // helperBar hint text
+  const mapHeight = Math.max(
+    200,
+    screenHeight - insets.top - insets.bottom - NAV_BAR_HEIGHT - YARDAGE_BAR_HEIGHT - HELPER_BAR_HEIGHT
+  );
 
   const currentHole = course?.holes?.[currentHoleIndex] || null;
   const selectedTee = useMemo(() => {
@@ -377,6 +443,14 @@ export function GpsRoundScreen({
   const suggestedClub = useMemo(
     () => pickSuggestedClub(tournamentMode ? centerYards : playingDistance?.adjustedYards, userClubs, holeNoteClub),
     [centerYards, holeNoteClub, playingDistance?.adjustedYards, tournamentMode, userClubs]
+  );
+  // Per-hole club suggestion (data-backed or distance-based fallback)
+  const holeNumber = (currentHole?.hole || currentHoleIndex + 1);
+  const holeDoc = courseStats[String(holeNumber)] || null;
+  const suggestion = useMemo(
+    () => getSuggestedClub(holeDoc, suggestedClub?.club || null, suggestedClub?.yards || null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [holeNumber, holeDoc, suggestedClub?.club, suggestedClub?.yards]
   );
   const currentHoleShots = loggedShotsByHole[currentHoleIndex] || [];
   const currentHoleSummary = holeSummariesByHole[currentHoleIndex] || { firstPuttDistance: null, pinLocation: 'middle', putts: null };
@@ -427,6 +501,99 @@ export function GpsRoundScreen({
     weather,
     showGreenSheet,
   ]);
+
+  // ---------------------------------------------------------------------------
+  // Shot line and lay-up marker geometry
+  // ---------------------------------------------------------------------------
+
+  /** [lng, lat] pairs, tee-first. null when tee/green POIs are missing. */
+  const shotLineCoords = useMemo(
+    () => buildShotLineCoords(teeBack, greenCenter, currentHole?.fairwayCenterline),
+    [currentHole?.fairwayCenterline, greenCenter, teeBack],
+  );
+
+  /** GeoJSON FeatureCollection for the dashed shot line layer. */
+  const shotLineGeoJSON = useMemo(() => {
+    if (!shotLineCoords) return null;
+    return {
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: shotLineCoords },
+        properties: { kind: 'shot-line' },
+      }],
+    };
+  }, [shotLineCoords]);
+
+  /** Derived: true once the tee shot has been logged on this hole. */
+  const teeShottLogged = currentHoleShots.length > 0;
+
+  /** Par 3 badge position — midpoint of the shot line. */
+  const par3BadgeCoord = useMemo(
+    () => (currentHole?.par === 3 && shotLineCoords ? lineMidpoint(shotLineCoords) : null),
+    [currentHole?.par, shotLineCoords],
+  );
+
+  /** Par 3 yardage to pin (or green center). */
+  const par3DistToPin = useMemo(() => {
+    if (currentHole?.par !== 3 || !teeBack || !greenCenter) return null;
+    return Math.round(distanceYardsBetween(
+      [teeBack.Longitude, teeBack.Latitude],
+      [greenCenter.Longitude, greenCenter.Latitude],
+    ));
+  }, [currentHole?.par, greenCenter, teeBack]);
+
+  // Initialise / re-initialise lay-up markers whenever the hole or mode changes.
+  useEffect(() => {
+    if (!shotLineCoords || !teeBack || !greenCenter || currentHole?.par === 3) {
+      setLayup1Position(null);
+      setLayup2Position(null);
+      return;
+    }
+
+    const teeCoord  = [teeBack.Longitude, teeBack.Latitude];
+    const greenCoord = [greenCenter.Longitude, greenCenter.Latitude];
+
+    let m1Pos;
+    if (shotLineMode === 'scoring') {
+      const { distanceFromGreen, club } = getBestApproachDistance(userClubs);
+      setApproachClub(club);
+      m1Pos = pointAtDistanceFromEnd(shotLineCoords, distanceFromGreen);
+    } else {
+      setApproachClub(null);
+      const safeYards = getSafeModeDistance(userClubs);
+      m1Pos = pointAtDistanceAlongLine(shotLineCoords, safeYards);
+    }
+
+    setLayup1Position(m1Pos);
+    setLayup1DistFromTee(Math.round(distanceYardsBetween(teeCoord, m1Pos)));
+
+    if (currentHole?.par === 5) {
+      const { reachable } = getPar5Marker2Info(m1Pos, greenCoord, userClubs);
+      let m2Pos;
+      if (reachable) {
+        setLayup2Type('go_for_it');
+        m2Pos = greenCoord;
+      } else {
+        setLayup2Type('layup');
+        const { distanceFromGreen } = getBestApproachDistance(userClubs);
+        m2Pos = pointAtDistanceFromEnd(shotLineCoords, distanceFromGreen);
+      }
+      setLayup2Position(m2Pos);
+      setLayup1DistToNext(Math.round(distanceYardsBetween(m1Pos, m2Pos)));
+      setLayup2DistFromM1(Math.round(distanceYardsBetween(m1Pos, m2Pos)));
+      setLayup2DistToGreen(Math.round(distanceYardsBetween(m2Pos, greenCoord)));
+    } else {
+      // Par 4: Marker 1's "distToNext" is the distance to the green
+      setLayup2Position(null);
+      setLayup1DistToNext(Math.round(distanceYardsBetween(m1Pos, greenCoord)));
+    }
+
+  }, [currentHole?.par, currentHoleIndex, shotLineCoords, shotLineMode, teeBack, greenCenter, userClubs]);
+
+  // ---------------------------------------------------------------------------
+  // Live activity, GPS, and other existing effects
+  // ---------------------------------------------------------------------------
 
   useEffect(() => {
     let cancelled = false;
@@ -499,11 +666,8 @@ export function GpsRoundScreen({
           await saveCourse(courseId, remote);
           setCourse(remote);
           setCached(false);
-        } catch (remoteErr) {
-          const mockCourse = getMockGpsCourse(courseId);
-          if (!mockCourse) throw remoteErr;
-          await saveCourse(courseId, mockCourse);
-          setCourse(mockCourse);
+        } catch (_remoteErr) {
+          // No course found anywhere — continue with null so GPS round still starts.
           setCached(false);
         }
       }
@@ -518,6 +682,15 @@ export function GpsRoundScreen({
     loadCourse();
   }, [loadCourse]);
 
+  // Fetch per-hole club history for the suggestion engine
+  useEffect(() => {
+    const uid = getCurrentUser()?.uid;
+    if (!uid || !courseId || !teeColor) return;
+    fetchCourseStats(uid, courseId, teeColor)
+      .then(stats => setCourseStats(stats))
+      .catch(() => {});
+  }, [courseId, teeColor]);
+
   useEffect(() => {
     setCurrentHoleIndex(Math.max(0, (startingHole || 1) - 1));
   }, [startingHole, courseId]);
@@ -526,8 +699,11 @@ export function GpsRoundScreen({
     let active = true;
     getUserProfile()
       .then((profile) => {
-        if (active) {
-          setUserClubs(profile?.clubDistances ?? null);
+        if (!active) return;
+        setUserClubs(profile?.clubDistances ?? null);
+        const bag = profile?.clubBag;
+        if (Array.isArray(bag) && bag.length > 0) {
+          setActiveBag(bag.filter((item) => item.enabled));
         }
       })
       .catch(() => {
@@ -565,7 +741,7 @@ export function GpsRoundScreen({
         setHoleNoteClub(note ? extractClubFromNote(note.text) : null);
       })
       .catch(() => {
-        if (!active) setHoleNoteClub(null);
+        if (active) setHoleNoteClub(null);
       });
     return () => {
       active = false;
@@ -826,7 +1002,7 @@ export function GpsRoundScreen({
     );
   }
 
-  if (error || !course?.holes?.length) {
+  if (error) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.fallbackCenter}>
@@ -885,9 +1061,9 @@ export function GpsRoundScreen({
       </View>
 
       <HoleHeader hole={currentHole} hazardTags={hazardTags} liveLie={liveLie} />
-      <HoleDots holes={course.holes} currentHole={currentHoleIndex} onSelect={handleSelectHole} />
+      <HoleDots holes={course?.holes || []} currentHole={currentHoleIndex} onSelect={handleSelectHole} />
 
-      <View style={styles.mapWrap}>
+      <View style={[styles.mapWrap, { height: mapHeight }]}>
         <MapboxGL.MapView
           onPress={handleMapPress}
           onLongPress={(event) => overlayRef.current?.handleLongPress(event)}
@@ -907,6 +1083,92 @@ export function GpsRoundScreen({
               <MapboxGL.CircleLayer id="user" filter={['==', ['get', 'kind'], 'user']} style={stylesMap.user} />
             </MapboxGL.ShapeSource>
           )}
+
+          {/* Dashed shot-planning line — visible until tee shot is logged */}
+          {shotLineGeoJSON && !teeShottLogged && (
+            <MapboxGL.ShapeSource id="shot-line-src" shape={shotLineGeoJSON}>
+              <MapboxGL.LineLayer
+                id="shot-line-layer"
+                style={{
+                  lineColor: 'rgba(255,255,255,0.45)',
+                  lineWidth: 2,
+                  lineDasharray: [6, 4],
+                }}
+              />
+            </MapboxGL.ShapeSource>
+          )}
+
+          {/* Lay-up Marker 1 — par 4 and par 5 */}
+          {layup1Position && !teeShottLogged && currentHole?.par !== 3 && (
+            <MapboxGL.PointAnnotation
+              id="layup1"
+              coordinate={layup1Position}
+              draggable
+              onDrag={(e) => {
+                const snapped = e.geometry.coordinates;
+                if (!shotLineCoords) return;
+                setLayup1Position(snapped);
+                const teeCoord = teeBack ? [teeBack.Longitude, teeBack.Latitude] : snapped;
+                const greenCoord = greenCenter ? [greenCenter.Longitude, greenCenter.Latitude] : snapped;
+                setLayup1DistFromTee(Math.round(distanceYardsBetween(teeCoord, snapped)));
+                if (currentHole?.par === 5 && layup2Position) {
+                  setLayup1DistToNext(Math.round(distanceYardsBetween(snapped, layup2Position)));
+                } else {
+                  setLayup1DistToNext(Math.round(distanceYardsBetween(snapped, greenCoord)));
+                }
+              }}
+            >
+              <LayupMarkerView
+                distFromTee={layup1DistFromTee}
+                distToNext={layup1DistToNext}
+                nextLabel={currentHole?.par === 5 ? 'to M2' : 'to pin'}
+                colour="white"
+                mode={shotLineMode}
+                approachClub={shotLineMode === 'scoring' ? approachClub : null}
+              />
+            </MapboxGL.PointAnnotation>
+          )}
+
+          {/* Lay-up Marker 2 — par 5 only */}
+          {layup2Position && !teeShottLogged && currentHole?.par === 5 && (
+            <MapboxGL.PointAnnotation
+              id="layup2"
+              coordinate={layup2Position}
+              draggable
+              onDrag={(e) => {
+                const snapped = e.geometry.coordinates;
+                setLayup2Position(snapped);
+                const greenCoord = greenCenter ? [greenCenter.Longitude, greenCenter.Latitude] : snapped;
+                setLayup2DistFromM1(layup1Position ? Math.round(distanceYardsBetween(layup1Position, snapped)) : null);
+                setLayup1DistToNext(layup1Position ? Math.round(distanceYardsBetween(layup1Position, snapped)) : null);
+                setLayup2DistToGreen(Math.round(distanceYardsBetween(snapped, greenCoord)));
+              }}
+            >
+              <LayupMarkerView
+                distFromTee={layup2DistFromM1}
+                distToNext={layup2DistToGreen}
+                nextLabel="to pin"
+                colour="gold"
+                type={layup2Type}
+                mode={shotLineMode}
+                approachClub={shotLineMode === 'scoring' ? approachClub : null}
+              />
+            </MapboxGL.PointAnnotation>
+          )}
+
+          {/* Par 3 — single distance badge at line midpoint, no lay-up markers */}
+          {par3BadgeCoord && !teeShottLogged && (
+            <MapboxGL.PointAnnotation
+              id="par3-badge"
+              coordinate={par3BadgeCoord}
+            >
+              <View style={styles.par3Badge}>
+                <Text style={styles.par3BadgeText}>{par3DistToPin ?? '--'}y</Text>
+                <Text style={styles.par3BadgeLabel}>to green</Text>
+              </View>
+            </MapboxGL.PointAnnotation>
+          )}
+
           {yardageMarkers.map((marker) => (
             <MapboxGL.PointAnnotation
               key={`yd-${marker.yds}`}
@@ -943,6 +1205,7 @@ export function GpsRoundScreen({
             teePoi={teeBack}
             holePar={currentHole?.par}
             userClubs={userClubs}
+            activeBag={activeBag}
             tournamentMode={tournamentMode}
             onOverlayStateChange={setOverlayState}
             onShotLogged={(shot) => {
@@ -1027,10 +1290,42 @@ export function GpsRoundScreen({
                 </Text>
               )}
             </View>
-            <TouchableOpacity style={styles.suggestedChip} onPress={() => overlayRef.current?.openClubPicker?.()}>
-              <Text style={styles.suggestedLabel}>{suggestedClub?.fromNote ? 'FROM NOTE' : 'SUGGESTED'}</Text>
-              <Text style={styles.suggestedClub}>{suggestedClub?.club || 'Pick club'}</Text>
-              {suggestedClub?.yards ? <Text style={styles.suggestedMeta}>{suggestedClub.yards}y</Text> : null}
+            <TouchableOpacity
+              style={[
+                styles.suggestedChip,
+                suggestion?.state === 'data_backed' && styles.suggestedChipDataBacked,
+                suggestion?.state === 'tied' && styles.suggestedChipTied,
+              ]}
+              onPress={() => {
+                if (suggestion?.state === 'data_backed' || suggestion?.state === 'tied') {
+                  setShowClubHistory(true);
+                } else {
+                  overlayRef.current?.openClubPicker?.();
+                }
+              }}
+            >
+              <Text style={styles.suggestedLabel}>SUGGESTED</Text>
+              {suggestion?.state === 'tied' ? (
+                <>
+                  <Text style={styles.suggestedClub}>{suggestion.club} or {suggestion.tiedClub}</Text>
+                  <Text style={styles.suggestedMeta}>Similar results. Your call.</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.suggestedClub}>{suggestion?.club || suggestedClub?.club || 'Pick club'}</Text>
+                  {suggestion?.state === 'data_backed' ? (
+                    <Text style={[styles.suggestedMeta, { color: '#4CAF7D' }]}>
+                      avg {suggestion.avgDelta >= 0 ? '+' : ''}{suggestion.avgDelta?.toFixed(1)} · {suggestion.rounds} rounds
+                    </Text>
+                  ) : suggestion?.state === 'building' ? (
+                    <Text style={styles.suggestedMeta}>
+                      {suggestion.roundsLogged}/{suggestion.roundsNeeded} rounds
+                    </Text>
+                  ) : (
+                    suggestedClub?.yards ? <Text style={styles.suggestedMeta}>{suggestedClub.yards}y</Text> : null
+                  )}
+                </>
+              )}
               <Text style={styles.suggestedChevron}>›</Text>
             </TouchableOpacity>
           </>
@@ -1095,6 +1390,13 @@ export function GpsRoundScreen({
             </View>
           </View>
         ) : null}
+        {/* Shot line mode toggle — Scoring (green) / Safe (amber) */}
+        {!teeShottLogged && currentHole?.par !== 3 && shotLineCoords && (
+          <View style={styles.modeToggleWrap} pointerEvents="box-none">
+            <ModeToggle mode={shotLineMode} onToggle={setShotLineMode} />
+          </View>
+        )}
+
         <View style={styles.bottomMapBar}>
           <TouchableOpacity style={styles.teeJumpButton} onPress={() => jumpToPoi(teeBack)}>
             <Text style={styles.teeJumpText}>🏌️ Tee</Text>
@@ -1129,6 +1431,17 @@ export function GpsRoundScreen({
         </Text>
       </View>
 
+      <ClubHistorySheet
+        visible={showClubHistory}
+        onClose={() => setShowClubHistory(false)}
+        holeNumber={holeNumber}
+        holePar={currentHole?.par || 4}
+        tees={teeColor}
+        courseName={course?.courseName || course?.name || ''}
+        allClubs={suggestion?.allClubs || []}
+        holeDoc={holeDoc}
+      />
+
       <Modal visible={showHistory} transparent animationType="fade" onRequestClose={() => setShowHistory(false)}>
         <View style={styles.historyBackdrop}>
           <TouchableOpacity style={styles.historyScrim} activeOpacity={1} onPress={() => setShowHistory(false)} />
@@ -1146,7 +1459,7 @@ export function GpsRoundScreen({
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.historyScroll} contentContainerStyle={styles.historyScrollContent}>
-              {course.holes.map((hole, index) => {
+              {(course?.holes || []).map((hole, index) => {
                 const shots = loggedShotsByHole[index] || [];
                 const expanded = historyHoleIndex === index;
                 return (
@@ -1404,7 +1717,7 @@ const styles = StyleSheet.create({
   scorePillTextHot: {
     color: colors.semantic.error,
   },
-  mapWrap: { flex: 1, position: 'relative' },
+  mapWrap: { position: 'relative' },
   map: { flex: 1 },
   weatherStrip: {
     position: 'absolute',
@@ -1491,6 +1804,12 @@ const styles = StyleSheet.create({
     paddingLeft: 9,
     paddingRight: 22,
     zIndex: 10,
+  },
+  suggestedChipDataBacked: {
+    borderColor: '#4CAF7D',
+  },
+  suggestedChipTied: {
+    borderColor: '#F5A623',
   },
   suggestedLabel: {
     color: 'rgba(255,255,255,0.3)',
@@ -1794,6 +2113,33 @@ const styles = StyleSheet.create({
     bottom: 44,
     paddingHorizontal: 2,
     paddingVertical: 1,
+  },
+  // Shot line mode toggle
+  modeToggleWrap: {
+    position: 'absolute',
+    top: 52,
+    right: 10,
+    zIndex: 20,
+  },
+  // Par 3 distance badge (at shot line midpoint)
+  par3Badge: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.76)',
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#10B981',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  par3BadgeText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  par3BadgeLabel: {
+    color: '#9CA3AF',
+    fontSize: 10,
+    fontWeight: '600',
   },
   mapboxWordmarkText: {
     color: 'rgba(255,255,255,0.55)',
