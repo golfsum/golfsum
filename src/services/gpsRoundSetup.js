@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import { getCourse, saveCourse, getCourseFromFirestore, saveCourseToFirestore } from './courseCache';
+import { getCourse, saveCourse } from './courseCache';
 import { fetchCourseHolesFromBackend } from './golfApi';
 import { getCourseDetail } from './golfApiIoService';
 
@@ -44,19 +44,7 @@ export async function loadGpsRoundSetup(courseId) {
     };
   }
 
-  // 2. Firestore community cache
-  const firestored = await getCourseFromFirestore(courseId);
-  if (firestored) {
-    await saveCourse(courseId, firestored); // backfill local cache
-    return {
-      course: firestored,
-      cached: true,
-      teeOptions: getGpsTeeOptions(firestored),
-      holeCount: Array.isArray(firestored?.holes) ? firestored.holes.length : 0,
-    };
-  }
-
-  // 3. golfapi.io direct (primary source — native only due to CORS)
+  // 2. golfapi.io direct (primary source — native only due to CORS)
   //    Try this BEFORE the Firebase Function since it doesn't require Firebase config.
   if (Platform.OS !== 'web') {
     const apiId = courseId.startsWith('golfapiio_') ? courseId.slice('golfapiio_'.length) : courseId;
@@ -65,7 +53,6 @@ export async function loadGpsRoundSetup(courseId) {
       if (detail && detail.holesData && detail.holesData.length > 0) {
         const course = { ...detail, holes: detail.holesData };
         await saveCourse(courseId, course);
-        saveCourseToFirestore(courseId, course).catch(() => {});
         return {
           course,
           cached: false,
@@ -78,24 +65,23 @@ export async function loadGpsRoundSetup(courseId) {
     }
   }
 
-  // 4. Firebase Function → server-side fetch (works on all platforms including web)
-  try {
-    const remote = await fetchCourseHolesFromBackend(courseId);
-    await saveCourse(courseId, remote);
-    saveCourseToFirestore(courseId, remote).catch(() => {}); // fire-and-forget
-    return {
-      course: remote,
-      cached: false,
-      teeOptions: getGpsTeeOptions(remote),
-      holeCount: Array.isArray(remote?.holes) ? remote.holes.length : 0,
-    };
-  } catch (_) {
-    // fall through to shell
+  // 3. Firebase Function → server-side fetch (native only — CORS-blocked on web in local dev)
+  if (Platform.OS !== 'web') {
+    try {
+      const remote = await fetchCourseHolesFromBackend(courseId);
+      await saveCourse(courseId, remote);
+      return {
+        course: remote,
+        cached: false,
+        teeOptions: getGpsTeeOptions(remote),
+        holeCount: Array.isArray(remote?.holes) ? remote.holes.length : 0,
+      };
+    } catch (_) {
+      // fall through to shell
+    }
   }
 
-  // Course not found in any source — return a shell with standard tee options
-  // so the GPS round can still start. Hole GPS data (distances to green) won't
-  // be available, but the map and scoring will work normally.
+  // 4. Course not found — return a shell with standard tee options
   return {
     course: null,
     cached: false,

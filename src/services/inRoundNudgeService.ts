@@ -21,6 +21,9 @@ export interface InRoundNudgeContext {
     approachMiss: 'short' | 'left' | 'right' | null;
     approachBand: string | null;
     approachClub: string | null;
+    betterApproachBand: string | null;
+    betterApproachClub: string | null;
+    betterApproachSide: 'left-center' | 'right-center' | null;
     saferTeeClub: string | null;
     sampleCount: number;
     approachSampleCount?: number;
@@ -98,6 +101,8 @@ export function buildInRoundNudgeContext(rounds: SavedRound[]): InRoundNudgeCont
     approachSampleCount: number;
     approachBandRows: Map<string, number>;
     approachClubRows: Map<string, number>;
+    approachDecisionRows: Map<string, { totalDelta: number; count: number }>;
+    approachSideDecisionRows: Map<string, { totalDelta: number; count: number }>;
     fairwayBunkerCount: number;
     longFirstPuttCount: number;
     longFirstPuttThreePuttCount: number;
@@ -156,6 +161,8 @@ export function buildInRoundNudgeContext(rounds: SavedRound[]): InRoundNudgeCont
           approachSampleCount: 0,
           approachBandRows: new Map<string, number>(),
           approachClubRows: new Map<string, number>(),
+          approachDecisionRows: new Map<string, { totalDelta: number; count: number }>(),
+          approachSideDecisionRows: new Map<string, { totalDelta: number; count: number }>(),
           fairwayBunkerCount: 0,
           longFirstPuttCount: 0,
           longFirstPuttThreePuttCount: 0,
@@ -225,6 +232,24 @@ export function buildInRoundNudgeContext(rounds: SavedRound[]): InRoundNudgeCont
         holeMemory.approachBandRows.set(band, (holeMemory.approachBandRows.get(band) ?? 0) + 1);
         if (shot.clubLabel) {
           holeMemory.approachClubRows.set(shot.clubLabel, (holeMemory.approachClubRows.get(shot.clubLabel) ?? 0) + 1);
+          const decisionKey = `${band}__${shot.clubLabel}`;
+          const currentDecision = holeMemory.approachDecisionRows.get(decisionKey) ?? { totalDelta: 0, count: 0 };
+          holeMemory.approachDecisionRows.set(decisionKey, {
+            totalDelta: currentDecision.totalDelta + shot.holeDelta,
+            count: currentDecision.count + 1,
+          });
+        }
+        const sideKey = shot.greenResult === 'left'
+          ? `${band}__right-center`
+          : shot.greenResult === 'right'
+            ? `${band}__left-center`
+            : null;
+        if (sideKey) {
+          const currentSide = holeMemory.approachSideDecisionRows.get(sideKey) ?? { totalDelta: 0, count: 0 };
+          holeMemory.approachSideDecisionRows.set(sideKey, {
+            totalDelta: currentSide.totalDelta + shot.holeDelta,
+            count: currentSide.count + 1,
+          });
         }
       });
     });
@@ -292,6 +317,30 @@ export function buildInRoundNudgeContext(rounds: SavedRound[]): InRoundNudgeCont
         const approachClub = [...value.approachClubRows.entries()]
           .filter(([, count]) => count >= 2)
           .sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+        const betterApproachDecision = [...value.approachDecisionRows.entries()]
+          .map(([key, row]) => {
+            const [band, club] = key.split('__');
+            return {
+              band,
+              club,
+              count: row.count,
+              avgDelta: row.totalDelta / row.count,
+            };
+          })
+          .filter((row) => row.count >= 2)
+          .sort((a, b) => a.avgDelta - b.avgDelta)[0] ?? null;
+        const betterApproachSideDecision = [...value.approachSideDecisionRows.entries()]
+          .map(([key, row]) => {
+            const [band, side] = key.split('__');
+            return {
+              band,
+              side: side as 'left-center' | 'right-center',
+              count: row.count,
+              avgDelta: row.totalDelta / row.count,
+            };
+          })
+          .filter((row) => row.count >= 2)
+          .sort((a, b) => a.avgDelta - b.avgDelta)[0] ?? null;
         const toughestPin = [...value.pinRows.entries()]
           .filter(([, pinRow]) => pinRow.count >= 2)
           .map(([pin, pinRow]) => ({ pin, avgPutts: pinRow.totalPutts / pinRow.count }))
@@ -301,6 +350,13 @@ export function buildInRoundNudgeContext(rounds: SavedRound[]): InRoundNudgeCont
           approachMiss: approachMiss && approachMiss.count >= 2 ? approachMiss.label : null,
           approachBand,
           approachClub,
+          betterApproachBand: betterApproachDecision?.band ?? null,
+          betterApproachClub: betterApproachDecision?.club ?? null,
+          betterApproachSide: betterApproachSideDecision?.band === betterApproachDecision?.band
+            ? betterApproachSideDecision.side
+            : betterApproachSideDecision?.band === approachBand
+              ? betterApproachSideDecision.side
+              : null,
           saferTeeClub,
           sampleCount: value.sampleCount,
           approachSampleCount: value.approachSampleCount,
@@ -464,8 +520,7 @@ export function buildInRoundNudge(input: InRoundNudgeInput): RoundNudge | null {
 
   if (
     liveLie &&
-    liveLie !== 'Tee Box' &&
-    liveLie !== 'Green' &&
+    liveLie === 'Fairway' &&
     holeMemory &&
     (holeMemory.approachSampleCount ?? 0) >= 2 &&
     holeMemory.approachMiss
@@ -478,6 +533,37 @@ export function buildInRoundNudge(input: InRoundNudgeInput): RoundNudge | null {
     const targetBand = typeof targetYards === 'number' && Number.isFinite(targetYards)
       ? getBandLabel(targetYards)
       : null;
+    if (
+      targetBand &&
+      holeMemory.betterApproachBand === targetBand &&
+      holeMemory.betterApproachClub &&
+      normalizeClubLabel(holeMemory.betterApproachClub) !== normalizedClub
+    ) {
+      return {
+        id: `hole-memory-approach-better-${input.holeNumber}`,
+        type: 'tee-club',
+        priority: 82,
+        tone: 'green',
+        title: 'Course note',
+        body: `${holeMemory.betterApproachClub} has produced better scoring from ${targetBand} on this hole. Good spot to play the safer center-green number.`,
+        support: `Best scoring approach pattern on this hole`,
+      };
+    }
+    if (
+      targetBand &&
+      holeMemory.betterApproachBand === targetBand &&
+      holeMemory.betterApproachSide
+    ) {
+      return {
+        id: `hole-memory-approach-side-${input.holeNumber}`,
+        type: 'miss-side',
+        priority: 81,
+        tone: 'green',
+        title: 'Course note',
+        body: `${targetBand} approaches on this hole have scored better to the ${holeMemory.betterApproachSide}. Favor that side of the green.`,
+        support: `Best scoring target line on this hole`,
+      };
+    }
     const clubPrefix = holeMemory.approachClub && normalizeClubLabel(holeMemory.approachClub) === normalizedClub
       ? `${holeMemory.approachClub} from `
       : '';

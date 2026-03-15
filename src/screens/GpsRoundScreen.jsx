@@ -161,6 +161,10 @@ function normalizeTeeName(name) {
   return String(name || '').trim().toLowerCase();
 }
 
+function normalizeClubLabel(label) {
+  return String(label || '').trim().toLowerCase();
+}
+
 function getWindText(speed) {
   if (!Number.isFinite(speed)) return 'Wind --';
   return `${Math.round(speed)} mph`;
@@ -381,6 +385,7 @@ export function GpsRoundScreen({
   const [holeNoteClub, setHoleNoteClub] = useState(null);
   const [courseStats, setCourseStats] = useState({});
   const [showClubHistory, setShowClubHistory] = useState(false);
+  const [greenMapOnly, setGreenMapOnly] = useState(false);
   // Shot line / lay-up marker state
   const [shotLineMode, setShotLineMode] = useState('scoring'); // 'scoring' | 'safe'
   const [layup1Position, setLayup1Position] = useState(null);
@@ -412,7 +417,6 @@ export function GpsRoundScreen({
     const tees = Array.isArray(currentHole?.tees) ? currentHole.tees : [];
     return tees.find((tee) => normalizeTeeName(tee?.name) === normalizeTeeName(teeColor)) || tees[0] || null;
   }, [currentHole, teeColor]);
-  const hazardTags = useMemo(() => getHazardTags(currentHole), [currentHole]);
   const teeBack = useMemo(
     () => findPoi(currentHole, 'Tee Back', 'C') || findPoi(currentHole, 'Tee Front', 'C'),
     [currentHole]
@@ -455,6 +459,7 @@ export function GpsRoundScreen({
   );
   const currentHoleShots = loggedShotsByHole[currentHoleIndex] || [];
   const currentHoleSummary = holeSummariesByHole[currentHoleIndex] || { firstPuttDistance: null, pinLocation: 'middle', putts: null };
+  const currentPutts = typeof currentHoleSummary.putts === 'number' ? currentHoleSummary.putts : 0;
   const currentRoundShots = useMemo(
     () => Object.values(loggedShotsByHole).flatMap((shots) => shots || []),
     [loggedShotsByHole]
@@ -465,6 +470,13 @@ export function GpsRoundScreen({
     [currentHole, elevationFt, shotBearingDeg, userPos, weather]
   );
   const nudgeContext = useMemo(() => buildInRoundNudgeContext(recentRounds), [recentRounds]);
+  const courseSuggestedClub = useMemo(() => {
+    const holeMemoryClub = nudgeContext?.holeMemory?.[currentHole?.hole || currentHoleIndex + 1]?.saferTeeClub || null;
+    const fallbackClub = liveLie?.lie === 'Tee Box' ? (holeMemoryClub || nudgeContext?.saferTeeClub?.club || null) : null;
+    const recommended = fallbackClub ? Object.entries(userClubs || {}).find(([club]) => normalizeClubLabel(club) === normalizeClubLabel(fallbackClub)) : null;
+    return recommended ? { club: recommended[0], yards: Number(recommended[1]) } : null;
+  }, [currentHole?.hole, currentHoleIndex, liveLie?.lie, nudgeContext, userClubs]);
+  const effectiveSuggestedClub = courseSuggestedClub || suggestedClub;
   const activeNudge = useMemo(() => {
     if (!coachingEnabled || overlayState.anySheet || overlayState.shotFlow !== 'idle' || showGreenSheet) return null;
     return buildInRoundNudge({
@@ -472,7 +484,7 @@ export function GpsRoundScreen({
       holePar: currentHole?.par || 4,
       liveLie: liveLie?.lie || null,
       selectedClub: overlayState.selectedClub || null,
-      suggestedClub: suggestedClub?.club || null,
+      suggestedClub: effectiveSuggestedClub?.club || null,
       centerYards,
       playingYards: playingDistance?.adjustedYards ?? null,
       tournamentMode,
@@ -497,11 +509,58 @@ export function GpsRoundScreen({
     overlayState.selectedClub,
     overlayState.shotFlow,
     playingDistance?.adjustedYards,
-    suggestedClub?.club,
+    effectiveSuggestedClub?.club,
     tournamentMode,
     weather,
     showGreenSheet,
   ]);
+  const detectLieAtCoordinate = useCallback((coord) => (
+    detectLiveLie(coord, currentHole, teeBack, greenCenter)
+  ), [currentHole, greenCenter, teeBack]);
+  const shotPathGeo = useMemo(() => {
+    if (!MapboxGL || !currentHoleShots.length) return null;
+    const coordinates = currentHoleShots
+      .map((shot) => shot.from)
+      .filter((point) => point?.lng && point?.lat)
+      .map((point) => [point.lng, point.lat]);
+    if (userPos?.lng && userPos?.lat) {
+      coordinates.push([userPos.lng, userPos.lat]);
+    }
+    if (coordinates.length < 2) return null;
+    return {
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates,
+        },
+        properties: { kind: 'shot-track' },
+      }],
+    };
+  }, [currentHoleShots, userPos]);
+  const currentShotDisplay = useMemo(() => {
+    const lastShot = currentHoleShots[currentHoleShots.length - 1] || null;
+    if (overlayState.shotFlow === 'draft') {
+      return {
+        label: overlayState.selectedClub || effectiveSuggestedClub?.club || `Shot ${currentHoleShots.length + 1}`,
+        yards: tournamentMode ? centerYards : playingDistance?.adjustedYards ?? centerYards,
+        lie: liveLie?.lie || null,
+      };
+    }
+    if (lastShot) {
+      return {
+        label: lastShot.abbr || `Shot ${lastShot.num}`,
+        yards: lastShot.playingYards ?? lastShot.actualYards ?? null,
+        lie: lastShot.lie || null,
+      };
+    }
+    return {
+      label: `Shot ${currentHoleShots.length + 1}`,
+      yards: tournamentMode ? centerYards : playingDistance?.adjustedYards ?? centerYards,
+      lie: liveLie?.lie || null,
+    };
+  }, [centerYards, currentHoleShots, effectiveSuggestedClub?.club, liveLie?.lie, overlayState.selectedClub, overlayState.shotFlow, playingDistance?.adjustedYards, tournamentMode]);
 
   // ---------------------------------------------------------------------------
   // Shot line and lay-up marker geometry
@@ -919,18 +978,40 @@ export function GpsRoundScreen({
     });
   }, []);
 
+  const handleGreenMapToggle = useCallback(() => {
+    if (!cameraRef.current || !greenCenter) return;
+    if (greenMapOnly) {
+      resetHoleCamera(true);
+      setGreenMapOnly(false);
+      return;
+    }
+    cameraRef.current?.setCamera({
+      centerCoordinate: [greenCenter.Longitude, greenCenter.Latitude],
+      zoomLevel: 19.25,
+      animationDuration: 700,
+      animationMode: 'flyTo',
+    });
+    setGreenMapOnly(true);
+  }, [greenCenter, greenMapOnly, resetHoleCamera]);
+
   const handleMapPress = useCallback(() => {
     const now = Date.now();
     if (now - lastMapTapRef.current <= 280) {
       resetHoleCamera(true);
+      setGreenMapOnly(false);
     }
     lastMapTapRef.current = now;
   }, [resetHoleCamera]);
+
+  const handleCameraChanged = useCallback((event) => {
+    overlayRef.current?.handleCameraChanged?.(event);
+  }, []);
 
   const handleSelectHole = useCallback((nextIndex) => {
     setCurrentHoleIndex(nextIndex);
     setLiveLie(LIVE_LIE_DEFAULT);
     setShowGreenSheet(false);
+    setGreenMapOnly(false);
     setOverlayState({ anySheet: false, shotFlow: 'idle', selectedClub: null });
     overlayRef.current?.resetOverlay?.();
   }, []);
@@ -1086,6 +1167,7 @@ export function GpsRoundScreen({
         <MapboxGL.MapView
           onPress={handleMapPress}
           onLongPress={(event) => overlayRef.current?.handleLongPress(event)}
+          onCameraChanged={handleCameraChanged}
           style={styles.map}
           styleURL={MapboxGL.StyleURL.SatelliteStreet}
           logoEnabled={false}
@@ -1114,6 +1196,11 @@ export function GpsRoundScreen({
                   lineDasharray: [6, 4],
                 }}
               />
+            </MapboxGL.ShapeSource>
+          )}
+          {shotPathGeo && (
+            <MapboxGL.ShapeSource id="shot-track" shape={shotPathGeo}>
+              <MapboxGL.LineLayer id="shot-track-line" style={stylesMap.shotTrack} />
             </MapboxGL.ShapeSource>
           )}
 
@@ -1217,6 +1304,26 @@ export function GpsRoundScreen({
               </View>
             </MapboxGL.PointAnnotation>
           ))}
+          {currentHoleShots.map((shot) => (
+            shot.from?.lng && shot.from?.lat ? (
+              <MapboxGL.PointAnnotation
+                key={`shot-${shot.id}`}
+                id={`shot-${shot.id}`}
+                coordinate={[shot.from.lng, shot.from.lat]}
+              >
+                <View style={[
+                  styles.mapShotBadge,
+                  shot.num === currentHoleShots.length && styles.mapShotBadgeActive,
+                ]}>
+                  <View style={[styles.mapShotClubDot, shot.color ? { backgroundColor: shot.color } : null]} />
+                  <Text style={styles.mapShotClubText}>{shot.abbr || `S${shot.num}`}</Text>
+                  {Number.isFinite(shot.playingYards ?? shot.actualYards) ? (
+                    <Text style={styles.mapShotYardsText}>{shot.playingYards ?? shot.actualYards}y</Text>
+                  ) : null}
+                </View>
+              </MapboxGL.PointAnnotation>
+            ) : null
+          ))}
           <GpsOverlay
             ref={overlayRef}
             userPos={userPos}
@@ -1226,13 +1333,16 @@ export function GpsRoundScreen({
             userClubs={userClubs}
             activeBag={activeBag}
             tournamentMode={tournamentMode}
+            detectLieAtCoordinate={detectLieAtCoordinate}
             onOverlayStateChange={setOverlayState}
             onShotLogged={(shot) => {
               const clubLabel = String(shot.club || '');
               const abbr = clubLabel.length <= 3
                 ? clubLabel
                 : clubLabel.split(/\s+/).map((part) => part[0]).join('').slice(0, 3).toUpperCase();
-              const lie = detectLiveLie(userPos, currentHole, teeBack, greenCenter);
+              const lie = shot.lie
+                ? { lie: shot.lie, color: shot.lieColor || detectLieAtCoordinate(shot.from || userPos)?.color || '#FFFFFF' }
+                : detectLieAtCoordinate(shot.from || userPos);
               setLoggedShotsByHole((prev) => {
                 const existing = prev[currentHoleIndex] || [];
                 return {
@@ -1349,27 +1459,6 @@ export function GpsRoundScreen({
             </TouchableOpacity>
           </>
         )}
-        {!overlayState.anySheet && overlayState.shotFlow === 'idle' && currentHoleShots.length > 0 && !lieToast && !activeNudge && (
-          <View style={styles.shotRow}>
-            {currentHoleShots.map((shot) => (
-              <View key={shot.id} style={[styles.shotPill, shot.color ? { borderColor: shot.color } : null]}>
-                <View style={[styles.shotNumber, shot.color ? { backgroundColor: shot.color } : null]}>
-                  <Text style={styles.shotNumberText}>{shot.num}</Text>
-                </View>
-                <Text style={styles.shotClubText}>{shot.abbr}</Text>
-                {shot.lieIcon ? (
-                  <Text style={[styles.shotLieIcon, shot.lieColor ? { color: shot.lieColor } : null]}>{shot.lieIcon}</Text>
-                ) : null}
-              </View>
-            ))}
-            <TouchableOpacity
-              style={styles.clearShotsButton}
-              onPress={() => setLoggedShotsByHole((prev) => ({ ...prev, [currentHoleIndex]: [] }))}
-            >
-              <Text style={styles.clearShotsButtonText}>✕</Text>
-            </TouchableOpacity>
-          </View>
-        )}
         {lieToast ? (
           <View style={[styles.lieToast, lieToast.color ? { borderColor: lieToast.color } : null]}>
             <View style={[styles.lieToastDot, lieToast.color ? { backgroundColor: lieToast.color } : null]} />
@@ -1377,15 +1466,15 @@ export function GpsRoundScreen({
             <Text style={styles.lieToastSubtext}>detected</Text>
           </View>
         ) : null}
-        {overlayState.shotFlow === 'mark' && !overlayState.anySheet ? (
+        {overlayState.shotFlow === 'draft' && !overlayState.anySheet ? (
           <View style={styles.markBanner}>
             <View style={styles.markBannerPulse}>
               <View style={styles.markBannerDot} />
             </View>
             <View style={styles.markBannerCopy}>
-              <Text style={styles.markBannerTitle}>Tap and hold to mark the shot</Text>
+              <Text style={styles.markBannerTitle}>Move the map to where you hit from</Text>
               <Text style={styles.markBannerSubtitle}>
-                {overlayState.selectedClub ? `${overlayState.selectedClub} selected` : 'Club selected'} · then long-press your landing spot
+                {overlayState.selectedClub ? `${overlayState.selectedClub} selected` : 'Club selected'} · save when the marker is on the shot location
               </Text>
             </View>
             <TouchableOpacity style={styles.markBannerClose} onPress={() => overlayRef.current?.resetOverlay?.()}>
@@ -1416,12 +1505,16 @@ export function GpsRoundScreen({
           </View>
         )}
 
-        <View style={styles.bottomMapBar}>
+        <View style={styles.rightMapStack}>
           <TouchableOpacity style={styles.teeJumpButton} onPress={() => jumpToPoi(teeBack)}>
             <Text style={styles.teeJumpText}>🏌️ Tee</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.greenJumpButton} onPress={() => jumpToPoi(greenCenter, 19.2)}>
             <Text style={styles.greenJumpText}>⛳ Green</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.greenMapButton} onPress={handleGreenMapToggle}>
+            <Ionicons name={greenMapOnly ? 'map-outline' : 'golf-outline'} size={16} color={colors.brand.primary} />
+            <Text style={styles.greenMapButtonText}>{greenMapOnly ? 'HOLE MAP' : 'GREEN MAP'}</Text>
           </TouchableOpacity>
           {liveLie?.lie === 'Green' && (
             <TouchableOpacity style={styles.greenMarkButton} onPress={() => setShowGreenSheet(true)}>
@@ -1436,6 +1529,57 @@ export function GpsRoundScreen({
             </TouchableOpacity>
           )}
         </View>
+        <View style={styles.bottomShotTray}>
+          <View style={styles.currentShotPill}>
+            <Text style={styles.currentShotLabel}>{currentShotDisplay.label}</Text>
+            <Text style={styles.currentShotYards}>
+              {Number.isFinite(currentShotDisplay.yards) ? `${currentShotDisplay.yards}y` : '—'}
+            </Text>
+            <Text style={styles.currentShotLie}>{currentShotDisplay.lie || 'Locating...'}</Text>
+          </View>
+          <View style={styles.puttStepper}>
+            <TouchableOpacity
+              style={styles.puttStepperButton}
+              onPress={() => setHoleSummariesByHole((prev) => ({
+                ...prev,
+                [currentHoleIndex]: {
+                  ...currentHoleSummary,
+                  putts: Math.max(0, currentPutts - 1),
+                },
+              }))}
+            >
+              <Text style={styles.puttStepperButtonText}>−</Text>
+            </TouchableOpacity>
+            <View style={styles.puttStepperValueWrap}>
+              <Text style={styles.puttStepperValue}>{currentPutts}</Text>
+              <Text style={styles.puttStepperLabel}>PUTTS</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.puttStepperButton}
+              onPress={() => setHoleSummariesByHole((prev) => ({
+                ...prev,
+                [currentHoleIndex]: {
+                  ...currentHoleSummary,
+                  putts: currentPutts + 1,
+                },
+              }))}
+            >
+              <Text style={styles.puttStepperButtonText}>+</Text>
+            </TouchableOpacity>
+          </View>
+            <TouchableOpacity
+              style={[styles.addShotTrayButton, overlayState.shotFlow === 'draft' && styles.addShotTrayButtonActive]}
+              onPress={() => {
+                if (overlayState.shotFlow === 'draft') {
+                  return;
+              }
+              overlayRef.current?.startShotEntry?.();
+            }}
+            >
+              <Ionicons name="add" size={16} color="#FFFFFF" />
+              <Text style={styles.addShotTrayButtonText}>{overlayState.shotFlow === 'draft' ? 'MOVE MAP' : 'ADD SHOT'}</Text>
+            </TouchableOpacity>
+          </View>
         <View pointerEvents="none" style={styles.mapboxWordmark}>
           <Text style={styles.mapboxWordmarkText}>mapbox</Text>
         </View>
@@ -1445,8 +1589,8 @@ export function GpsRoundScreen({
       <View style={styles.helperBar}>
         <Text style={styles.helperText}>
           {coachingEnabled
-            ? 'Coaching is on • Tap bulb to hide • Double tap to reset • Hold to measure'
-            : 'Coaching is off • Tap bulb to show • Double tap to reset • Hold to measure'}
+            ? 'Coaching is on • Tap bulb to hide • Double tap to reset • Add Shot uses the map center'
+            : 'Coaching is off • Tap bulb to show • Double tap to reset • Add Shot uses the map center'}
         </Text>
       </View>
 
@@ -1648,6 +1792,11 @@ const stylesMap = {
     lineWidth: 1.5,
     lineDasharray: [1.2, 1.2],
   },
+  shotTrack: {
+    lineColor: 'rgba(255,255,255,0.72)',
+    lineWidth: 2,
+    lineDasharray: [1.2, 1.2],
+  },
   tee: {
     circleRadius: 6,
     circleColor: '#FFFFFF',
@@ -1813,15 +1962,16 @@ const styles = StyleSheet.create({
   suggestedChip: {
     position: 'absolute',
     left: 10,
-    bottom: 92,
+    bottom: 118,
     backgroundColor: colors.bg.secondary,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border.subtle,
     paddingTop: 6,
     paddingBottom: 6,
-    paddingLeft: 9,
-    paddingRight: 22,
+    paddingHorizontal: 12,
+    minWidth: 92,
+    alignItems: 'center',
     zIndex: 10,
   },
   suggestedChipDataBacked: {
@@ -1846,13 +1996,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.28)',
     fontSize: 10,
     marginTop: 1,
-  },
-  suggestedChevron: {
-    position: 'absolute',
-    right: 7,
-    top: 14,
-    color: 'rgba(255,255,255,0.3)',
-    fontSize: 14,
   },
   shotRow: {
     position: 'absolute',
@@ -1915,7 +2058,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 50,
     right: 50,
-    bottom: 54,
+    bottom: 96,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -1997,9 +2140,9 @@ const styles = StyleSheet.create({
   },
   nudgeCard: {
     position: 'absolute',
-    left: 10,
-    right: 10,
-    bottom: 62,
+    left: 102,
+    right: 102,
+    bottom: 106,
     flexDirection: 'row',
     alignItems: 'flex-start',
     backgroundColor: colors.bg.secondary,
@@ -2054,14 +2197,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginTop: 4,
   },
-  bottomMapBar: {
+  rightMapStack: {
     position: 'absolute',
-    left: 10,
     right: 10,
-    bottom: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    bottom: 118,
+    alignItems: 'flex-end',
+    gap: 8,
     zIndex: 10,
   },
   teeJumpButton: {
@@ -2083,20 +2224,38 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
     borderRadius: 8,
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 10,
+    alignItems: 'center',
+    minWidth: 76,
   },
   greenJumpText: {
     color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '600',
   },
-  greenMarkButton: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
+  greenMapButton: {
+    backgroundColor: colors.brand.primaryMuted,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    borderRadius: 8,
+    borderColor: colors.brand.primaryBorder,
+    borderRadius: 12,
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 10,
+    alignItems: 'center',
+    minWidth: 76,
+  },
+  greenMapButtonText: {
+    color: colors.brand.primary,
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  greenMarkButton: {
+    backgroundColor: colors.bg.secondary,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   greenMarkText: {
     color: '#E5E7EB',
@@ -2123,13 +2282,151 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 9,
     fontWeight: '700',
+  },
+  bottomShotTray: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    bottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    zIndex: 12,
+  },
+  currentShotPill: {
+    width: 88,
+    backgroundColor: colors.bg.secondary,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  currentShotLabel: {
+    color: colors.text.primary,
+    fontSize: 18,
+    fontWeight: '800',
+    lineHeight: 18,
+  },
+  currentShotYards: {
+    color: colors.text.primary,
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  currentShotLie: {
+    color: colors.text.secondary,
+    fontSize: 9,
+    fontWeight: '700',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  puttStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.bg.secondary,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    borderRadius: 14,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    minWidth: 112,
+    justifyContent: 'center',
+  },
+  puttStepperButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  puttStepperButtonText: {
+    color: colors.text.primary,
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  puttStepperValueWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 44,
+    paddingHorizontal: 6,
+  },
+  puttStepperValue: {
+    color: colors.text.primary,
+    fontSize: 18,
+    fontWeight: '800',
+    lineHeight: 18,
+  },
+  puttStepperLabel: {
+    color: colors.text.secondary,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginTop: 2,
+  },
+  addShotTrayButton: {
+    width: 96,
+    backgroundColor: colors.bg.secondary,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    gap: 2,
+  },
+  addShotTrayButtonActive: {
+    borderColor: colors.brand.primaryBorder,
+    backgroundColor: colors.brand.primaryMuted,
+  },
+  addShotTrayButtonText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textAlign: 'center',
+  },
+  mapShotBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(5,10,8,0.9)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  mapShotBadgeActive: {
+    borderColor: colors.brand.primaryBorder,
+  },
+  mapShotClubDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.brand.primary,
+    marginRight: 6,
+  },
+  mapShotClubText: {
+    color: colors.text.primary,
+    fontSize: 20,
+    fontWeight: '800',
+    lineHeight: 20,
+    marginRight: 8,
+  },
+  mapShotYardsText: {
+    color: colors.text.primary,
+    fontSize: 14,
+    fontWeight: '700',
     marginTop: 2,
     letterSpacing: 0.3,
   },
   mapboxWordmark: {
     position: 'absolute',
     left: 8,
-    bottom: 44,
+    bottom: 82,
     paddingHorizontal: 2,
     paddingVertical: 1,
   },

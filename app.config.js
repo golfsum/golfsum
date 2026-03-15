@@ -97,7 +97,13 @@ module.exports = function(env) {
       'expo-notifications',
       '@react-native-community/datetimepicker',
       'expo-apple-authentication',
-      ...(mapboxDownloadToken && isEasBuild ? ['@rnmapbox/maps'] : []),
+      ...(mapboxDownloadToken && isEasBuild ? [[
+        '@rnmapbox/maps',
+        {
+          RNMapboxMapsImpl: 'mapbox',
+          RNMapboxMapsDownloadToken: mapboxDownloadToken,
+        },
+      ]] : []),
     ],
   };
 };

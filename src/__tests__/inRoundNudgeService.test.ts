@@ -47,6 +47,9 @@ describe('inRoundNudgeService', () => {
     expect(context.holeMemory[3]?.approachMiss).toBe('short');
     expect(context.holeMemory[3]?.approachBand).toBe('125-150');
     expect(context.holeMemory[3]?.approachClub).toBe('7 Iron');
+    expect(context.holeMemory[3]?.betterApproachBand).toBe('125-150');
+    expect(context.holeMemory[3]?.betterApproachClub).toBe('7 Iron');
+    expect(context.holeMemory[3]?.betterApproachSide).toBeNull();
     expect(context.putting.avgPutts).toBeNull();
   });
 
@@ -57,10 +60,11 @@ describe('inRoundNudgeService', () => {
       clubShortBias: { '7 Iron': { count: 7, shortPct: 51 } },
       saferTeeClub: { club: '3 Wood', fairwayPct: 72, avgDelta: 0.1 },
       holeMemory: {
-        5: { missSide: 'right', approachMiss: null, approachBand: null, approachClub: null, saferTeeClub: '3 Wood', sampleCount: 3, approachSampleCount: 0, fairwayBunkerCount: 1, longFirstPuttCount: 0, longFirstPuttThreePuttCount: 0, toughestPin: null },
-        6: { missSide: null, approachMiss: 'short', approachBand: '125-150', approachClub: '8 Iron', saferTeeClub: null, sampleCount: 3, approachSampleCount: 3, fairwayBunkerCount: 0, longFirstPuttCount: 0, longFirstPuttThreePuttCount: 0, toughestPin: null },
-        8: { missSide: null, approachMiss: null, approachBand: null, approachClub: null, saferTeeClub: null, sampleCount: 2, approachSampleCount: 0, fairwayBunkerCount: 2, longFirstPuttCount: 2, longFirstPuttThreePuttCount: 1, toughestPin: 'back' },
-        9: { missSide: null, approachMiss: null, approachBand: null, approachClub: null, saferTeeClub: null, sampleCount: 2, approachSampleCount: 0, fairwayBunkerCount: 0, longFirstPuttCount: 0, longFirstPuttThreePuttCount: 0, toughestPin: 'back' },
+        5: { missSide: 'right', approachMiss: null, approachBand: null, approachClub: null, betterApproachBand: null, betterApproachClub: null, betterApproachSide: null, saferTeeClub: '3 Wood', sampleCount: 3, approachSampleCount: 0, fairwayBunkerCount: 1, longFirstPuttCount: 0, longFirstPuttThreePuttCount: 0, toughestPin: null },
+        6: { missSide: null, approachMiss: 'short', approachBand: '125-150', approachClub: '8 Iron', betterApproachBand: '125-150', betterApproachClub: '7 Iron', betterApproachSide: null, saferTeeClub: null, sampleCount: 3, approachSampleCount: 3, fairwayBunkerCount: 0, longFirstPuttCount: 0, longFirstPuttThreePuttCount: 0, toughestPin: null },
+        7: { missSide: null, approachMiss: 'right', approachBand: '150-175', approachClub: '7 Iron', betterApproachBand: '150-175', betterApproachClub: '7 Iron', betterApproachSide: 'left-center', saferTeeClub: null, sampleCount: 3, approachSampleCount: 3, fairwayBunkerCount: 0, longFirstPuttCount: 0, longFirstPuttThreePuttCount: 0, toughestPin: null },
+        8: { missSide: null, approachMiss: null, approachBand: null, approachClub: null, betterApproachBand: null, betterApproachClub: null, betterApproachSide: null, saferTeeClub: null, sampleCount: 2, approachSampleCount: 0, fairwayBunkerCount: 2, longFirstPuttCount: 2, longFirstPuttThreePuttCount: 1, toughestPin: 'back' },
+        9: { missSide: null, approachMiss: null, approachBand: null, approachClub: null, betterApproachBand: null, betterApproachClub: null, betterApproachSide: null, saferTeeClub: null, sampleCount: 2, approachSampleCount: 0, fairwayBunkerCount: 0, longFirstPuttCount: 0, longFirstPuttThreePuttCount: 0, toughestPin: 'back' },
       },
       putting: {
         avgPutts: 2.2,
@@ -100,11 +104,11 @@ describe('inRoundNudgeService', () => {
       holePar: 4,
       liveLie: 'Fairway',
       selectedClub: '7 Iron',
-      centerYards: 154,
-      playingYards: 159,
-      weather: { windMph: 16 },
+      centerYards: 162,
+      playingYards: 166,
+      weather: { windMph: 4 },
       context,
-    })?.type).toBe('wind');
+    })?.body).toContain('150-175 approaches on this hole have scored better to the left-center');
 
     expect(buildInRoundNudge({
       holeNumber: 7,
@@ -148,7 +152,7 @@ describe('inRoundNudgeService', () => {
       playingYards: 149,
       weather: { windMph: 4 },
       context,
-    })?.body).toContain('8 Iron from 125-150 approaches on this hole have been finishing short');
+    })?.body).toContain('7 Iron has produced better scoring from 125-150 on this hole');
 
     expect(buildInRoundNudge({
       holeNumber: 8,
