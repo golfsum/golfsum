@@ -20,6 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db, isFirebaseEnabled } from './firebase';
 import { getCurrentUser } from './firebaseAuthService';
+import { getCourseMappingFromFirestore, saveCourseMappingToFirestore } from './courseCache';
 import { logger } from '../utils/logger';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import type { CourseDetails, TeeBox, HoleDetail } from './golfCourseApiService';
@@ -486,6 +487,9 @@ export async function searchCoursesByName(
     cache[cacheKey] = { results, ts: Date.now() };
     await setSearchCache(cache);
 
+    // Save club/course metadata to Firestore so future lookups can skip the API
+    saveClubMetadataToFirestore(results).catch(() => {});
+
     return results;
   } catch (err: any) {
     logger.warn('⚠️ golfapi.io search error:', err?.message);
@@ -593,20 +597,67 @@ export async function getCourseDetail(courseId: string): Promise<GolfApiCourseDe
  * Tries club name search, then city-based search.
  * Returns the best match or null.
  */
+/**
+ * Resolve an OSM course to a golfapi.io course by name match.
+ * Checks Firestore mapping cache first to avoid API calls.
+ * On cache miss, searches API and persists the mapping for future lookups.
+ */
 export async function resolveOsmCourseToGolfApiIo(
   osmName: string,
   latitude?: number,
   longitude?: number
 ): Promise<GolfApiCourse | null> {
+  // 1. Check Firestore mapping cache first — zero API calls if hit
+  try {
+    const cached = await getCourseMappingFromFirestore(osmName);
+    if (cached?.golfApiIoCourseId) {
+      logger.debug(`📦 golfapi.io: Firestore mapping hit for "${osmName}" → ${cached.golfApiIoCourseId}`);
+      return {
+        id: cached.golfApiIoCourseId,
+        clubId: cached.golfApiIoClubId ?? '',
+        name: cached.golfApiIoCourseName ?? cached.golfApiIoClubName ?? osmName,
+        clubName: cached.golfApiIoClubName ?? '',
+        city: cached.city ?? '',
+        state: cached.state ?? '',
+        country: cached.country ?? '',
+        address: cached.address ?? '',
+        latitude: cached.osmLat ?? 0,
+        longitude: cached.osmLng ?? 0,
+        holes: cached.numHoles ?? 18,
+        hasGPS: cached.hasGPS ?? true,
+      };
+    }
+  } catch {
+    // Firestore unavailable — fall through to API
+  }
+
+  // 2. API search with name variants
   const variants = buildNameVariants(osmName);
 
   for (const variant of variants) {
     const results = await searchCoursesByName(variant, latitude, longitude);
     if (results.length > 0) {
-      // Prefer exact/fuzzy name match, then closest by distance
       const nameMatched = findBestNameMatch(osmName, results);
       if (nameMatched) {
         logger.debug(`✅ golfapi.io: resolved "${osmName}" → "${nameMatched.name}" (${nameMatched.id})`);
+
+        // 3. Persist mapping to Firestore so next lookup skips the API
+        saveCourseMappingToFirestore(osmName, {
+          osmName,
+          osmLat: latitude ?? 0,
+          osmLng: longitude ?? 0,
+          golfApiIoCourseId: nameMatched.id,
+          golfApiIoClubId: nameMatched.clubId,
+          golfApiIoClubName: nameMatched.clubName,
+          golfApiIoCourseName: nameMatched.name,
+          city: nameMatched.city,
+          state: nameMatched.state,
+          country: nameMatched.country,
+          address: nameMatched.address,
+          numHoles: nameMatched.holes,
+          hasGPS: nameMatched.hasGPS,
+        }).catch(() => {});
+
         return nameMatched;
       }
     }
@@ -614,6 +665,43 @@ export async function resolveOsmCourseToGolfApiIo(
 
   logger.debug(`⚠️ golfapi.io: could not resolve "${osmName}"`);
   return null;
+}
+
+// ─── Firestore persistence helpers ───────────────────────────────────────────
+
+/**
+ * Save club/course metadata from search results to Firestore.
+ * Enriches course documents with searchable fields (name, city, etc.)
+ * so the database grows with every search and can eventually replace the API.
+ */
+async function saveClubMetadataToFirestore(courses: GolfApiCourse[]): Promise<void> {
+  if (!db || !isFirebaseEnabled) return;
+  for (const course of courses) {
+    if (!course.id) continue;
+    try {
+      await setDoc(
+        doc(db, 'courses', `golfapiio_${course.id}`),
+        {
+          source: 'GOLFAPI_IO',
+          courseId: course.id,
+          clubId: course.clubId,
+          name: course.name,
+          clubName: course.clubName,
+          city: course.city,
+          state: course.state,
+          country: course.country,
+          address: course.address,
+          holes: course.holes,
+          hasGPS: course.hasGPS,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    } catch {
+      // Non-critical — continue with next course
+    }
+  }
+  logger.debug(`📦 golfapi.io: saved ${courses.length} course metadata entries to Firestore`);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

@@ -49,3 +49,49 @@ export async function saveCourseToFirestore(courseId, data) {
   }
 }
 
+// ─── Course Mapping (OSM name → golfapi.io courseID) ────────────────────────
+
+/**
+ * Normalize a course name into a stable document ID for Firestore lookups.
+ * e.g. "North Haven Golf Club" → "northhavengolfclub"
+ */
+function normalizeNameToDocId(name) {
+  return (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Look up a cached OSM → golfapi.io course mapping in Firestore.
+ * Returns { golfApiIoCourseId, golfApiIoClubName, ... } or null.
+ */
+export async function getCourseMappingFromFirestore(osmName) {
+  if (!osmName || !db || !isFirebaseEnabled) return null;
+  const docId = normalizeNameToDocId(osmName);
+  if (!docId) return null;
+  try {
+    const snap = await getDoc(doc(db, 'courseMappings', docId));
+    if (!snap.exists()) return null;
+    return snap.data();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Save an OSM → golfapi.io course mapping to Firestore so future lookups
+ * skip the golfapi.io search API entirely.
+ */
+export async function saveCourseMappingToFirestore(osmName, mapping) {
+  if (!osmName || !mapping || !db || !isFirebaseEnabled) return;
+  const docId = normalizeNameToDocId(osmName);
+  if (!docId) return;
+  try {
+    await setDoc(
+      doc(db, 'courseMappings', docId),
+      { ...mapping, resolvedAt: serverTimestamp() },
+      { merge: true }
+    );
+  } catch {
+    // Non-critical — swallow silently
+  }
+}
+
