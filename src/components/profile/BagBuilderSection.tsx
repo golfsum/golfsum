@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { UserProfile } from '../../types';
+import { BagItem, MASTER_CLUB_BAG, UserProfile } from '../../types';
 import { ClubYardageModal } from './ClubYardageModal';
 import { ClubYardageAnalysis } from '../../services/clubYardageIntelligence';
+import { saveClubBag } from '../../services/userService';
 
 interface BagBuilderSectionProps {
   expanded: boolean;
@@ -14,6 +15,18 @@ interface BagBuilderSectionProps {
   onToggleClub: (category: 'woods' | 'hybrids' | 'irons' | 'wedges', club: string) => void;
   styles: any;
   yardageAnalysis?: ClubYardageAnalysis | null;
+}
+
+/** Merge profile.clubBag with MASTER_CLUB_BAG so new clubs always appear. */
+function resolveClubBag(profile: UserProfile): BagItem[] {
+  const saved = profile.clubBag;
+  if (Array.isArray(saved) && saved.length > 0) {
+    // Add any master clubs not yet in saved bag (new clubs added to master)
+    const savedKeys = new Set(saved.map((i) => i.club));
+    const extras = MASTER_CLUB_BAG.filter((m) => !savedKeys.has(m.club));
+    return [...saved, ...extras];
+  }
+  return [...MASTER_CLUB_BAG];
 }
 
 export const BagBuilderSection: React.FC<BagBuilderSectionProps> = ({
@@ -27,6 +40,43 @@ export const BagBuilderSection: React.FC<BagBuilderSectionProps> = ({
   yardageAnalysis,
 }) => {
   const [yardageModalClub, setYardageModalClub] = useState<string | null>(null);
+  const [clubBag, setClubBag] = useState<BagItem[]>(() => resolveClubBag(profile));
+  const [savedToast, setSavedToast] = useState(false);
+
+  const persistBag = (next: BagItem[]) => {
+    setClubBag(next);
+    onUpdateProfile({ clubBag: next });
+    saveClubBag(next).catch(() => {});
+    setSavedToast(true);
+    setTimeout(() => setSavedToast(false), 1500);
+  };
+
+  const handleToggleBagItem = (club: string) => {
+    const next = clubBag.map((item) =>
+      item.club === club ? { ...item, enabled: !item.enabled } : item
+    );
+    persistBag(next);
+  };
+
+  const handleMoveUp = (index: number) => {
+    if (index <= 0) return;
+    const next = [...clubBag];
+    [next[index - 1], next[index]] = [next[index], next[index - 1]];
+    persistBag(next);
+  };
+
+  const handleMoveDown = (index: number) => {
+    if (index >= clubBag.length - 1) return;
+    const next = [...clubBag];
+    [next[index], next[index + 1]] = [next[index + 1], next[index]];
+    persistBag(next);
+  };
+
+  const handleReset = () => {
+    persistBag([...MASTER_CLUB_BAG]);
+  };
+
+  const enabledCount = clubBag.filter((i) => i.enabled).length;
 
   const distances = profile.clubDistances ?? {};
   const activeClubCount =
@@ -193,6 +243,54 @@ export const BagBuilderSection: React.FC<BagBuilderSectionProps> = ({
 
           <Text style={styles.clubCategory}>PUTTER</Text>
           <View style={styles.clubRow}>{renderClubChip('Putter')}</View>
+
+          {/* Ordered bag for GPS club row */}
+          <View style={bagStyles.divider} />
+          <View style={bagStyles.orderedHeader}>
+            <View>
+              <Text style={bagStyles.orderedTitle}>GPS CLUB ORDER</Text>
+              <Text style={bagStyles.orderedSub}>
+                {enabledCount}/14 selected · shown in this order during GPS rounds
+              </Text>
+            </View>
+            {savedToast && <Text style={bagStyles.savedToast}>Saved ✓</Text>}
+          </View>
+
+          {clubBag.map((item, index) => (
+            <View key={item.club} style={bagStyles.row}>
+              <View style={[bagStyles.colorDot, { backgroundColor: item.color }]} />
+              <Text style={[bagStyles.clubLabel, !item.enabled && bagStyles.clubLabelDim]}>
+                {item.label}
+              </Text>
+              <View style={bagStyles.rowRight}>
+                <Switch
+                  value={item.enabled}
+                  onValueChange={() => handleToggleBagItem(item.club)}
+                  thumbColor={item.enabled ? item.color : '#6B7280'}
+                  trackColor={{ false: '#374151', true: `${item.color}44` }}
+                  style={bagStyles.switch}
+                />
+                <TouchableOpacity
+                  onPress={() => handleMoveUp(index)}
+                  disabled={index === 0}
+                  style={bagStyles.reorderBtn}
+                >
+                  <Ionicons name="chevron-up" size={16} color={index === 0 ? '#374151' : '#9CA3AF'} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleMoveDown(index)}
+                  disabled={index === clubBag.length - 1}
+                  style={bagStyles.reorderBtn}
+                >
+                  <Ionicons name="chevron-down" size={16} color={index === clubBag.length - 1 ? '#374151' : '#9CA3AF'} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+
+          <TouchableOpacity onPress={handleReset} style={bagStyles.resetBtn}>
+            <Text style={bagStyles.resetText}>Reset to default bag</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -206,6 +304,84 @@ export const BagBuilderSection: React.FC<BagBuilderSectionProps> = ({
     </View>
   );
 };
+
+const bagStyles = StyleSheet.create({
+  divider: {
+    height: 1,
+    backgroundColor: '#1f2937',
+    marginVertical: 16,
+  },
+  orderedHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  orderedTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B7280',
+    letterSpacing: 0.8,
+  },
+  orderedSub: {
+    fontSize: 11,
+    color: '#4B5563',
+    marginTop: 2,
+  },
+  savedToast: {
+    fontSize: 11,
+    color: '#10B981',
+    fontWeight: '700',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#1f2937',
+  },
+  colorDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 10,
+    flexShrink: 0,
+  },
+  clubLabel: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#E5E7EB',
+  },
+  clubLabelDim: {
+    color: '#4B5563',
+  },
+  rowRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  switch: {
+    marginRight: 4,
+    transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }],
+  },
+  reorderBtn: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resetBtn: {
+    marginTop: 12,
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  resetText: {
+    fontSize: 12,
+    color: '#6B7280',
+    textDecorationLine: 'underline',
+  },
+});
 
 const chipStyles = StyleSheet.create({
   clubChip: {

@@ -1,3 +1,57 @@
+/** One entry in the user's ordered club bag. */
+export interface BagItem {
+  club: string;    // canonical key: 'dr', '7i', 'sw', etc.
+  label: string;   // display name: 'Driver', '7 Iron', 'Sand W'
+  color: string;   // hex colour used for chip / shot marker
+  enabled: boolean;
+}
+
+/** Canonical list of every valid club key. Keys are permanent — never change. */
+export const CLUB_MASTER = [
+  'dr', '3w', '5w', '2h', '3h', '4h', '5h',
+  '2i', '3i', '4i', '5i', '6i', '7i', '8i', '9i',
+  'pw', 'gw', 'aw', 'sw', 'lw', 'pt',
+] as const;
+
+export type ClubKey = typeof CLUB_MASTER[number];
+
+/** Default 11-club bag shown when the user has not configured clubBag. */
+export const DEFAULT_CLUB_BAG: BagItem[] = [
+  { club: 'dr',  label: 'Driver',    color: '#F87171', enabled: true  },
+  { club: '3w',  label: '3 Wood',    color: '#FB923C', enabled: true  },
+  { club: '5i',  label: '5 Iron',    color: '#FBBF24', enabled: true  },
+  { club: '6i',  label: '6 Iron',    color: '#A3E635', enabled: true  },
+  { club: '7i',  label: '7 Iron',    color: '#A3E635', enabled: true  },
+  { club: '8i',  label: '8 Iron',    color: '#34D399', enabled: true  },
+  { club: '9i',  label: '9 Iron',    color: '#22D3EE', enabled: true  },
+  { club: 'pw',  label: 'Pitching W',color: '#60A5FA', enabled: true  },
+  { club: 'gw',  label: 'Gap W',     color: '#A78BFA', enabled: true  },
+  { club: 'sw',  label: 'Sand W',    color: '#E879F9', enabled: true  },
+  { club: 'pt',  label: 'Putter',    color: '#94A3B8', enabled: true  },
+];
+
+/** Full master bag shown in My Golf Bag settings. */
+export const MASTER_CLUB_BAG: BagItem[] = [
+  { club: 'dr',  label: 'Driver',    color: '#F87171', enabled: true  },
+  { club: '3w',  label: '3 Wood',    color: '#FB923C', enabled: true  },
+  { club: '5w',  label: '5 Wood',    color: '#FB923C', enabled: false },
+  { club: '3h',  label: '3 Hybrid',  color: '#FBBF24', enabled: false },
+  { club: '4h',  label: '4 Hybrid',  color: '#FBBF24', enabled: false },
+  { club: '5h',  label: '5 Hybrid',  color: '#FBBF24', enabled: false },
+  { club: '4i',  label: '4 Iron',    color: '#FBBF24', enabled: false },
+  { club: '5i',  label: '5 Iron',    color: '#FBBF24', enabled: true  },
+  { club: '6i',  label: '6 Iron',    color: '#A3E635', enabled: true  },
+  { club: '7i',  label: '7 Iron',    color: '#A3E635', enabled: true  },
+  { club: '8i',  label: '8 Iron',    color: '#34D399', enabled: true  },
+  { club: '9i',  label: '9 Iron',    color: '#22D3EE', enabled: true  },
+  { club: 'pw',  label: 'Pitching W',color: '#60A5FA', enabled: true  },
+  { club: 'gw',  label: 'Gap W',     color: '#A78BFA', enabled: true  },
+  { club: 'aw',  label: 'Attack W',  color: '#A78BFA', enabled: false },
+  { club: 'sw',  label: 'Sand W',    color: '#E879F9', enabled: true  },
+  { club: 'lw',  label: 'Lob W',     color: '#E879F9', enabled: false },
+  { club: 'pt',  label: 'Putter',    color: '#94A3B8', enabled: true  },
+];
+
 export interface ScorecardResult {
   html: string;
   rawText?: string;
@@ -331,6 +385,10 @@ export interface UserProfile {
     wedges: string[];          // ["PW", "GW", "SW", "LW"]
     putter: boolean;
   };
+
+  // Ordered bag for GPS club row — replaces hardcoded lists.
+  // Stored as an ordered array; enabled:true clubs appear in the shot panel.
+  clubBag?: BagItem[];
   
   // Club Distances (optional, for validation)
   clubDistances: {
@@ -418,6 +476,7 @@ export const getDefaultProfile = (): UserProfile => ({
     wedges: ['PW', 'GW', 'SW', 'LW'],
     putter: true,
   },
+  clubBag: DEFAULT_CLUB_BAG,
   clubDistances: {},
   coursePreferences: {
     homeCourseName: '',

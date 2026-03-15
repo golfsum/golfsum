@@ -430,13 +430,6 @@ export default function App() {
 
   // Start new round flow
   const handleStartNewRound = () => {
-    if (!getApiKey()) {
-      Alert.alert(
-        'API Key Required',
-        'Set EXPO_PUBLIC_GOLFAPI_IO_TOKEN or EXPO_PUBLIC_GOLF_COURSE_API_KEY to enable course search and round setup.'
-      );
-      return;
-    }
     if (inProgressRound) {
       Alert.alert(
         'Resume Round?',

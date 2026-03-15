@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { haversineYards } from '../../services/haversine';
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout';
 import { colors, radius } from '../../theme/tokens';
+import { ClubScrollRow } from './ClubScrollRow';
 
 let MapboxGL = null;
 try {
@@ -117,6 +118,7 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
     teePoi,
     holePar,
     userClubs = null,
+    activeBag = null,   // BagItem[] from user profile — drives club rail order
     tournamentMode = false,
     onOverlayStateChange,
     onShotLogged,
@@ -385,44 +387,15 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
                 <Text style={styles.sheetCloseText}>✕</Text>
               </TouchableOpacity>
             </View>
-            {(clubSuggestion.ranked || []).length > 0 ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.clubRail}
-              >
-                {(clubSuggestion.ranked || []).slice(0, 8).map((entry) => {
-                  const active = selectedClub === entry.club || (!selectedClub && clubSuggestion.best?.club === entry.club);
-                  return (
-                    <TouchableOpacity
-                      key={entry.club}
-                      style={[styles.clubCard, active && styles.clubCardActive]}
-                      onPress={() => {
-                        setSelectedClub(entry.club);
-                        setClubPickerOpen(false);
-                      }}
-                    >
-                      {clubSuggestion.best?.club === entry.club && (
-                        <Text style={styles.clubBestLabel}>BEST</Text>
-                      )}
-                      <View style={[styles.clubCardAccent, active && styles.clubCardAccentActive]} />
-                      <Text style={[styles.clubCardName, active && styles.clubCardNameActive]}>{entry.club}</Text>
-                      <Text style={[styles.clubCardYards, active && styles.clubCardYardsActive]}>{entry.yards}y</Text>
-                      <Text
-                        style={[
-                          styles.clubCardDiff,
-                          entry.diff > 0 ? styles.clubCardDiffHot : styles.clubCardDiffGood,
-                        ]}
-                      >
-                        {entry.diff > 0 ? '+' : ''}{entry.diff}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            ) : (
-              <Text style={styles.emptyText}>No club distances saved yet.</Text>
-            )}
+            <ClubScrollRow
+              activeBag={activeBag || []}
+              selectedClub={selectedClub}
+              bestClub={clubSuggestion.best?.club ?? null}
+              onSelectClub={(club) => {
+                setSelectedClub(club);
+                setClubPickerOpen(false);
+              }}
+            />
             <TouchableOpacity style={styles.modalClose} onPress={() => setClubPickerOpen(false)}>
               <Text style={styles.modalCloseText}>Close</Text>
             </TouchableOpacity>

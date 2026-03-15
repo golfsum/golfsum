@@ -326,6 +326,18 @@ export async function ensureUserDocument(): Promise<void> {
   }
 }
 
+/** Persist only the clubBag field — avoids a full profile round-trip on every bag edit. */
+export async function saveClubBag(bagItems: import('../types').BagItem[]): Promise<void> {
+  const userId = getUserId();
+  if (!userId) throw new Error('Not authenticated');
+  const fs = requireDb();
+  await updateDoc(doc(fs, 'users', userId), {
+    'profile.clubBag': bagItems,
+    updatedAt: new Date().toISOString(),
+  });
+  logger.debug(`✓ clubBag saved (${bagItems.length} clubs)`);
+}
+
 export async function saveUserProfile(profile: UserProfile): Promise<void> {
   const userId = getUserId();
   if (!userId) throw new Error('Not authenticated');

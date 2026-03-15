@@ -28,6 +28,8 @@ import { calculateRoundRating, getRoundCoursePar } from './playerRatingService';
 import { getElevationFeet } from './weatherService';
 import { logger } from '../utils/logger';
 import { incrementTrialRound } from './trialService';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { updateCourseStatsAfterRound } = require('./courseStatsService');
 
 const STORAGE_KEY = 'golf_rounds';
 const SAMPLE_ROUND_KEY = '@GolfSum:SampleRound';
@@ -631,6 +633,10 @@ async function _saveRound(round: Omit<SavedRound, 'id'>): Promise<SavedRound> {
         if (shouldCountAsAdvancedTrialRound(cloudRound)) {
           // Count one trial round once the first hole has been saved in advanced mode.
           await incrementTrialRound();
+        }
+        // Update per-hole tee club history for GPS rounds (fire-and-forget)
+        if (cloudRound.gpsShots?.length && cloudRound.holes?.length) {
+          updateCourseStatsAfterRound(cloudRound).catch(() => {});
         }
         return cloudRound;
       } catch (firestoreError: unknown) {

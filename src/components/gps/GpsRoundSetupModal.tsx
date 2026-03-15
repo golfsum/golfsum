@@ -93,7 +93,7 @@ export function GpsRoundSetupModal({
                       <View style={[styles.teeColor, { backgroundColor: tee.color || '#10B981' }]} />
                       <View style={styles.teeMeta}>
                         <Text style={[styles.teeName, active && styles.teeNameActive]}>{tee.name}</Text>
-                        <Text style={styles.teeYardage}>{tee.totalYards} yds</Text>
+                        <Text style={styles.teeYardage}>{tee.totalYards > 0 ? `${tee.totalYards} yds` : '--'}</Text>
                       </View>
                     </TouchableOpacity>
                   );
