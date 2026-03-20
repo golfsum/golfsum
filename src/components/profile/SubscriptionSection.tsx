@@ -40,12 +40,12 @@ export const SubscriptionSection: React.FC<SubscriptionSectionProps> = ({
       </View>
 
       {isLoading ? (
-        <Text style={styles.subscriptionStatusText}>Loading subscription status...</Text>
+        <Text style={styles.subscriptionStatusText}>Loading subscription status</Text>
       ) : freeView ? (
         <>
           <Text style={styles.subscriptionPlan}>GolfSum Free</Text>
           <Text style={styles.subscriptionRenewalText}>
-            Track fairways, greens, and get targeted coaching with GolfSum Pro.
+            Add fairways, greens, penalties, and more to each round.
           </Text>
           <TouchableOpacity
             style={{
@@ -58,17 +58,17 @@ export const SubscriptionSection: React.FC<SubscriptionSectionProps> = ({
             }}
             onPress={onSeePlans}
           >
-            <Text style={{ color: '#10B981', fontWeight: '700', fontSize: 13 }}>See Pro Plans</Text>
+            <Text style={{ color: '#10B981', fontWeight: '700', fontSize: 13 }}>See plans</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={onRestore}>
-            <Text style={styles.subscriptionManageText}>Restore Purchase</Text>
+            <Text style={styles.subscriptionManageText}>Restore purchase</Text>
           </TouchableOpacity>
         </>
       ) : inTrial ? (
         <>
           <Text style={styles.subscriptionPlan}>Advanced Trial</Text>
           <Text style={styles.subscriptionRenewalText}>
-            {trialRemaining} of {trialLimit} advanced rounds remaining. All Pro features are active.
+            {trialRemaining} of {trialLimit} advanced rounds remaining. Full stat tracking is on.
           </Text>
           <TouchableOpacity
             style={{
@@ -80,21 +80,21 @@ export const SubscriptionSection: React.FC<SubscriptionSectionProps> = ({
             }}
             onPress={onSeePlans}
           >
-            <Text style={{ color: '#10B981', fontWeight: '700', fontSize: 13 }}>See Pro Plans</Text>
+            <Text style={{ color: '#10B981', fontWeight: '700', fontSize: 13 }}>See plans</Text>
           </TouchableOpacity>
         </>
       ) : (
         <>
-          <Text style={styles.subscriptionPlan}>GolfSum Pro</Text>
+          <Text style={styles.subscriptionPlan}>Full Stat Tracking</Text>
           <Text style={styles.subscriptionRenewalText}>
             {renewalDateLabel
               ? willRenew
                 ? `Renews ${renewalDateLabel}`
-                : `Active until ${renewalDateLabel} · Will not renew`
-              : 'Subscription active'}
+                : `Active until ${renewalDateLabel}. Will not renew.`
+              : 'Subscription is active'}
           </Text>
           <TouchableOpacity style={styles.subscriptionManageButton} onPress={onManage}>
-            <Text style={styles.subscriptionManageText}>Manage Subscription</Text>
+            <Text style={styles.subscriptionManageText}>Manage plan</Text>
             <Ionicons name="chevron-forward" size={14} color="#10B981" />
           </TouchableOpacity>
         </>
@@ -102,4 +102,3 @@ export const SubscriptionSection: React.FC<SubscriptionSectionProps> = ({
     </View>
   );
 };
-

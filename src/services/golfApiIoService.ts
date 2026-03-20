@@ -15,7 +15,7 @@ import { logger } from '../utils/logger';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import type { CourseDetails, TeeBox, HoleDetail } from './golfCourseApiService';
 
-const BASE_URL = 'https://www.golfapi.io/api/v2.7';
+const BASE_URL = 'https://golfapi.io/api/v2.3';
 const TOKEN = process.env.EXPO_PUBLIC_GOLFAPI_IO_TOKEN ?? '';
 
 // golfapi.io REST API is CORS-blocked from browsers — only call directly on native.
@@ -30,13 +30,17 @@ export interface GolfApiCourse {
   id: string;          // CourseID from golfapi.io
   name: string;        // ClubName
   city: string;
+  state?: string;
   country: string;
   latitude: number;
   longitude: number;
   holes: number;
+  clubName?: string;
+  distance?: number;
 }
 
 export interface GolfApiHole {
+  hole: number;
   number: number;
   par: number;
   handicap?: number;
@@ -133,40 +137,96 @@ async function setSearchCache(cache: Record<string, SearchCacheEntry>): Promise<
 
 // golfapi.io returns fields with initial caps (CourseID, ClubName, etc.)
 // Normalise to our internal shape.
+const POI_NAMES: Record<number, string> = {
+  1: 'Green',
+  2: 'Green Bunker',
+  3: 'Fairway Bunker',
+  4: 'Water',
+  5: 'Trees',
+  6: '100 Marker',
+  7: '150 Marker',
+  8: '200 Marker',
+  9: 'Dogleg',
+  10: 'Road',
+  11: 'Tee Front',
+  12: 'Tee Back',
+};
+
+const LOCATION_CODES: Record<number, string> = {
+  1: 'F',
+  2: 'C',
+  3: 'B',
+};
+
+const FAIRWAY_SIDE_CODES: Record<number, string> = {
+  1: 'L',
+  2: 'C',
+  3: 'R',
+};
+
 function normaliseCourse(raw: any): GolfApiCourse {
   return {
-    id: String(raw.CourseID ?? raw.courseId ?? raw.id ?? ''),
-    name: raw.ClubName ?? raw.name ?? '',
-    city: raw.City ?? raw.city ?? '',
-    country: raw.Country ?? raw.country ?? '',
-    latitude: parseFloat(raw.Latitude ?? raw.latitude ?? '0'),
-    longitude: parseFloat(raw.Longitude ?? raw.longitude ?? '0'),
-    holes: Number(raw.NumberOfHoles ?? raw.holes ?? 18),
+    id: String(raw.courseID ?? raw.CourseID ?? raw.courseId ?? raw.id ?? ''),
+    name: raw.courseName ?? raw.CourseName ?? raw.clubName ?? raw.ClubName ?? raw.name ?? '',
+    city: raw.city ?? raw.City ?? '',
+    state: raw.state ?? raw.State ?? '',
+    country: raw.country ?? raw.Country ?? '',
+    latitude: parseFloat(raw.latitude ?? raw.Latitude ?? '0'),
+    longitude: parseFloat(raw.longitude ?? raw.Longitude ?? '0'),
+    holes: Number(raw.numHoles ?? raw.NumberOfHoles ?? raw.holes ?? 18),
+    clubName: raw.clubName ?? raw.ClubName ?? raw.name ?? '',
+    distance: raw.distance != null ? Number(raw.distance) : undefined,
   };
 }
 
-function normaliseDetail(raw: any, base: GolfApiCourse): GolfApiCourseDetail {
-  const holesRaw: any[] = Array.isArray(raw.holes) ? raw.holes : [];
-  const holesData: GolfApiHole[] = holesRaw.map((h: any) => ({
-    number: Number(h.hole ?? h.number ?? 0),
-    par: Number(h.par ?? 0),
-    handicap: h.handicap != null ? Number(h.handicap) : undefined,
-    tees: Array.isArray(h.tees)
-      ? h.tees.map((t: any) => ({
-          name: t.name ?? t.TeeName ?? '',
-          color: t.color ?? t.Color ?? '#10B981',
-          yards: Number(t.yards ?? t.Yards ?? 0),
-          rating: t.rating != null ? Number(t.rating) : undefined,
-          slope: t.slope != null ? Number(t.slope) : undefined,
-        }))
-      : [],
-    pois: Array.isArray(h.pois) ? h.pois : undefined,
-  }));
+function normalisePois(rawCoordinates: any[]): Array<any> {
+  return rawCoordinates
+    .map((poi: any) => ({
+      POI: POI_NAMES[Number(poi?.poi)] || String(poi?.poi || ''),
+      Location: LOCATION_CODES[Number(poi?.location)] || 'C',
+      SideOfFairway: FAIRWAY_SIDE_CODES[Number(poi?.sideFW)] || 'C',
+      Latitude: Number(poi?.latitude),
+      Longitude: Number(poi?.longitude),
+    }))
+    .filter((poi) => Number.isFinite(poi.Latitude) && Number.isFinite(poi.Longitude));
+}
+
+function normaliseDetail(courseRaw: any, coordinatesRaw: any, base: GolfApiCourse): GolfApiCourseDetail {
+  const holeCount = Math.max(
+    Number(courseRaw?.numHoles ?? 0),
+    Array.isArray(courseRaw?.parsMen) ? courseRaw.parsMen.length : 0,
+    Array.isArray(courseRaw?.parsWomen) ? courseRaw.parsWomen.length : 0,
+    18
+  );
+  const pars = Array.isArray(courseRaw?.parsMen) && courseRaw.parsMen.length ? courseRaw.parsMen : courseRaw?.parsWomen;
+  const handicaps = Array.isArray(courseRaw?.indexesMen) && courseRaw.indexesMen.length
+    ? courseRaw.indexesMen
+    : courseRaw?.indexesWomen;
+  const teesRaw = Array.isArray(courseRaw?.tees) ? courseRaw.tees : [];
+  const coordinates = Array.isArray(coordinatesRaw?.coordinates) ? coordinatesRaw.coordinates : [];
+
+  const holesData: GolfApiHole[] = Array.from({ length: holeCount }, (_, index) => {
+    const holeNumber = index + 1;
+    return {
+      hole: holeNumber,
+      number: holeNumber,
+      par: Number(pars?.[index] ?? 4),
+      handicap: handicaps?.[index] != null ? Number(handicaps[index]) : undefined,
+      tees: teesRaw.map((tee: any) => ({
+        name: tee?.teeName ?? tee?.name ?? '',
+        color: tee?.teeColor ?? tee?.color ?? '#10B981',
+        yards: Number(tee?.[`length${holeNumber}`] ?? 0),
+        rating: tee?.courseRatingMen != null ? Number(tee.courseRatingMen) : undefined,
+        slope: tee?.slopeMen != null ? Number(tee.slopeMen) : undefined,
+      })),
+      pois: normalisePois(coordinates.filter((poi: any) => Number(poi?.hole) === holeNumber)),
+    };
+  });
 
   return {
     ...base,
-    rating: raw.rating != null ? Number(raw.rating) : undefined,
-    slope: raw.slope != null ? Number(raw.slope) : undefined,
+    rating: courseRaw?.tees?.[0]?.courseRatingMen != null ? Number(courseRaw.tees[0].courseRatingMen) : undefined,
+    slope: courseRaw?.tees?.[0]?.slopeMen != null ? Number(courseRaw.tees[0].slopeMen) : undefined,
     holesData,
   };
 }
@@ -199,14 +259,14 @@ export async function searchCoursesByName(
   }
 
   try {
-    const params = new URLSearchParams({ ClubName: name.trim() });
+    const params = new URLSearchParams({ name: name.trim() });
     if (latitude != null && longitude != null) {
-      params.set('Latitude', String(latitude));
-      params.set('Longitude', String(longitude));
-      params.set('Radius', '30'); // 30-mile radius
+      params.set('lat', String(latitude));
+      params.set('lng', String(longitude));
+      params.set('measureUnit', 'mi');
     }
 
-    const res = await fetchWithTimeout(`${BASE_URL}/courses/?${params.toString()}`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/courses?${params.toString()}`, {
       headers: authHeader(),
     });
 
@@ -216,15 +276,16 @@ export async function searchCoursesByName(
     }
 
     const json = await res.json();
-    const raw: any[] = Array.isArray(json?.result)
-      ? json.result
-      : Array.isArray(json?.courses)
+    const raw: any[] = Array.isArray(json?.courses)
       ? json.courses
       : Array.isArray(json)
       ? json
       : [];
 
-    const results = raw.filter(Boolean).map(normaliseCourse).filter((c) => c.id && c.name);
+    const results = raw
+      .filter((course) => Number(course?.hasGPS ?? 1) !== 0)
+      .map(normaliseCourse)
+      .filter((c) => c.id && c.name);
     logger.debug(`✅ golfapi.io: found ${results.length} courses for "${name}"`);
 
     // Cache locally
@@ -234,6 +295,71 @@ export async function searchCoursesByName(
     return results;
   } catch (err: any) {
     logger.warn('⚠️ golfapi.io search error:', err?.message);
+    return [];
+  }
+}
+
+export async function searchNearbyClubs(
+  latitude: number,
+  longitude: number,
+  city?: string,
+  state?: string,
+  country: string = 'USA'
+): Promise<GolfApiCourse[]> {
+  if (!canCallDirectly()) return [];
+  if (!TOKEN) {
+    logger.warn('⚠️ golfapi.io: no token set — set EXPO_PUBLIC_GOLFAPI_IO_TOKEN');
+    return [];
+  }
+
+  try {
+    const params = new URLSearchParams({
+      lat: String(latitude),
+      lng: String(longitude),
+      measureUnit: 'mi',
+    });
+    if (city) params.set('city', city);
+    if (state) params.set('state', state);
+    if (country) params.set('country', country);
+
+    const res = await fetchWithTimeout(`${BASE_URL}/clubs?${params.toString()}`, {
+      headers: authHeader(),
+    });
+
+    if (!res.ok) {
+      logger.warn(`⚠️ golfapi.io nearby clubs failed: ${res.status}`);
+      return [];
+    }
+
+    const json = await res.json();
+    const clubs: any[] = Array.isArray(json?.clubs)
+      ? json.clubs
+      : Array.isArray(json?.result)
+      ? json.result
+      : [];
+
+    const results = clubs.flatMap((club: any) => {
+      const clubCourses = Array.isArray(club?.courses) ? club.courses : [];
+      return clubCourses
+        .filter((course: any) => Number(course?.hasGPS ?? 1) !== 0)
+        .map((course: any) =>
+          normaliseCourse({
+            ...course,
+            clubName: club?.clubName ?? '',
+            city: club?.city ?? '',
+            state: club?.state ?? '',
+            country: club?.country ?? '',
+            latitude,
+            longitude,
+            distance: club?.distance,
+            name: course?.courseName ?? club?.clubName ?? '',
+          })
+        );
+    });
+
+    return results.filter((course, index, array) => array.findIndex((item) => item.id === course.id) === index);
+  } catch (err: any) {
+    logger.warn('⚠️ golfapi.io nearby clubs error:', err?.message);
     return [];
   }
 }
@@ -261,21 +387,25 @@ export async function getCourseDetail(courseId: string): Promise<GolfApiCourseDe
 
   // 2. Fetch from API
   try {
-    const res = await fetchWithTimeout(`${BASE_URL}/courses/${courseId}/`, {
-      headers: authHeader(),
-    });
+    const [courseRes, coordinatesRes] = await Promise.all([
+      fetchWithTimeout(`${BASE_URL}/courses/${courseId}`, {
+        headers: authHeader(),
+      }),
+      fetchWithTimeout(`${BASE_URL}/coordinates/${courseId}`, {
+        headers: authHeader(),
+      }),
+    ]);
 
-    if (!res.ok) {
-      logger.warn(`⚠️ golfapi.io detail failed: ${res.status} for ${courseId}`);
+    if (!courseRes.ok || !coordinatesRes.ok) {
+      logger.warn(`⚠️ golfapi.io detail failed: course=${courseRes.status} coordinates=${coordinatesRes.status} for ${courseId}`);
       return null;
     }
 
-    const json = await res.json();
-    const raw = json?.result ?? json?.course ?? json;
-    if (!raw) return null;
+    const [courseRaw, coordinatesRaw] = await Promise.all([courseRes.json(), coordinatesRes.json()]);
+    if (!courseRaw || !coordinatesRaw) return null;
 
-    const base = normaliseCourse(raw);
-    const detail = normaliseDetail(raw, base);
+    const base = normaliseCourse(courseRaw);
+    const detail = normaliseDetail(courseRaw, coordinatesRaw, base);
 
     // 3. Save to Firestore (fire-and-forget)
     saveToFirestore(courseId, detail).catch(() => {});

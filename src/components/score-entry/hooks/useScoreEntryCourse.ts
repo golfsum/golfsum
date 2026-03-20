@@ -82,7 +82,7 @@ export const useScoreEntryCourse = ({
       onShowTeeSelection?.(true);
     } catch (error) {
       logger.error('Error loading course:', error);
-      Alert.alert('Error', 'Failed to load course data. Please try again.');
+      Alert.alert('Could not load the course.', 'Check your connection and try again.');
       onBack();
     } finally {
       setIsLoading(false);

@@ -715,10 +715,10 @@ export const RoundDetailView: React.FC<Props> = ({
         {showPostTrialPrompt && (
           <View style={styles.postTrialCard}>
             <Text style={styles.postTrialTitle}>With Advanced Scoring, this round would also show:</Text>
-            <Text style={styles.postTrialBullet}>• Fairway direction (left/right miss pattern)</Text>
+            <Text style={styles.postTrialBullet}>• Fairway direction (left/right miss trend)</Text>
             <Text style={styles.postTrialBullet}>• GIR misses (short/long/left/right)</Text>
             <Text style={styles.postTrialBullet}>• Club performance updates</Text>
-            <Text style={styles.postTrialBullet}>• Updated coaching insights</Text>
+            <Text style={styles.postTrialBullet}>Round tips from your saved rounds</Text>
             <View style={styles.postTrialActions}>
               <TouchableOpacity
                 onPress={async () => {
@@ -727,7 +727,7 @@ export const RoundDetailView: React.FC<Props> = ({
                   onNavigateToProfile?.();
                 }}
               >
-                <Text style={styles.postTrialUpgradeLink}>See what you are missing →</Text>
+                <Text style={styles.postTrialUpgradeLink}>See full stat tracking</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={async () => {

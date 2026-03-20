@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, TouchableOpacity, TextInput, ActivityIndicator, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 interface ReportIssueSectionProps {
@@ -58,7 +58,16 @@ export const ReportIssueSection: React.FC<ReportIssueSectionProps> = ({
   onSubmit,
   styles,
 }) => {
+  const [threadExpanded, setThreadExpanded] = useState(false);
+  const [replyModalOpen, setReplyModalOpen] = useState(false);
   const selectedIssue = issues.find((issue) => issue.id === selectedIssueId) || null;
+  const threadEntries = useMemo(
+    () => (Array.isArray(selectedIssue?.thread) ? selectedIssue.thread : []),
+    [selectedIssue?.thread]
+  );
+
+  const closeReplyModal = () => setReplyModalOpen(false);
+  const openReplyModal = () => setReplyModalOpen(true);
 
   return (
     <View style={styles.section}>
@@ -170,6 +179,59 @@ export const ReportIssueSection: React.FC<ReportIssueSectionProps> = ({
                   </Text>
                 )}
               </View>
+
+              {threadEntries.length > 0 ? (
+                <View style={styles.reportIssueThreadSection}>
+                  <TouchableOpacity
+                    style={styles.reportIssueThreadToggle}
+                    onPress={() => setThreadExpanded((prev) => !prev)}
+                  >
+                    <Text style={styles.reportIssueThreadToggleText}>
+                      {threadExpanded ? 'Hide replies' : `View replies (${threadEntries.length})`}
+                    </Text>
+                    <Ionicons
+                      name={threadExpanded ? 'chevron-up' : 'chevron-down'}
+                      size={16}
+                      color="#CBD5E1"
+                    />
+                  </TouchableOpacity>
+                  {threadExpanded ? (
+                    <View style={styles.reportIssueThread}>
+                      {threadEntries.map((entry, index) => (
+                        <View
+                          key={`${entry.createdAt}-${index}`}
+                          style={[
+                            styles.reportIssueThreadItem,
+                            entry.from === 'admin' ? styles.reportIssueThreadAdmin : styles.reportIssueThreadUser,
+                          ]}
+                        >
+                          <Text style={styles.reportIssueThreadLabel}>
+                            {entry.from === 'admin' ? 'Admin' : 'You'}
+                          </Text>
+                          <Text style={styles.reportIssueThreadMessage}>{entry.message}</Text>
+                          <Text style={styles.reportIssueThreadMeta}>
+                            {new Date(entry.createdAt).toLocaleDateString()}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
+
+              {replyError ? <Text style={styles.syncErrorText}>{replyError}</Text> : null}
+              {replySuccess ? <Text style={styles.reportIssueSuccessText}>{replySuccess}</Text> : null}
+              <TouchableOpacity
+                style={[styles.reportIssueButton, isSendingReply && styles.syncButtonDisabled]}
+                onPress={openReplyModal}
+                disabled={isSendingReply}
+              >
+                {isSendingReply ? (
+                  <ActivityIndicator size="small" color="#0f1419" />
+                ) : (
+                  <Text style={styles.reportIssueButtonText}>Reply</Text>
+                )}
+              </TouchableOpacity>
             </View>
           )}
 
@@ -200,6 +262,64 @@ export const ReportIssueSection: React.FC<ReportIssueSectionProps> = ({
           </TouchableOpacity>
         </View>
       )}
+
+      <Modal visible={replyModalOpen} transparent animationType="fade" onRequestClose={closeReplyModal}>
+        <View style={styles.reportIssueModalBackdrop}>
+          <View style={styles.reportIssueModalCard}>
+            <View style={styles.reportIssueModalHeader}>
+              <Text style={styles.reportIssueModalTitle}>Reply</Text>
+              <TouchableOpacity style={styles.reportIssueModalClose} onPress={closeReplyModal}>
+                <Ionicons name="close" size={18} color="#E5E7EB" />
+              </TouchableOpacity>
+            </View>
+
+            {threadEntries.length > 0 ? (
+              <ScrollView style={styles.reportIssueModalThread} contentContainerStyle={styles.reportIssueModalThreadContent}>
+                {threadEntries.map((entry, index) => (
+                  <View
+                    key={`${entry.createdAt}-${index}-modal`}
+                    style={[
+                      styles.reportIssueThreadItem,
+                      entry.from === 'admin' ? styles.reportIssueThreadAdmin : styles.reportIssueThreadUser,
+                    ]}
+                  >
+                    <Text style={styles.reportIssueThreadLabel}>
+                      {entry.from === 'admin' ? 'Admin' : 'You'}
+                    </Text>
+                    <Text style={styles.reportIssueThreadMessage}>{entry.message}</Text>
+                    <Text style={styles.reportIssueThreadMeta}>
+                      {new Date(entry.createdAt).toLocaleDateString()}
+                    </Text>
+                  </View>
+                ))}
+              </ScrollView>
+            ) : null}
+
+            <TextInput
+              style={styles.reportIssueReplyInput}
+              value={replyMessage}
+              onChangeText={onReplyChange}
+              placeholder="Reply to this issue"
+              placeholderTextColor="#6B7280"
+              multiline
+              textAlignVertical="top"
+            />
+            {replyError ? <Text style={styles.syncErrorText}>{replyError}</Text> : null}
+            {replySuccess ? <Text style={styles.reportIssueSuccessText}>{replySuccess}</Text> : null}
+            <TouchableOpacity
+              style={[styles.reportIssueButton, isSendingReply && styles.syncButtonDisabled]}
+              onPress={onSendReply}
+              disabled={isSendingReply}
+            >
+              {isSendingReply ? (
+                <ActivityIndicator size="small" color="#0f1419" />
+              ) : (
+                <Text style={styles.reportIssueButtonText}>Send Reply</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };

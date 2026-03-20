@@ -126,7 +126,7 @@ export const CourseAnalyticsScreen: React.FC<CourseAnalyticsScreenProps> = ({
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.loadingState}>
           <Ionicons name="analytics-outline" size={40} color={colors.text.tertiary} />
-          <Text style={styles.loadingText}>Loading course stats...</Text>
+          <Text style={styles.loadingText}>Loading course stats</Text>
         </View>
       </SafeAreaView>
     );
@@ -146,7 +146,7 @@ export const CourseAnalyticsScreen: React.FC<CourseAnalyticsScreenProps> = ({
             <Ionicons name="golf-outline" size={48} color={colors.text.tertiary} />
             <Text style={styles.emptyTitle}>{EMPTY_STATE_COPY.titles.noRoundsHereYet}</Text>
             <Text style={styles.emptyText}>
-              Play or import a round at {formatCourseName(courseName)} to unlock hole insights.
+              Play or import a round at {formatCourseName(courseName)} and hole-by-hole stats will show here.
             </Text>
           </View>
         </View>
@@ -328,7 +328,7 @@ export const CourseAnalyticsScreen: React.FC<CourseAnalyticsScreenProps> = ({
                     <View style={styles.holeNoteComposer}>
                       <TextInput
                         style={styles.holeNoteInput}
-                        placeholder="Add note for this hole..."
+                        placeholder="Add note for this hole"
                         placeholderTextColor={colors.text.tertiary}
                         value={noteDraftByHole[row.number] || ''}
                         onChangeText={(value) => setNoteDraftByHole(prev => ({ ...prev, [row.number]: value }))}
@@ -347,7 +347,7 @@ export const CourseAnalyticsScreen: React.FC<CourseAnalyticsScreenProps> = ({
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Trouble Holes</Text>
             {insights.troubleInsights.length === 0 && (
-              <Text style={styles.sectionBody}>No clear trouble holes yet. Keep tracking to tighten patterns.</Text>
+              <Text style={styles.sectionBody}>No trouble holes here yet. Add more rounds and this will fill in.</Text>
             )}
             {insights.troubleInsights.map((item) => (
               <View key={`trouble-${item.hole}`} style={styles.insightBlock}>
@@ -366,7 +366,7 @@ export const CourseAnalyticsScreen: React.FC<CourseAnalyticsScreenProps> = ({
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Best Holes</Text>
             {insights.bestInsights.length === 0 && (
-              <Text style={styles.sectionBody}>No best-hole pattern yet. More rounds will sharpen this view.</Text>
+              <Text style={styles.sectionBody}>No best holes here yet. Add more rounds and this will fill in.</Text>
             )}
             {insights.bestInsights.map((item) => (
               <View key={`best-${item.hole}`} style={styles.insightBlock}>

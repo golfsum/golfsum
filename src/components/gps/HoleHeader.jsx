@@ -2,19 +2,25 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { colors, radius, spacing, typography } from '../../theme/tokens';
 
-export function HoleHeader({ hole, hazardTags = [], liveLie = null }) {
+export function HoleHeader({ hole, hazardTags = [], liveLie = null, compact = false, teeYardage = null }) {
   if (!hole) return null;
 
   const showLieDot = !!liveLie?.showDot;
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, compact && styles.wrapCompact]}>
       <View style={styles.leftRow}>
-        <Text style={styles.holePlain}>Hole {hole.hole}</Text>
+        <Text style={[styles.holePlain, compact && styles.holePlainCompact]}>Hole {hole.hole}</Text>
         <Text style={styles.holeDot}>·</Text>
-        <Text style={styles.holePlain}>Par {hole.par}</Text>
+        <Text style={[styles.holePlain, compact && styles.holePlainCompact]}>Par {hole.par}</Text>
+        {teeYardage ? (
+          <>
+            <Text style={styles.holeDot}>·</Text>
+            <Text style={[styles.holePlain, compact && styles.holePlainCompact]}>{teeYardage}y</Text>
+          </>
+        ) : null}
         <Text style={styles.holeDot}>·</Text>
-        <Text style={styles.holePlain}>HCP {hole.handicap ?? '-'}</Text>
+        <Text style={[styles.holePlain, compact && styles.holePlainCompact]}>HCP {hole.handicap ?? '-'}</Text>
       </View>
 
       <View style={styles.spacer} />
@@ -22,7 +28,7 @@ export function HoleHeader({ hole, hazardTags = [], liveLie = null }) {
       <View style={styles.rightRow}>
         {hazardTags.map((tag) => (
           <View key={tag} style={styles.tag}>
-            <Text style={styles.tagText}>{tag}</Text>
+            <Text style={[styles.tagText, compact && styles.tagTextCompact]}>{tag}</Text>
           </View>
         ))}
         {hazardTags.length > 0 && <View style={styles.divider} />}
@@ -43,10 +49,11 @@ export function HoleHeader({ hole, hazardTags = [], liveLie = null }) {
           <Text
             style={[
               styles.lieLabel,
+              compact && styles.lieLabelCompact,
               liveLie?.color ? { color: liveLie.color } : styles.lieLabelMuted,
             ]}
           >
-            {liveLie?.lie || 'Locating...'}
+            {liveLie?.lie || 'Locating'}
           </Text>
         </View>
       </View>
@@ -58,13 +65,15 @@ const styles = StyleSheet.create({
   wrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.bg.primary,
-    paddingHorizontal: spacing.lg,
-    paddingTop: 6,
-    paddingBottom: 7,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border.subtle,
+    backgroundColor: 'transparent',
+    paddingHorizontal: spacing.md,
+    paddingTop: 4,
+    paddingBottom: 5,
     flexShrink: 0,
+  },
+  wrapCompact: {
+    paddingTop: 2,
+    paddingBottom: 3,
   },
   leftRow: {
     flexDirection: 'row',
@@ -76,6 +85,9 @@ const styles = StyleSheet.create({
     fontSize: typography.labelMd.fontSize,
     fontWeight: '600',
     opacity: 0.8,
+  },
+  holePlainCompact: {
+    fontSize: 11,
   },
   holeDot: {
     color: colors.text.tertiary,
@@ -90,7 +102,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    marginLeft: spacing.lg,
+    marginLeft: spacing.md,
   },
   tag: {
     backgroundColor: colors.bg.elevated,
@@ -104,6 +116,9 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     fontSize: 10,
     fontWeight: '500',
+  },
+  tagTextCompact: {
+    fontSize: 9,
   },
   divider: {
     width: 1,
@@ -134,6 +149,9 @@ const styles = StyleSheet.create({
   lieLabel: {
     fontSize: 11,
     fontWeight: '700',
+  },
+  lieLabelCompact: {
+    fontSize: 10,
   },
   lieLabelMuted: {
     color: colors.text.secondary,

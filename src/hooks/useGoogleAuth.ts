@@ -93,13 +93,12 @@ export function useGoogleAuth(
   const promptGoogleSignIn = useCallback(async () => {
     if (!iosClientId) {
       onErrorRef.current(
-        'Google Sign-In not configured for iOS. Add EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID to your .env file. ' +
-        'Create an iOS OAuth client at console.cloud.google.com → APIs & Services → Credentials.'
+        'Google sign-in is not set up on iPhone yet. Add EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID to your .env file.'
       );
       return;
     }
     if (!request) {
-      onErrorRef.current('Google Sign-In is still loading. Please try again in a moment.');
+      onErrorRef.current('Google sign-in is still loading. Try again in a moment.');
       return;
     }
     try {
@@ -107,7 +106,7 @@ export function useGoogleAuth(
       await promptAsync();
     } catch (err) {
       logger.error('Google promptAsync error:', err);
-      onErrorRef.current(err instanceof Error ? err.message : 'Failed to open Google Sign-In');
+      onErrorRef.current(err instanceof Error ? err.message : 'Google sign-in did not open.');
     }
   }, [request, promptAsync, iosClientId]);
 

@@ -20,16 +20,24 @@ interface Props {
 
 const CATEGORY_META: Record<NudgeCategory, { label: string; color: string; icon: keyof typeof Ionicons.glyphMap }> = {
   putting: { label: 'Putting', color: '#E74C3C', icon: 'flag-outline' },
-  approach: { label: 'Approach & GIR', color: '#3498DB', icon: 'analytics-outline' },
-  tee: { label: 'Tee Shots', color: '#F39C12', icon: 'trending-up-outline' },
-  strategy: { label: 'Scoring', color: '#9B59B6', icon: 'stats-chart-outline' },
-  course: { label: 'Course Mgmt', color: '#1ABC9C', icon: 'map-outline' },
-  mental: { label: 'Mental', color: '#E67E22', icon: 'bulb-outline' },
+  approach: { label: 'Approach', color: '#3498DB', icon: 'analytics-outline' },
+  tee: { label: 'Off The Tee', color: '#F39C12', icon: 'trending-up-outline' },
+  strategy: { label: 'Strategy', color: '#9B59B6', icon: 'stats-chart-outline' },
+  course: { label: 'Course Plan', color: '#1ABC9C', icon: 'map-outline' },
+  mental: { label: 'Mindset', color: '#E67E22', icon: 'bulb-outline' },
 };
 
 const FIRST_PERSONAL_NUDGE_KEY = '@GolfSum:nudges:firstPersonalNudgeSeen';
 const PRO_PROMPT_COUNTER_KEY = '@GolfSum:nudges:proPromptCounter';
 const VERIFICATION_ACKNOWLEDGED = '@GolfSum:clubYardage:verificationAcknowledged';
+
+const BADGE_LABELS: Record<string, string> = {
+  'Your Game': 'Your Rounds',
+  'Pre-Round': 'Today',
+  Example: 'Example',
+  Tip: 'Tip',
+  Pro: 'More Stats',
+};
 
 function buildProNudge(rounds: SavedRound[]): CoachingNudgeCard {
   const holes = rounds.flatMap(r => r.holes || []);
@@ -37,16 +45,16 @@ function buildProNudge(rounds: SavedRound[]): CoachingNudgeCard {
   const misses = holes.filter(h => typeof h.greenHit === 'string').length;
   const shortPct = misses > 0 ? Math.round((shortMisses / misses) * 100) : 0;
   const body = shortPct > 0
-    ? `Your trial data already shows a pattern: ${shortPct}% of your GIR misses are short. More detailed rounds make this coaching sharper.`
-    : 'Your trial rounds have enough data to start pattern detection. More detailed rounds unlock stronger, course-specific coaching.';
+    ? `${shortPct}% of your GIR misses are short. More tracked rounds make this sharper.`
+    : 'Your rounds are starting to show where shots are getting away from you. More tracked rounds make this sharper.';
 
   return {
     id: 'pro_upsell_play',
     category: 'strategy',
-    title: 'Your Data Gets Better with Pro',
+    title: 'Keep Tracking Your Game',
     body,
     badge: 'Pro',
-    ctaText: 'Unlock Advanced Scoring',
+    ctaText: 'See full stat tracking',
     ctaAction: 'none',
   };
 }
@@ -182,7 +190,9 @@ export const CoachingNudgeCarousel: React.FC<Props> = ({
                   <Text style={[styles.categoryText, { color: meta.color }]}>{meta.label}</Text>
                 </View>
                 <View style={[styles.badge, personalBadge && styles.badgePersonal, proBadge && styles.badgePro]}>
-                  <Text style={[styles.badgeText, personalBadge && styles.badgeTextPersonal, proBadge && styles.badgeTextPro]}>{card.badge}</Text>
+                  <Text style={[styles.badgeText, personalBadge && styles.badgeTextPersonal, proBadge && styles.badgeTextPro]}>
+                    {BADGE_LABELS[card.badge] || card.badge}
+                  </Text>
                 </View>
               </View>
               {card._brief ? (
@@ -195,7 +205,7 @@ export const CoachingNudgeCarousel: React.FC<Props> = ({
               )}
               {card.id === 'dt1' && card.adjustedClubs && card.adjustedClubs.length > 0 && (
                 <View style={styles.adjustedYardageTable}>
-                  <Text style={styles.adjustedYardageHeader}>Today's adjusted carry</Text>
+                  <Text style={styles.adjustedYardageHeader}>Carry in these conditions</Text>
                   {card.adjustedClubs.slice(0, 5).map(club => (
                     <View key={club.club} style={styles.adjustedYardageRow}>
                       <Text style={styles.adjustedYardageClub}>{club.club}</Text>
@@ -213,7 +223,7 @@ export const CoachingNudgeCarousel: React.FC<Props> = ({
                     </View>
                   ))}
                   {typeof card.tempF === 'number' && (
-                    <Text style={styles.adjustedYardageNote}>Based on {card.tempF}F conditions</Text>
+                    <Text style={styles.adjustedYardageNote}>{card.tempF}F today</Text>
                   )}
                 </View>
               )}
@@ -223,7 +233,7 @@ export const CoachingNudgeCarousel: React.FC<Props> = ({
         })}
       </ScrollView>
       {showPersonalNudgeHint ? (
-        <Text style={styles.personalHint}>New: tips now use your round data.</Text>
+        <Text style={styles.personalHint}>Tips now use your rounds.</Text>
       ) : null}
       <View style={styles.dots}>
         {visibleCards.map((card, index) => (

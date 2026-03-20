@@ -1,4 +1,4 @@
-import { SavedRound, RoundStats, AverageStats, RoundHole, StatState } from '../types';
+import { SavedRound, RoundStats, AverageStats, RoundHole, StatState, CourseSource, GpsShotLog } from '../types';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCurrentUser } from './firebaseAuthService';
@@ -9,6 +9,7 @@ import {
   updateRoundInFirestore,
   saveAverageStats,
   getAverageStatsFromFirestore,
+  getUserProfile,
 } from './userService';
 import { 
   uploadScorecardImage, 
@@ -28,13 +29,305 @@ import { calculateRoundRating, getRoundCoursePar } from './playerRatingService';
 import { getElevationFeet } from './weatherService';
 import { logger } from '../utils/logger';
 import { incrementTrialRound } from './trialService';
+import { getMockGpsCourse } from './gpsMockCourses';
+import { processRoundShotDistances } from './clubDistanceService';
 
 const STORAGE_KEY = 'golf_rounds';
 const SAMPLE_ROUND_KEY = '@GolfSum:SampleRound';
 const SAMPLE_DISMISSED_KEY = '@GolfSum:SampleRoundDismissed';
 export const SAMPLE_ROUND_ID = 'sample_round_1';
+const PEBBLE_BEACH_COURSE_ID = '141520658891108829';
 const HANDICAP_WINDOW = 20; // Last 20 rounds (WHS standard)
 const HANDICAP_BEST = 8; // Best 8 of 20 (WHS standard)
+
+const CLUB_DISTANCES: Record<string, number> = {
+  Driver: 255,
+  '3w': 232,
+  '5w': 214,
+  '4i': 198,
+  '5i': 186,
+  '6i': 176,
+  '7i': 165,
+  '8i': 152,
+  '9i': 138,
+  PW: 124,
+  GW: 110,
+  SW: 95,
+};
+
+type PebbleHoleSeed = {
+  score: number;
+  putts: number;
+  fairwayHit?: RoundHole['fairwayHit'];
+  greenHit?: RoundHole['greenHit'];
+  teeClub: string;
+  approachClub?: string | null;
+  approachDistance?: RoundHole['approachDistance'];
+  upDown?: boolean | null;
+  fairwayBunker?: boolean;
+  greenSideBunker?: boolean;
+  notes?: string;
+};
+
+const PEBBLE_ROUND_SEEDS: PebbleHoleSeed[][] = [
+  [
+    { score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: '9i', approachDistance: '125-150' },
+    { score: 5, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: 'SW', approachDistance: '75-100' },
+    { score: 5, putts: 2, greenHit: 'right', teeClub: '6i', approachClub: '6i', approachDistance: '175-200', upDown: false },
+    { score: 5, putts: 2, fairwayHit: 'right', greenHit: 'short', teeClub: 'Driver', approachClub: 'PW', approachDistance: '100-125', upDown: false },
+    { score: 3, putts: 1, greenHit: true, teeClub: '8i', approachClub: '8i', approachDistance: '150-175' },
+    { score: 7, putts: 2, fairwayHit: true, greenHit: 'left', teeClub: 'Driver', approachClub: 'GW', approachDistance: '100-125', upDown: false, fairwayBunker: true },
+    { score: 3, putts: 2, greenHit: false, teeClub: '9i', approachClub: '9i', approachDistance: '100-125', upDown: true },
+    { score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: 'PW', approachDistance: '100-125' },
+    { score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: '7i', approachDistance: '150-175' },
+    { score: 5, putts: 2, fairwayHit: 'left', greenHit: 'short', teeClub: 'Driver', approachClub: '8i', approachDistance: '125-150', upDown: true },
+    { score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: '9i', approachDistance: '125-150' },
+    { score: 3, putts: 2, greenHit: true, teeClub: '7i', approachClub: '7i', approachDistance: '175-200' },
+    { score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: '8i', approachDistance: '125-150' },
+    { score: 5, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: 'GW', approachDistance: '100-125' },
+    { score: 4, putts: 2, fairwayHit: true, greenHit: 'right', teeClub: '3w', approachClub: '9i', approachDistance: '125-150', upDown: false },
+    { score: 5, putts: 2, fairwayHit: 'right', greenHit: 'short', teeClub: 'Driver', approachClub: 'PW', approachDistance: '100-125', upDown: false },
+    { score: 3, putts: 2, greenHit: true, teeClub: '7i', approachClub: '7i', approachDistance: '175-200' },
+    { score: 5, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: 'SW', approachDistance: '75-100' },
+  ],
+  [
+    { score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: '8i', approachDistance: '125-150' },
+    { score: 6, putts: 2, fairwayHit: true, greenHit: 'short', teeClub: 'Driver', approachClub: 'SW', approachDistance: '75-100', upDown: true },
+    { score: 4, putts: 2, greenHit: true, teeClub: '6i', approachClub: '6i', approachDistance: '175-200' },
+    { score: 5, putts: 2, fairwayHit: true, greenHit: false, teeClub: 'Driver', approachClub: 'PW', approachDistance: '100-125', upDown: true },
+    { score: 3, putts: 2, greenHit: true, teeClub: '8i', approachClub: '8i', approachDistance: '150-175' },
+    { score: 6, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: 'GW', approachDistance: '100-125' },
+    { score: 4, putts: 2, greenHit: false, teeClub: '9i', approachClub: '9i', approachDistance: '100-125', upDown: false },
+    { score: 5, putts: 2, fairwayHit: 'right', greenHit: true, teeClub: '3w', approachClub: '9i', approachDistance: '125-150' },
+    { score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: '7i', approachDistance: '150-175' },
+    { score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '9i', approachDistance: '100-125' },
+    { score: 5, putts: 2, fairwayHit: true, greenHit: 'left', teeClub: '3w', approachClub: '8i', approachDistance: '125-150', upDown: true },
+    { score: 3, putts: 2, greenHit: true, teeClub: '7i', approachClub: '7i', approachDistance: '175-200' },
+    { score: 5, putts: 2, fairwayHit: 'right', greenHit: 'short', teeClub: 'Driver', approachClub: '8i', approachDistance: '150-175', upDown: false },
+    { score: 5, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: 'GW', approachDistance: '100-125' },
+    { score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: 'PW', approachDistance: '100-125' },
+    { score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '9i', approachDistance: '125-150' },
+    { score: 4, putts: 2, greenHit: true, teeClub: '7i', approachClub: '7i', approachDistance: '175-200' },
+    { score: 6, putts: 2, fairwayHit: 'left', greenHit: 'right', teeClub: 'Driver', approachClub: 'SW', approachDistance: '75-100', upDown: false },
+  ],
+  [
+    { score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: '9i', approachDistance: '125-150' },
+    { score: 5, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: 'SW', approachDistance: '75-100' },
+    { score: 4, putts: 2, greenHit: true, teeClub: '6i', approachClub: '6i', approachDistance: '175-200' },
+    { score: 4, putts: 1, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: 'PW', approachDistance: '100-125' },
+    { score: 4, putts: 2, greenHit: 'short', teeClub: '8i', approachClub: '8i', approachDistance: '150-175', upDown: false },
+    { score: 6, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: 'GW', approachDistance: '100-125' },
+    { score: 4, putts: 2, greenHit: false, teeClub: '9i', approachClub: '9i', approachDistance: '100-125', upDown: false },
+    { score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: 'PW', approachDistance: '100-125' },
+    { score: 5, putts: 2, fairwayHit: 'right', greenHit: false, teeClub: '3w', approachClub: '7i', approachDistance: '150-175', upDown: true },
+    { score: 5, putts: 2, fairwayHit: true, greenHit: 'right', teeClub: 'Driver', approachClub: '9i', approachDistance: '100-125', upDown: false },
+    { score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: '9i', approachDistance: '125-150' },
+    { score: 3, putts: 2, greenHit: true, teeClub: '7i', approachClub: '7i', approachDistance: '175-200' },
+    { score: 5, putts: 2, fairwayHit: 'left', greenHit: 'right', teeClub: 'Driver', approachClub: '8i', approachDistance: '125-150', upDown: false },
+    { score: 5, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: 'GW', approachDistance: '100-125' },
+    { score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: 'PW', approachDistance: '100-125' },
+    { score: 5, putts: 2, fairwayHit: 'right', greenHit: false, teeClub: 'Driver', approachClub: '9i', approachDistance: '125-150', upDown: true },
+    { score: 3, putts: 2, greenHit: true, teeClub: '7i', approachClub: '7i', approachDistance: '175-200' },
+    { score: 5, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: 'SW', approachDistance: '75-100' },
+  ],
+];
+
+function getBandMidpoint(distance?: RoundHole['approachDistance']): number | null {
+  const mids: Partial<Record<NonNullable<RoundHole['approachDistance']>, number>> = {
+    '<50': 40,
+    '50-100': 75,
+    '100-150': 125,
+    '150-200': 175,
+    '200+': 215,
+    '<75': 60,
+    '75-100': 88,
+    '100-125': 112,
+    '125-150': 138,
+    '150-175': 163,
+    '175-200': 188,
+    '200-225': 213,
+    '225-250': 238,
+    '250+': 260,
+  };
+  return distance ? mids[distance] ?? null : null;
+}
+
+function getClubDistance(club?: string | null): number | null {
+  if (!club) return null;
+  return CLUB_DISTANCES[club] ?? null;
+}
+
+function buildPebbleShotLog(
+  holeNumber: number,
+  teeClub: string,
+  teeShotYards: number,
+  approachClub?: string | null,
+  approachDistance?: RoundHole['approachDistance'],
+  dateIso?: string
+): GpsShotLog[] {
+  const shots: GpsShotLog[] = [
+    {
+      id: `seed_${holeNumber}_1_${Math.random().toString(36).slice(2, 8)}`,
+      holeNumber,
+      shotNumber: 1,
+      club: teeClub,
+      lie: 'Tee Box',
+      actualYards: teeShotYards,
+      playingYards: teeShotYards,
+      loggedAt: dateIso,
+    },
+  ];
+
+  const approachYards = getBandMidpoint(approachDistance);
+  if (approachClub && approachYards) {
+    shots.push({
+      id: `seed_${holeNumber}_2_${Math.random().toString(36).slice(2, 8)}`,
+      holeNumber,
+      shotNumber: 2,
+      club: approachClub,
+      lie: 'Fairway',
+      actualYards: approachYards,
+      playingYards: approachYards,
+      loggedAt: dateIso,
+    });
+  }
+
+  return shots;
+}
+
+function summarizeRoundStats(holes: RoundHole[]): RoundStats {
+  const fairwayTracked = holes.filter((hole) => hole.par > 3 && hole.fairwayHit !== null && hole.fairwayHit !== undefined);
+  const fairways = fairwayTracked.filter((hole) => hole.fairwayHit === true).length;
+  const greenTracked = holes.filter((hole) => hole.greenHit !== null && hole.greenHit !== undefined);
+  const greens = greenTracked.filter((hole) => hole.greenHit === true).length;
+  const upDownTracked = holes.filter((hole) => hole.upDown !== null && hole.upDown !== undefined);
+  const upDownMade = upDownTracked.filter((hole) => hole.upDown === true).length;
+
+  return {
+    score: holes.reduce((sum, hole) => sum + hole.score, 0),
+    putts: holes.reduce((sum, hole) => sum + (hole.putts || 0), 0),
+    fairways,
+    fairwaysPossible: fairwayTracked.length,
+    greens,
+    greensPossible: greenTracked.length,
+    upDownMade,
+    upDownAttempts: upDownTracked.length,
+    teeBox: 'Blue',
+    courseRating: 74.9,
+    slopeRating: 144,
+    totalPar: 72,
+    coursePar: 72,
+  };
+}
+
+function buildPebbleSeedRounds(): Omit<SavedRound, 'id'>[] {
+  const pebble = getMockGpsCourse(PEBBLE_BEACH_COURSE_ID);
+  if (!pebble) {
+    throw new Error('Pebble Beach mock course is not available.');
+  }
+
+  return PEBBLE_ROUND_SEEDS.map((roundSeed, roundIndex) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (roundSeed.length + 2 - roundIndex));
+    date.setHours(8 + roundIndex, 20, 0, 0);
+
+    const holes: RoundHole[] = pebble.holes.map((hole, holeIndex) => {
+      const seed = roundSeed[holeIndex];
+      return {
+        number: hole.hole,
+        par: hole.par,
+        handicapIndex: hole.handicap,
+        score: seed.score,
+        putts: seed.putts,
+        fairwayHit: hole.par === 3 ? null : (seed.fairwayHit ?? null),
+        greenHit: seed.greenHit ?? null,
+        approachDistance: seed.approachDistance ?? null,
+        teeClub: seed.teeClub,
+        approachClub: seed.approachClub ?? null,
+        upDown: seed.upDown ?? null,
+        fairwayBunker: seed.fairwayBunker,
+        greenSideBunker: seed.greenSideBunker,
+        isSaved: true,
+      };
+    });
+
+    const gpsShots = pebble.holes.flatMap((hole, holeIndex) => {
+      const seed = roundSeed[holeIndex];
+      const teeYards = getClubDistance(seed.teeClub) ?? Math.max((hole.tees[0]?.yards || 380) - (getBandMidpoint(seed.approachDistance) || 130), 160);
+      return buildPebbleShotLog(
+        hole.hole,
+        seed.teeClub,
+        teeYards,
+        seed.approachClub ?? null,
+        seed.approachDistance ?? null,
+        date.toISOString()
+      );
+    });
+
+    const stats = summarizeRoundStats(holes);
+    const startedAt = date.getTime() - 4 * 60 * 60 * 1000;
+    const endedAt = date.getTime();
+
+    return {
+      date,
+      courseName: pebble.courseName,
+      score: stats.score,
+      stats,
+      html: '',
+      imageUri: '',
+      courseId: pebble.courseId,
+      courseSource: CourseSource.API,
+      teeName: 'Blue',
+      tee: 'Blue',
+      holeCount: 18,
+      plannedHoles: 18,
+      holesPlayed: holes.map((hole) => hole.number),
+      roundLength: '18',
+      roundSource: 'manual',
+      entryMode: 'advanced',
+      roundStartedAt: startedAt,
+      roundEndedAt: endedAt,
+      roundDurationMinutes: 240,
+      gpsShots,
+      gpsShotCount: gpsShots.length,
+      holes,
+      weather: {
+        temp: '58F',
+        conditions: 'Marine Layer',
+        wind: '9 mph',
+      },
+      notes: `Pebble seed round ${roundIndex + 1}`,
+      isSeededTestRound: true,
+      courseSnapshot: {
+        courseId: pebble.courseId,
+        name: pebble.courseName,
+        location: {
+          city: 'Pebble Beach',
+          state: 'CA',
+          country: 'USA',
+          latitude: 36.5681,
+          longitude: -121.9500,
+        },
+        holesCount: pebble.holes.length,
+        tee: {
+          name: 'Blue',
+          rating: 74.9,
+          slope: 144,
+          yardageTotal: pebble.holes.reduce((sum, hole) => sum + (hole.tees[0]?.yards || 0), 0),
+        },
+        holes: pebble.holes.map((hole) => ({
+          number: hole.hole,
+          par: hole.par,
+          yardage: hole.tees[0]?.yards || undefined,
+          handicapIndex: hole.handicap,
+        })),
+        source: pebble.source,
+        version: 1,
+        lastVerifiedAt: Date.now(),
+      },
+    };
+  });
+}
 
 const getErrorMessage = (error: unknown): string => {
   if (error && typeof error === 'object' && 'message' in error) {
@@ -45,12 +338,27 @@ const getErrorMessage = (error: unknown): string => {
 };
 
 function shouldCountAsAdvancedTrialRound(round: SavedRound): boolean {
-  if (round.isSample) return false;
+  if (round.isSample || round.isSeededTestRound) return false;
   const inferredSource: 'manual' | 'import' =
     round.roundSource ?? (round.imageUri ? 'import' : 'manual');
   const hasSavedHole =
     (round.holes?.some(h => h.isSaved || (h.score ?? 0) > 0) ?? false) || round.score > 0;
   return inferredSource === 'manual' && round.entryMode === 'advanced' && hasSavedHole;
+}
+
+async function getLocalStoredRounds(): Promise<SavedRound[]> {
+  const data = await getLocalRoundsRaw();
+  if (!data) return [];
+  try {
+    const rounds = JSON.parse(data) as SavedRound[];
+    return rounds.map((round) => ({
+      ...round,
+      date: new Date(round.date),
+    }));
+  } catch (error) {
+    logger.error(`❌ Error parsing ${getStorageLabel()} rounds:`, error);
+    return [];
+  }
 }
 
 // Track Firestore availability to reduce error spam
@@ -219,6 +527,18 @@ export async function loadSampleRounds(): Promise<SavedRound[]> {
   await setSampleRoundRaw(JSON.stringify(samples));
   await setSampleDismissedFlag(false);
   return samples;
+}
+
+export async function seedPebbleHistoryRounds(): Promise<SavedRound[]> {
+  const seedRounds = buildPebbleSeedRounds();
+  const saved: SavedRound[] = [];
+
+  for (const round of seedRounds) {
+    const savedRound = await saveRound(round);
+    saved.push(savedRound);
+  }
+
+  return saved;
 }
 
 export async function dismissSampleRound(): Promise<void> {
@@ -486,7 +806,15 @@ export async function getRounds(): Promise<SavedRound[]> {
     try {
       const firestoreRounds = await getRoundsFromFirestore();
       logger.debug(`✓ Loaded ${firestoreRounds.length} rounds from Firestore`);
-      const migrated = await migrateRoundsToWHS(firestoreRounds);
+      const localRounds = await getLocalStoredRounds();
+      const mergedRounds = [...firestoreRounds];
+      const existingIds = new Set(firestoreRounds.map((round) => round.id));
+      localRounds.forEach((round) => {
+        if (!existingIds.has(round.id)) {
+          mergedRounds.push(round);
+        }
+      });
+      const migrated = await migrateRoundsToWHS(mergedRounds);
       const sorted = migrated.sort((a, b) => b.date.getTime() - a.date.getTime());
       const sampleRounds = await getSampleRounds();
       if (sampleRounds.length > 0 && sorted.length === 0) {
@@ -578,6 +906,8 @@ async function _saveRound(round: Omit<SavedRound, 'id'>): Promise<SavedRound> {
   });
   
   try {
+    const profileSnapshot = await getUserProfile().catch(() => null);
+
     // If authenticated and Firestore is available, save to Firestore + Storage
     if (isAuthenticated() && firestoreAvailable) {
       logger.debug('💾 Attempting to save round to Firestore...');
@@ -623,7 +953,7 @@ async function _saveRound(round: Omit<SavedRound, 'id'>): Promise<SavedRound> {
         logger.debug('   Score:', cloudRound.score);
         
         // Also save to local cache
-        const rounds = await getRounds();
+        const rounds = await getLocalStoredRounds();
         rounds.unshift(cloudRound);
         await setLocalRoundsRaw(JSON.stringify(rounds));
         
@@ -632,6 +962,8 @@ async function _saveRound(round: Omit<SavedRound, 'id'>): Promise<SavedRound> {
           // Count one trial round once the first hole has been saved in advanced mode.
           await incrementTrialRound();
         }
+        processRoundShotDistances(cloudRound, profileSnapshot?.clubDistances ?? null)
+          .catch((error) => logger.warn('Club distance processing failed after cloud save', error));
         return cloudRound;
       } catch (firestoreError: unknown) {
         if (getErrorMessage(firestoreError).includes('403')) {
@@ -652,7 +984,7 @@ async function _saveRound(round: Omit<SavedRound, 'id'>): Promise<SavedRound> {
     }
     
     // Fallback: save to AsyncStorage (native) or localStorage (web)
-    const rounds = await getRounds();
+    const rounds = await getLocalStoredRounds();
     rounds.unshift(newRound);
     
     const serialized = JSON.stringify(rounds);
@@ -664,6 +996,8 @@ async function _saveRound(round: Omit<SavedRound, 'id'>): Promise<SavedRound> {
       // Count one trial round once the first hole has been saved in advanced mode.
       await incrementTrialRound();
     }
+    processRoundShotDistances(newRound, profileSnapshot?.clubDistances ?? null)
+      .catch((error) => logger.warn('Club distance processing failed after local save', error));
     
     logger.debug(`✅ Round saved to ${getStorageLabel()}:`, newRound.id);
     return newRound;

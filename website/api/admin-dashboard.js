@@ -185,6 +185,17 @@ async function listCollection(path, token, pageSize = 300) {
   }));
 }
 
+async function getDocument(path, token) {
+  const resp = await authedFetch(`${FIRESTORE_BASE}/${path}`, token);
+  if (!resp.ok) return null;
+  const data = await resp.json().catch(() => null);
+  if (!data?.fields) return null;
+  return {
+    id: data.name?.split("/").pop(),
+    ...fromFirestoreFields(data.fields || {}),
+  };
+}
+
 async function runAggregationQuery(structuredQuery, token, alias = "count") {
   const resp = await authedFetch(
     `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents:runAggregationQuery`,
@@ -297,11 +308,12 @@ async function fetchDashboardData(token) {
     from: [{ collectionId: "courses" }],
     where: { fieldFilter: { field: { fieldPath: "source" }, op: "EQUAL", value: { stringValue: "USER_OCR" } } },
   };
-  const [ocrTotal, ocrLastArr, reportedIssues, ocrErrors] = await Promise.all([
+  const [ocrTotal, ocrLastArr, reportedIssues, ocrErrors, golfApiUsage] = await Promise.all([
     runAggregationQuery(ocrBase, token, "ocrCount"),
     runQuery({ ...ocrBase, orderBy: [{ field: { fieldPath: "lastVerifiedAt" }, direction: "DESCENDING" }], limit: 1 }, token),
     listCollection("reportedIssues", token, 200),
     listCollection("ocrErrors", token, 200),
+    getDocument("adminMetrics/golfApiUsage", token),
   ]);
 
   return {
@@ -311,6 +323,7 @@ async function fetchDashboardData(token) {
     ocrStats: { total: ocrTotal, last: ocrLastArr?.[0] || null },
     reportedIssues,
     ocrErrors,
+    golfApiUsage,
   };
 }
 

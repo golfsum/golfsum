@@ -118,10 +118,10 @@ export function buildScorePrediction(
 
   const rangeText = low === high ? `${low}` : `${low}-${high}`;
   const condNote = condAdj?.note ? ` (${condAdj.note})` : '';
-  const basisText = `Based on your last ${withScores.length} rounds here`;
+  const basisText = `Over your last ${withScores.length} rounds here`;
 
   const message = confidence === 'HIGH'
-    ? `Expect ${rangeText} today. ${basisText}, you are very consistent here.${condNote}`
+    ? `Expect ${rangeText} today. ${basisText}, your scores stay steady here.${condNote}`
     : confidence === 'MEDIUM'
       ? `Expect ${rangeText} today. ${basisText}.${condNote}`
       : `Somewhere around ${rangeText} based on ${withScores.length} rounds here.${condNote}`;

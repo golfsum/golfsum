@@ -170,7 +170,7 @@ export const OverviewSubTab: React.FC<OverviewSubTabProps> = ({
             </View>
             <Text style={styles.lockedTitle}>Play 2 rounds at the same course</Text>
             <Text style={styles.lockedDescription}>
-              Course analytics unlock after two rounds at one course.
+              Two rounds at one course shows hole-by-hole stats.
             </Text>
           </View>
         )}
@@ -276,7 +276,7 @@ export const OverviewSubTab: React.FC<OverviewSubTabProps> = ({
                 </View>
               )}
               <Text style={styles.contextNote}>
-                Conditions insights get stronger as you track more rounds with weather data.
+                More rounds with weather saved gives this more to work with.
               </Text>
               <Text style={styles.contextNoteDetail}>
                 These are directional signals, not absolutes.
@@ -296,7 +296,7 @@ export const OverviewSubTab: React.FC<OverviewSubTabProps> = ({
             <Text style={styles.lockedDescription}>
               Compare performance in different weather once you have enough rounds tracked.
             </Text>
-            <Text style={styles.lockedRequirement}>Capture weather on more rounds to unlock</Text>
+            <Text style={styles.lockedRequirement}>Save weather on more rounds here</Text>
           </View>
         </View>
       )}

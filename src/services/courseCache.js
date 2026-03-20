@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, isFirebaseEnabled } from './firebase';
 import { getCurrentUser } from './firebaseAuthService';
+import { fetchCourseHolesFromBackend } from './golfApi';
 
 const keyForCourse = (courseId) => `golfsum_course_${courseId}`;
 
@@ -67,4 +68,29 @@ export async function saveCourseToFirestore(courseId, data) {
   } catch {
     // non-critical — local cache is always the source of truth
   }
+}
+
+// ---------------------------------------------------------------------------
+// Pre-download: fetch, save locally + Firestore in one call
+// ---------------------------------------------------------------------------
+
+export async function downloadCourse(courseId, courseName, latitude, longitude) {
+  const courseData = await fetchCourseHolesFromBackend(courseId, courseName, latitude, longitude);
+  if (!courseData) throw new Error('No course data returned');
+
+  // Save with download timestamp
+  const withMeta = { ...courseData, cachedAt: new Date().toISOString(), source: 'pre_download' };
+  await saveCourse(courseId, withMeta);
+  await saveCourseToFirestore(courseId, withMeta);
+  return withMeta;
+}
+
+export async function getCourseDownloadStatus(courseId) {
+  const cached = await getCourse(courseId);
+  if (!cached) return { downloaded: false, cachedAt: null, holeCount: 0 };
+  return {
+    downloaded: true,
+    cachedAt: cached.cachedAt || null,
+    holeCount: cached.holes?.length ?? 0,
+  };
 }

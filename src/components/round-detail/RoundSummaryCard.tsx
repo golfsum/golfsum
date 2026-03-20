@@ -204,7 +204,7 @@ export const RoundSummaryCard: React.FC<RoundSummaryCardProps> = ({
         <View style={styles.scoreOnlyBanner}>
           <Ionicons name="information-circle-outline" size={18} color="#9CA3AF" />
           <Text style={styles.scoreOnlyText}>
-            Score-only round. Add FIR/GIR tracking for deeper insights.
+            Score-only round. Add FIR and GIR to see more here.
           </Text>
         </View>
       )}

@@ -137,13 +137,13 @@ export const AuthFormView: React.FC<AuthFormViewProps> = ({
 
             <TouchableOpacity style={styles.googleButton} onPress={onGoogleSignIn}>
               <Ionicons name="logo-google" size={20} color="#FFFFFF" />
-              <Text style={styles.googleButtonText}>Continue with Google</Text>
+              <Text style={styles.googleButtonText}>Sign in with Google</Text>
             </TouchableOpacity>
 
             {isAppleAvailable && onAppleSignIn && (
               <TouchableOpacity style={styles.appleButton} onPress={onAppleSignIn}>
                 <Ionicons name="logo-apple" size={20} color="#FFFFFF" />
-                <Text style={styles.appleButtonText}>Continue with Apple</Text>
+                <Text style={styles.appleButtonText}>Sign in with Apple</Text>
               </TouchableOpacity>
             )}
           </>

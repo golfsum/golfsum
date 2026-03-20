@@ -76,10 +76,10 @@ export const PreferencesSection: React.FC<PreferencesSectionProps> = ({
               <Text style={[styles.segmentText, !pushEnabled && styles.segmentTextActive]}>Off</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.preferenceHint}>Enable lock-screen and promotional messages from GolfSum</Text>
+          <Text style={styles.preferenceHint}>Round alerts and account messages</Text>
         </View>
         <View style={styles.preferenceItem}>
-          <Text style={styles.preferenceLabel}>Promotional Offers</Text>
+          <Text style={styles.preferenceLabel}>Offers</Text>
           <View style={styles.segmentedControl}>
             <TouchableOpacity
               style={[styles.segmentButton, marketingEnabled && styles.segmentButtonActive]}
@@ -94,7 +94,7 @@ export const PreferencesSection: React.FC<PreferencesSectionProps> = ({
               <Text style={[styles.segmentText, !marketingEnabled && styles.segmentTextActive]}>Off</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.preferenceHint}>Discounts, feature launches, and upgrade offers</Text>
+          <Text style={styles.preferenceHint}>Offers and product updates</Text>
         </View>
         <View style={styles.preferenceItem}>
           <Text style={styles.preferenceLabel}>Maintenance Updates</Text>
@@ -112,7 +112,7 @@ export const PreferencesSection: React.FC<PreferencesSectionProps> = ({
               <Text style={[styles.segmentText, !maintenanceEnabled && styles.segmentTextActive]}>Off</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.preferenceHint}>Service outages, maintenance windows, and important account notices</Text>
+          <Text style={styles.preferenceHint}>Service issues and account notices</Text>
         </View>
         <View style={styles.preferenceItem}>
           <Text style={styles.preferenceLabel}>Distance Units</Text>
@@ -151,7 +151,7 @@ export const PreferencesSection: React.FC<PreferencesSectionProps> = ({
               </TouchableOpacity>
             ))}
           </View>
-          <Text style={styles.preferenceHint}>Auto uses device settings</Text>
+          <Text style={styles.preferenceHint}>Uses your device settings</Text>
         </View>
         <View style={styles.preferenceItem}>
           <Text style={styles.preferenceLabel}>Default Tees</Text>
@@ -176,7 +176,7 @@ export const PreferencesSection: React.FC<PreferencesSectionProps> = ({
               </TouchableOpacity>
             ))}
           </View>
-          <Text style={styles.preferenceHint}>Pre-selects matching tees when available</Text>
+          <Text style={styles.preferenceHint}>Preselects the same tee when it is available</Text>
         </View>
         <View style={styles.preferenceItem}>
           <View style={styles.preferenceRow}>

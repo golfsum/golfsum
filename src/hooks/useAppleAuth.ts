@@ -34,7 +34,7 @@ export function useAppleAuth(
 
   const promptAppleSignIn = useCallback(async () => {
     if (Platform.OS !== 'ios') {
-      onError('Apple Sign-In is only available on iOS.');
+      onError('Apple sign-in only works on iPhone and iPad.');
       return;
     }
 
@@ -44,7 +44,7 @@ export function useAppleAuth(
       // Check availability at runtime (iOS 13+ requirement)
       const available = await AppleAuthentication.isAvailableAsync();
       if (!available) {
-        onError('Apple Sign-In is not available on this device. Requires iOS 13 or later.');
+        onError('Apple sign-in is not available on this device. It needs iOS 13 or later.');
         setIsAuthenticating(false);
         return;
       }
@@ -69,7 +69,7 @@ export function useAppleAuth(
       });
 
       if (!appleCredential.identityToken) {
-        onError('No identity token received from Apple. Please try again.');
+        onError('Apple sign-in did not finish. Try again.');
         setIsAuthenticating(false);
         return;
       }
@@ -96,7 +96,7 @@ export function useAppleAuth(
         }
       }
       logger.error('Apple Sign-In error:', err);
-      const msg = err instanceof Error ? err.message : 'Apple Sign-In failed';
+      const msg = err instanceof Error ? err.message : 'Apple sign-in did not work.';
       onError(msg);
     } finally {
       setIsAuthenticating(false);

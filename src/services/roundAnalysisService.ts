@@ -753,7 +753,7 @@ const buildMostCostlyPattern = (
       score: shortBiasClub.shortPct,
       card: {
         badge: 'A',
-        title: 'Most costly pattern: approaches finishing short',
+        title: 'Most costly miss: approaches short',
         tone: 'red',
         support: `${shortBiasClub.clubLabel} missed short ${shortBiasClub.shortPct}% of the time.`,
         note: 'This was a distance-control issue more than a direction issue. Favor enough club and commit to the full motion.',
@@ -766,7 +766,7 @@ const buildMostCostlyPattern = (
       score: (worstLie.deltaVsFairway ?? 0) * 30,
       card: {
         badge: 'L',
-        title: `Most costly pattern: ${worstLie.label.toLowerCase()} lies`,
+        title: `Most costly spot: ${worstLie.label.toLowerCase()} lies`,
         tone: 'red',
         support: `${worstLie.label} averaged ${formatDelta(worstLie.avgDelta)} relative to fairway ${formatDelta(lieImpactRows.find((row) => row.label === 'Fairway')?.avgDelta ?? null)}.`,
         note: worstLie.label === 'Fairway Bunker'
@@ -781,7 +781,7 @@ const buildMostCostlyPattern = (
       score: (worstBand.avgDelta ?? 0) * 20,
       card: {
         badge: 'D',
-        title: `Most costly pattern: ${worstBand.label} scoring window`,
+        title: `Most costly window: ${worstBand.label}`,
         tone: 'red',
         support: `${worstBand.label} averaged ${formatDelta(worstBand.avgDelta)} over ${worstBand.count} shot${worstBand.count === 1 ? '' : 's'}.`,
         note: 'This distance band cost the most relative to par. Use a bigger target and a stock number until this band settles down.',
@@ -794,7 +794,7 @@ const buildMostCostlyPattern = (
       score: 35,
       card: {
         badge: 'T',
-        title: `Most costly pattern: ${teeShotTendency.label.toLowerCase()}`,
+        title: `Most costly tee miss: ${teeShotTendency.label.toLowerCase()}`,
         tone: 'amber',
         support: `Tee misses split L ${teeShotTendency.leftCount} / R ${teeShotTendency.rightCount}.`,
         note: 'Starting the hole from the wrong side kept creating harder second shots. Pick a start line that removes the dominant miss.',
@@ -807,7 +807,7 @@ const buildMostCostlyPattern = (
       score: (par5?.avgDelta ?? 0) * 18,
       card: {
         badge: '5',
-        title: 'Most costly pattern: par-5 decisions',
+        title: 'Most costly hole type: par 5s',
         tone: 'red',
         support: `Par 5s averaged ${formatDelta(par5?.avgDelta ?? null)} this round.`,
         note: 'Par 5s should be built around your favorite third-shot number. Lay up more often when the second shot is not clearly there.',
@@ -985,7 +985,7 @@ const buildNextPracticeFocus = (
     return {
       title: 'Primary scoring leak',
       why: mostCostlyPattern.note,
-      drill: 'Recreate the exact miss pattern in a 15-minute block and keep one metric: start line, carry, or leave distance.',
+      drill: 'Recreate the exact miss in a 15-minute block and keep one metric: start line, carry, or leave distance.',
       resources: mostCostlyPattern.resources ?? [],
     };
   }
@@ -1573,7 +1573,7 @@ const buildDispersion = (shots: AnalysisShot[]): DispersionClub[] => {
             ? 'Long misses can come from too much club or adrenaline. Re-check carry number before attacking flags.'
             : missLabel === 'Short'
               ? 'Short misses often mean under-clubbing or backing off the swing. Commit to the full motion.'
-              : 'Your landing pattern stayed centered. Keep using the same target discipline.';
+              : 'Your landing area stayed centered. Keep using the same target discipline.';
       return {
         club,
         clubLabel: clubShots[0]?.clubLabel ?? getClubMeta(club).label,

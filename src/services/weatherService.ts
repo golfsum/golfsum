@@ -1,6 +1,5 @@
 import { logger } from '../utils/logger';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
-// Weather Service - Uses Open-Meteo (free, no API key required)
 
 export interface WeatherData {
   temp: number;
@@ -10,7 +9,6 @@ export interface WeatherData {
   humidity?: number;
 }
 
-// Weather code mapping from Open-Meteo
 const weatherCodeToCondition: Record<number, string> = {
   0: 'Clear',
   1: 'Mostly Clear',
@@ -42,7 +40,6 @@ const weatherCodeToCondition: Record<number, string> = {
   99: 'Thunderstorm w/ Hail',
 };
 
-// Convert wind speed to description
 const getWindDescription = (windSpeed: number): string => {
   if (windSpeed < 5) return 'Calm';
   if (windSpeed < 10) return 'Light';
@@ -51,7 +48,6 @@ const getWindDescription = (windSpeed: number): string => {
   return 'Very Strong';
 };
 
-// Get current weather based on coordinates
 export async function getCurrentWeather(lat: number, lon: number): Promise<WeatherData | null> {
   try {
     const response = await fetchWithTimeout(
@@ -67,10 +63,7 @@ export async function getCurrentWeather(lat: number, lon: number): Promise<Weath
     }
 
     const data = await response.json();
-    
-    if (!data.current) {
-      return null;
-    }
+    if (!data.current) return null;
 
     const current = data.current;
     const weatherCode = current.weather_code || 0;
@@ -89,13 +82,13 @@ export async function getCurrentWeather(lat: number, lon: number): Promise<Weath
   }
 }
 
+// Returns absolute elevation in feet for a single point.
+// Do NOT use this directly for playing yardage adjustment —
+// use getElevationDifferenceFeet() instead.
 export async function getElevationFeet(lat: number, lon: number): Promise<number | null> {
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-    return null;
-  }
-  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-    return null;
-  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+
   try {
     const response = await fetchWithTimeout(
       `https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lon}`
@@ -114,7 +107,40 @@ export async function getElevationFeet(lat: number, lon: number): Promise<number
   }
 }
 
-// Get user's current location
+// Returns the elevation DIFFERENCE in feet between two points.
+// Positive = uphill to target (plays longer).
+// Negative = downhill to target (plays shorter).
+// Use this for playing yardage adjustment — never absolute elevation.
+//
+// Rule of thumb: 1 yard adjustment per 3 feet of elevation change.
+// Example: green is 30ft above tee → +10 yards playing distance.
+// Example: green is 45ft below tee → -15 yards playing distance.
+export async function getElevationDifferenceFeet(
+  fromLat: number,
+  fromLon: number,
+  toLat: number,
+  toLon: number
+): Promise<number | null> {
+  const [fromElevation, toElevation] = await Promise.all([
+    getElevationFeet(fromLat, fromLon),
+    getElevationFeet(toLat, toLon),
+  ]);
+
+  if (fromElevation === null || toElevation === null) return null;
+
+  // toElevation - fromElevation:
+  // positive = green is higher than player = uphill = plays longer
+  // negative = green is lower than player = downhill = plays shorter
+  return toElevation - fromElevation;
+}
+
+// Converts elevation difference in feet to playing yardage adjustment.
+// Cap at ±30 yards — anything beyond that is likely bad GPS/elevation data.
+export function elevationDiffToYardageAdjustment(elevationDiffFeet: number): number {
+  const rawAdjustment = elevationDiffFeet / 3;
+  return Math.max(-30, Math.min(30, Math.round(rawAdjustment)));
+}
+
 export async function getUserLocation(): Promise<{ lat: number; lon: number } | null> {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
@@ -132,26 +158,19 @@ export async function getUserLocation(): Promise<{ lat: number; lon: number } | 
       },
       (error) => {
         logger.debug('Geolocation error:', error.message);
-        // Return default location (could be user's home course)
         resolve(null);
       },
       {
         enableHighAccuracy: false,
         timeout: 5000,
-        maximumAge: 300000, // 5 minutes cache
+        maximumAge: 300000,
       }
     );
   });
 }
 
-// Fetch weather for current location
 export async function fetchLocalWeather(): Promise<WeatherData | null> {
   const location = await getUserLocation();
-  
-  if (!location) {
-    // Return null - let user enter manually
-    return null;
-  }
-
+  if (!location) return null;
   return getCurrentWeather(location.lat, location.lon);
 }

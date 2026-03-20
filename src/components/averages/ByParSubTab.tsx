@@ -55,7 +55,7 @@ export const ByParSubTab: React.FC<ByParSubTabProps> = ({
           onPress={() =>
             showTooltip(
               'Performance by Par',
-              'Breaks out scoring and shot patterns by par type so you can see which holes cost or save the most strokes.'
+              'Shows how you score by par type so you can see which holes cost or save the most strokes.'
             )
           }
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -91,7 +91,7 @@ export const ByParSubTab: React.FC<ByParSubTabProps> = ({
           </View>
           <Text style={styles.lockedTitle}>Front/Back split needs 3 rounds</Text>
           <Text style={styles.lockedDescription}>
-            Track 3 complete 18-hole rounds with hole-by-hole data to unlock this card.
+            Add 3 full 18-hole rounds with hole-by-hole scores to see this card.
           </Text>
         </View>
       )}
@@ -107,7 +107,7 @@ export const ByParSubTab: React.FC<ByParSubTabProps> = ({
           <Ionicons name="bar-chart-outline" size={48} color="#6B7280" />
           <Text style={styles.advancedModeTitle}>No Par Data Yet</Text>
           <Text style={styles.advancedModeText}>
-            Play a few rounds with hole-by-hole scores to unlock par splits.
+            Play a few rounds with hole-by-hole scores and par splits will show here.
           </Text>
         </View>
       )}

@@ -29,7 +29,7 @@ export const LeaveRoundModal: React.FC<LeaveRoundModalProps> = ({
   return (
     <View style={styles.modalOverlayDark}>
       <View style={styles.confirmModal}>
-        <Text style={styles.confirmModalTitle}>Leave Round?</Text>
+        <Text style={styles.confirmModalTitle}>Leave Round</Text>
         <Text style={styles.confirmModalMessage}>
           You're currently on Hole {currentHole + 1} at {courseName}.
           {holesWithScores > 0
@@ -42,7 +42,7 @@ export const LeaveRoundModal: React.FC<LeaveRoundModalProps> = ({
           style={[styles.confirmModalButton, styles.confirmModalButtonPrimary]}
           onPress={onContinue}
         >
-          <Text style={styles.confirmModalButtonText}>Continue Round</Text>
+          <Text style={styles.confirmModalButtonText}>Resume Round</Text>
         </TouchableOpacity>
 
         {holesWithScores > 0 && (

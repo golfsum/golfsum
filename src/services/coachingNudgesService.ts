@@ -58,32 +58,32 @@ const LAST_VERIFICATION_NUDGE = '@GolfSum:clubYardage:lastVerificationNudge';
 const VERIFICATION_ACKNOWLEDGED = '@GolfSum:clubYardage:verificationAcknowledged';
 
 const GENERIC_CARDS: CoachingNudgeCard[] = [
-  { id: 'g1', category: 'putting', title: 'The 3-Putt Problem', body: "The average 15-handicapper 3-putts about 4 times a round. That's 4 strokes you can save without changing your swing. Start tracking putts and you'll see where they're hiding.", badge: 'Tip', ctaText: 'Log your first round to track putts', ctaAction: 'start_round' },
-  { id: 'g2', category: 'putting', title: 'Putt to the Fat Side', body: "On breaking putts, most amateurs miss low side. Give your putt the pro side and let gravity work for you.", badge: 'Tip', ctaText: 'Track putts per round to find patterns', ctaAction: 'start_round' },
+  { id: 'g1', category: 'putting', title: 'The 3-Putt Problem', body: "A 15 handicap usually has about 4 three-putts a round. Cut even one and the score changes fast.", badge: 'Tip', ctaText: 'Log putts in your next round', ctaAction: 'start_round' },
+  { id: 'g2', category: 'putting', title: 'Putt to the Fat Side', body: "On breaking putts, most misses are low. Start it on the high side and let the slope feed it down.", badge: 'Tip', ctaText: 'Log putts in your next round', ctaAction: 'start_round' },
   { id: 'g3', category: 'putting', title: 'Lag Putting Wins', body: "Pros don't try to make every 25-footer. They putt to a 3-foot circle and take two putts. Lag putting is the fastest way to cut strokes.", badge: 'Tip', ctaText: 'Import a scorecard to start tracking', ctaAction: 'import_scorecard' },
   { id: 'g4', category: 'putting', title: 'Speed Over Line', body: 'Most missed putts are speed misses, not line misses. If you leave everything short or race it by, that is your fix.', badge: 'Tip', ctaText: 'Start a round to track your putts', ctaAction: 'start_round' },
 
   { id: 'g5', category: 'approach', title: "You're Probably Short", body: "Most amateur GIR misses are short. Many golfers underclub by 10 to 20 yards and don't realize it.", badge: 'Tip', ctaText: 'Log GIR miss direction in your next round', ctaAction: 'start_round' },
-  { id: 'g6', category: 'approach', title: 'Your Real Distance', body: 'Range distance is not course distance. Wind, lie, elevation, and adrenaline all change carry.', badge: 'Tip', ctaText: 'Start tracking GIR to see your true pattern', ctaAction: 'start_round' },
-  { id: 'g7', category: 'approach', title: 'Aim for the Middle', body: 'Aim middle of the green instead of every flag. You will hit more greens, miss in safer spots, and avoid big numbers.', badge: 'Tip', ctaText: 'Import 3 scorecards to see your GIR trend', ctaAction: 'import_scorecard' },
+  { id: 'g6', category: 'approach', title: 'Your Real Distance', body: 'Range distance is not course distance. Wind, lie, elevation, and adrenaline all change carry.', badge: 'Tip', ctaText: 'Log greens in regulation', ctaAction: 'start_round' },
+  { id: 'g7', category: 'approach', title: 'Aim for the Middle', body: 'Aim for the middle instead of every flag. More greens, safer misses, fewer big numbers.', badge: 'Tip', ctaText: 'Import 3 scorecards here', ctaAction: 'import_scorecard' },
   { id: 'g8', category: 'approach', title: 'Stop Pin Hunting', body: 'Tucked pins are sucker pins. Play to the middle and take your par.', badge: 'Tip', ctaText: 'Track approach misses to find where strokes leak', ctaAction: 'start_round' },
 
   { id: 'g9', category: 'tee', title: 'Fairways Win Rounds', body: "A couple more fairways can drop multiple strokes. Miss direction tells you what's happening in your swing.", badge: 'Tip', ctaText: 'Log fairway direction in your next round', ctaAction: 'start_round' },
-  { id: 'g10', category: 'tee', title: 'Use the Whole Tee Box', body: 'Set up to your shot shape. If your miss is right, tee right and aim left to widen your playable window.', badge: 'Tip', ctaText: 'Log your first round to see your tee shot data', ctaAction: 'start_round' },
+  { id: 'g10', category: 'tee', title: 'Use the Whole Tee Box', body: 'Set up to your shot shape. If your miss is right, tee on the right side and aim left to widen the hole.', badge: 'Tip', ctaText: 'Log fairways in your next round', ctaAction: 'start_round' },
   { id: 'g11', category: 'tee', title: 'Leave Driver Sometimes', body: 'On shorter par 4s, a fairway wood or hybrid can improve fairway percentage and still leave a scoring approach.', badge: 'Tip', ctaText: 'Track FW% by club to find your best play', ctaAction: 'start_round' },
-  { id: 'g12', category: 'tee', title: 'Miss Pattern Matters', body: 'If your miss is consistently one side, build your aim and target to that pattern rather than fighting it.', badge: 'Tip', ctaText: 'Import 3 scorecards to see your miss pattern', ctaAction: 'import_scorecard' },
+  { id: 'g12', category: 'tee', title: 'Play for One Miss', body: 'If your miss is one side, build your line around it instead of fighting it all day.', badge: 'Tip', ctaText: 'Import 3 scorecards here', ctaAction: 'import_scorecard' },
 
-  { id: 'g13', category: 'strategy', title: 'Par 5 Opportunity', body: "Par 5s are usually the easiest place to gain strokes. You don't need to reach in two to score well.", badge: 'Tip', ctaText: 'Log 3 rounds to see your par 5 trend', ctaAction: 'import_scorecard' },
+  { id: 'g13', category: 'strategy', title: 'Par 5 Opportunity', body: "Par 5s are where scores move. You do not need to reach in two to make birdie or easy par.", badge: 'Tip', ctaText: 'Import 3 rounds here', ctaAction: 'import_scorecard' },
   { id: 'g14', category: 'strategy', title: "You Don't Need Birdies", body: 'The fastest path to lower scores is removing doubles, not chasing birdies.', badge: 'Tip', ctaText: 'Import scorecards to find your trouble holes', ctaAction: 'import_scorecard' },
-  { id: 'g15', category: 'strategy', title: 'Warm Up, Even a Little', body: 'Even 5 minutes of putting and chipping before you tee off can save real strokes.', badge: 'Tip', ctaText: 'Start tracking to see your hole-by-hole pattern', ctaAction: 'start_round' },
+  { id: 'g15', category: 'strategy', title: 'Warm Up, Even a Little', body: 'Even 5 minutes of putting and chipping before you tee off can save strokes.', badge: 'Tip', ctaText: 'Log hole by hole stats', ctaAction: 'start_round' },
   { id: 'g16', category: 'strategy', title: 'Read Handicap Numbers', body: 'The hardest holes are supposed to be hard. Bogey can be a quality score there.', badge: 'Tip', ctaText: 'Log scores and compare to hole difficulty', ctaAction: 'start_round' },
 
-  { id: 'g17', category: 'course', title: "What's Your Kryptonite?", body: 'After a few rounds, you can identify which hole types cost you the most strokes and build a plan around that.', badge: 'Tip', ctaText: 'Import 3 rounds to see your hole-type breakdown', ctaAction: 'import_scorecard' },
+  { id: 'g17', category: 'course', title: 'Your Toughest Holes', body: 'After a few rounds, you will see which hole types cost you the most shots. That is where the round turns.', badge: 'Tip', ctaText: 'Import 3 rounds here', ctaAction: 'import_scorecard' },
   { id: 'g18', category: 'course', title: 'Penalty Strokes Add Up', body: 'Penalty shots are often hidden score killers. Find where they cluster and choose safer targets there.', badge: 'Tip', ctaText: 'Track rounds to see penalty clusters', ctaAction: 'start_round' },
   { id: 'g19', category: 'course', title: 'Think Backwards', body: 'Plan from the green back to the tee. Pick the approach angle first, then choose the tee club.', badge: 'Tip', ctaText: 'Start a round and track approach results', ctaAction: 'start_round' },
   { id: 'g20', category: 'course', title: 'Pick Your Bail-Out', body: 'Before every approach, define your safe miss. It saves strokes when confidence is low.', badge: 'Tip', ctaText: 'Track GIR misses to learn tendencies', ctaAction: 'start_round' },
 
-  { id: 'g21', category: 'mental', title: 'The Blow-Up Hole', body: 'A bad swing plus a hero recovery usually compounds damage. Take medicine and move on.', badge: 'Tip', ctaText: 'Log rounds to identify your blow-up pattern', ctaAction: 'start_round' },
+  { id: 'g21', category: 'mental', title: 'The Blow-Up Hole', body: 'A bad swing and a hero recovery usually make the number bigger. Take your medicine and move on.', badge: 'Tip', ctaText: 'Log your next round', ctaAction: 'start_round' },
   { id: 'g22', category: 'mental', title: 'Let the Last Hole Go', body: 'Scores often worsen right after a double. Slow down, breathe, and play only the next shot.', badge: 'Tip', ctaText: 'Track your bounce-back rate', ctaAction: 'start_round' },
   { id: 'g23', category: 'mental', title: 'Commit to the Shot', body: 'The worst thing you can do is stand over the ball unsure. Pick a club, pick a target, and go.', badge: 'Tip', ctaText: 'Start a round and play with conviction', ctaAction: 'start_round' },
   { id: 'g24', category: 'mental', title: "You're Closer Than You Think", body: 'Look at your last round. Turn your 3 worst holes into bogeys instead of doubles and the score drops fast.', badge: 'Tip', ctaText: 'Import scorecards to find hidden strokes', ctaAction: 'import_scorecard' },
@@ -174,17 +174,17 @@ interface DerivedStats {
 }
 
 const DYNAMIC_TEMPLATES: DynamicCardTemplate[] = [
-  { id: 'd1', category: 'strategy', title: 'Your Scoring Trend', body: 'Your last {numRounds} rounds average {avgScore}. Your best is {bestScore} at {bestCourse}. Focus on removing doubles today.', requiredFields: ['avgScore', 'bestScore'], priority: 'general' },
+  { id: 'd1', category: 'strategy', title: 'Scoring Trend', body: 'Over {numRounds} rounds, you average {avgScore}. Best is {bestScore} at {bestCourse}. Cut doubles first today.', requiredFields: ['avgScore', 'bestScore'], priority: 'general' },
   { id: 'd2', category: 'strategy', title: 'Front 9 vs Back 9', body: 'You average {frontAvg} on the front and {backAvg} on the back. Your {betterHalf} is better by {diff}. Stay patient on the {weakerHalf}.', requiredFields: ['frontAvg', 'backAvg', 'diff'], priority: 'general' },
   { id: 'd3', category: 'strategy', title: 'Par 3 Focus', body: "You're averaging {par3Avg} on par 3s ({par3Diff} to par). {par3Insight} Goal today: par at least {par3Target} par 3s.", requiredFields: ['par3Avg', 'par3Diff'], priority: 'general' },
   { id: 'd4', category: 'strategy', title: 'Par 5 Opportunity', body: 'Your par 5 average is {par5Avg}. You are giving away {par5Strokes} strokes there each round. Lay up to your best wedge distance.', requiredFields: ['par5Avg'], priority: 'weakness' },
-  { id: 'd5', category: 'putting', title: 'Your Putt Count', body: "You're averaging {avgPutts} putts with {avg3Putts} three-putts. Spend 10 minutes on lag putting before teeing off.", requiredFields: ['avgPutts'], priority: 'weakness' },
+  { id: 'd5', category: 'putting', title: 'Putt Count', body: "You average {avgPutts} putts with {avg3Putts} three-putts. Spend 10 minutes on lag putting before you tee off.", requiredFields: ['avgPutts'], priority: 'weakness' },
   { id: 'd6', category: 'putting', title: 'Putting Trend', body: 'Your putting has {puttTrend} over {numRounds} rounds, moving from {puttStart} to {puttRecent}. {puttAdvice}', requiredFields: ['puttTrend', 'puttStart', 'puttRecent'], priority: 'general' },
   { id: 'd7', category: 'putting', title: 'GIR + Putts Connection', body: 'When you hit greens you average {girPutts} putts. When you miss, {missGirPutts}. Your short game {upDownInsight}.', requiredFields: ['girPutts', 'missGirPutts'], priority: 'general' },
-  { id: 'd8', category: 'tee', title: 'Your Fairway Pattern', body: 'You hit {fwPct}% of fairways. Main miss: {fwMissDir} ({fwMissPct}% of misses). Aim a little more to the {fwAimSide} side today.', requiredFields: ['fwPct'], priority: 'weakness' },
+  { id: 'd8', category: 'tee', title: 'Fairway Miss', body: 'You hit {fwPct}% of fairways. Main miss is {fwMissDir} at {fwMissPct}%. Favor the {fwAimSide} side today.', requiredFields: ['fwPct'], priority: 'weakness' },
   { id: 'd9', category: 'tee', title: 'Driver Decision', body: 'Your driver fairway rate is {driverFwPct}%. On short par 4s, consider 3-wood or hybrid and play from grass.', requiredFields: ['driverFwPct'], priority: 'general' },
   { id: 'd10', category: 'tee', title: 'Tee Shot Confidence', body: 'You hit {streakFw} of your last {streakTotal} fairways. {streakInsight} Pick a precise target on every tee.', requiredFields: ['streakFw', 'streakTotal'], priority: 'general' },
-  { id: 'd11', category: 'approach', title: 'Your Green Pattern', body: 'You hit {girPct}% of greens. Top miss is {girMissDir} ({girMissPct}% of misses). One extra club + center-green target today.', requiredFields: ['girPct'], priority: 'weakness' },
+  { id: 'd11', category: 'approach', title: 'Green Miss', body: 'You hit {girPct}% of greens. Top miss is {girMissDir} at {girMissPct}%. One more club and middle of the green today.', requiredFields: ['girPct'], priority: 'weakness' },
   { id: 'd12', category: 'approach', title: 'You Keep Coming Up Short', body: '{shortMissPct}% of your GIR misses are short. When between clubs today, take the longer one.', requiredFields: ['shortMissPct'], priority: 'weakness', condition: (stats) => stats.shortMissPct > 40 },
   {
     id: 'dy1',
@@ -233,8 +233,8 @@ const DYNAMIC_TEMPLATES: DynamicCardTemplate[] = [
   {
     id: 'dy5',
     category: 'approach',
-    title: 'You Are Consistently Short of Greens',
-    body: '{shortMissPct}% of your approach misses are short across multiple distances. Taking one extra club is the fastest fix. Set your club distances in My Bag to get more specific advice.',
+    title: 'You Keep Missing Short',
+    body: '{shortMissPct}% of your approach misses are short. One more club is the fastest fix. Add your club distances in My Bag for tighter numbers.',
     requiredFields: ['shortMissPct'],
     priority: 'weakness',
     condition: (stats) =>
@@ -243,7 +243,7 @@ const DYNAMIC_TEMPLATES: DynamicCardTemplate[] = [
   {
     id: 'dy6',
     category: 'approach',
-    title: 'When Did You Last Check Your Distances?',
+    title: 'Check Your Distances',
     body: 'You have been coming up short consistently. Club distances change with equipment wear, swing changes, and season. A quick test on a flat hole with known markers will sharpen club selection.',
     requiredFields: [],
     ctaText: 'I will check today',
@@ -263,7 +263,7 @@ const DYNAMIC_TEMPLATES: DynamicCardTemplate[] = [
   {
     id: 'dm1',
     category: 'mental',
-    title: 'Your Next-Hole Pattern',
+    title: 'Next Hole',
     body: '{momentumNudge}',
     requiredFields: ['momentumNudge'],
     priority: 'weakness',
@@ -281,7 +281,7 @@ const DYNAMIC_TEMPLATES: DynamicCardTemplate[] = [
   {
     id: 'dc2',
     category: 'mental',
-    title: 'Tee Time Pattern',
+    title: 'Tee Time',
     body: '{timeOfDayNudge}',
     requiredFields: ['timeOfDayNudge'],
     priority: 'general',
@@ -290,7 +290,7 @@ const DYNAMIC_TEMPLATES: DynamicCardTemplate[] = [
   {
     id: 'ds1',
     category: 'strategy',
-    title: 'Tee Club Scoring Pattern',
+    title: 'Best Tee Club',
     body: '{teeShotStrategyNudge}',
     requiredFields: ['teeShotStrategyNudge'],
     priority: 'weakness',
@@ -299,7 +299,7 @@ const DYNAMIC_TEMPLATES: DynamicCardTemplate[] = [
   {
     id: 'db1',
     category: 'approach',
-    title: 'Bunker Pattern',
+    title: 'Bunkers',
     body: '{bunkerNudge}',
     requiredFields: ['bunkerNudge'],
     priority: 'weakness',
@@ -308,7 +308,7 @@ const DYNAMIC_TEMPLATES: DynamicCardTemplate[] = [
   {
     id: 'df1',
     category: 'mental',
-    title: 'Your Round Rhythm Pattern',
+    title: 'Round Rhythm',
     body: '{fatigueNudge}',
     requiredFields: ['fatigueNudge'],
     priority: 'weakness',
@@ -320,8 +320,8 @@ const DYNAMIC_TEMPLATES: DynamicCardTemplate[] = [
   { id: 'd16', category: 'course', title: 'Your Nemesis Holes', body: 'At {courseName}, holes {nemesisHoles} cost about {nemesisStrokes} extra strokes. Play those holes safe today.', requiredFields: ['courseName', 'nemesisHoles'], priority: 'course', condition: (stats) => stats.previousRoundsAtCourse >= 2 },
   { id: 'd17', category: 'course', title: 'Your Best Holes Here', body: 'At {courseName}, holes {bestHoles} are your scoring chances. You average {bestHoleScore} there. Be aggressive with good numbers.', requiredFields: ['courseName', 'bestHoles'], priority: 'course', condition: (stats) => stats.previousRoundsAtCourse >= 2 },
   { id: 'd18', category: 'strategy', title: 'Warm-Up Plan', body: 'Warm-up: 10 lag putts, 5 chips to different pins, 5 smooth swings with your {topApproachClub}. Keep driver for last.', requiredFields: ['topApproachClub'], priority: 'plan' },
-  { id: 'd19', category: 'strategy', title: "Today's Three Goals", body: 'Keep 3-putts under {threePuttGoal}, hit {fwGoal}+ fairways, and hit {girGoal}+ greens. That puts you near {scoreGoal}.', requiredFields: ['threePuttGoal', 'fwGoal', 'girGoal'], priority: 'plan' },
-  { id: 'd20', category: 'strategy', title: 'After Your Round', body: 'Snap your scorecard after the round. GolfSum will compare this round to your trend and generate a practice plan.', requiredFields: [], ctaText: 'Import scorecard after you finish', ctaAction: 'import_scorecard', priority: 'plan' },
+  { id: 'd19', category: 'strategy', title: 'Three Goals Today', body: 'Keep 3-putts under {threePuttGoal}, hit {fwGoal}+ fairways, and hit {girGoal}+ greens. That puts you near {scoreGoal}.', requiredFields: ['threePuttGoal', 'fwGoal', 'girGoal'], priority: 'plan' },
+  { id: 'd20', category: 'strategy', title: 'After The Round', body: 'Snap your scorecard after the round. It will show how this round stacks up against your usual numbers.', requiredFields: [], ctaText: 'Import your scorecard', ctaAction: 'import_scorecard', priority: 'plan' },
 ];
 
 const interpolate = (template: string, values: Record<string, string | number>) =>
@@ -769,7 +769,7 @@ export async function getPlayTabNudges(
           category: 'course',
           badge: 'Pre-Round',
           title: brief.courseName,
-          body: brief.gamePlan.oneLiner || 'Course-specific plan available.',
+          body: brief.gamePlan.oneLiner || 'Course plan is ready.',
           _brief: brief,
         });
       }
@@ -803,7 +803,7 @@ export async function getPlayTabNudges(
     withPlanAnchor.push({
       id: 'd19_fallback',
       category: 'strategy',
-      title: "Today's Three Goals",
+      title: 'Three Goals Today',
       body: interpolate('Keep 3-putts under {threePuttGoal}, hit {fwGoal}+ fairways, and hit {girGoal}+ greens.', stats as unknown as Record<string, string | number>),
       badge: 'Pre-Round',
     });

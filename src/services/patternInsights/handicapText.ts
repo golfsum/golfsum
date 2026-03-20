@@ -20,8 +20,8 @@ export const getHandicapAwareTitle = (
   switch (type) {
     case PatternInsightType.FAIRWAYS_MISSED_RIGHT:
     case PatternInsightType.FAIRWAYS_MISSED_LEFT:
-      if (tier === 'LOW') return isRight ? 'Right Miss Pattern Detected' : 'Left Miss Pattern Detected';
-      if (tier === 'MID') return isRight ? 'Miss Pattern: Right' : 'Miss Pattern: Left';
+      if (tier === 'LOW') return isRight ? 'Right Miss Trend' : 'Left Miss Trend';
+      if (tier === 'MID') return isRight ? 'Miss Trend: Right' : 'Miss Trend: Left';
       return isRight ? 'Right Misses' : 'Left Misses';
 
     case PatternInsightType.APPROACHES_MISSED_SHORT:
@@ -33,7 +33,7 @@ export const getHandicapAwareTitle = (
     case PatternInsightType.GREENS_MISSED_RIGHT:
       return 'Greens Missed Right';
     case PatternInsightType.HIGH_THREE_PUTT:
-      return 'Three-Putt Pattern';
+      return 'Three-Putt Trend';
     case PatternInsightType.LOW_SHORT_PUTT_MAKE_RATE:
       return 'Short Putt Conversion';
     case PatternInsightType.PENALTIES_HURTING_SCORES:
@@ -41,19 +41,19 @@ export const getHandicapAwareTitle = (
     case PatternInsightType.WIND_FAIRWAY_ACCURACY_DROP:
       return 'Wind Hurting Accuracy';
     case PatternInsightType.LOW_UP_DOWN_RATE:
-      return 'Up-and-Down Conversion Is Low';
+      return 'Up-and-Down Rate Is Low';
     case PatternInsightType.POOR_BUNKER_SAVES:
       return 'Bunker Holes Are Costing Strokes';
     case PatternInsightType.WEAK_PAR3_SCORING:
-      return 'Par 3 Scoring Is Lagging';
+      return 'Par 3s Are Costing Strokes';
     case PatternInsightType.POOR_PAR5_SCORING:
       return tier === 'LOW' ? 'Par 5 Birdie Opportunities Missed' : 'Par 5s Costing Strokes';
     case PatternInsightType.APPROACH_DISTANCE_WEAKNESS:
-      return 'Approach Distance Weakness';
+      return 'Approach Distance Gap';
     case PatternInsightType.BACK_NINE_SCORING_DROP:
-      return 'Back Nine Fade Detected';
+      return 'Back Nine Fade';
     case PatternInsightType.PAR4_SCORING_STRUGGLE:
-      return 'Par 4 Scoring Struggle';
+      return 'Par 4s Are Costing Strokes';
     case PatternInsightType.HIGH_BOGEY_CONVERSION:
       return 'Bogeys Are Leading to More Bogeys';
     case PatternInsightType.FRONT_NINE_BLOWUP:
@@ -61,7 +61,7 @@ export const getHandicapAwareTitle = (
     case PatternInsightType.WEATHER_SCORING_DROP:
       return 'Scores Drop in Wind';
     default:
-      return 'Performance Pattern';
+      return 'Performance Trend';
   }
 };
 
@@ -96,7 +96,7 @@ export const getHandicapAwareObservation = (
       return 'Penalty shots are adding strokes to your rounds.';
 
     default:
-      return 'A pattern has emerged in your recent rounds.';
+      return 'A trend is showing in your recent rounds.';
   }
 };
 

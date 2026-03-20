@@ -1,75 +1,43 @@
 import React from 'react';
-import { ScrollView, TouchableOpacity, Text, StyleSheet, View } from 'react-native';
-import { colors, radius, spacing, typography } from '../../theme/tokens';
+import { StyleSheet, View } from 'react-native';
+import { colors, spacing } from '../../theme/tokens';
+import { HoleSelectorBar } from './HoleSelectorBar';
 
-export function HoleDots({ holes = [], currentHole, onSelect, loggedHoles = [] }) {
+export function HoleDots({ holes = [], currentHole, onSelect, loggedHoles = [], holeNumbers = null, holeScores = {} }) {
+  const totalHoles = Array.isArray(holes) ? holes.length : 0;
+  const firstHoleNumber = Number(holes?.[0]?.hole);
+  const holeOffset = Number.isFinite(firstHoleNumber) ? Math.max(0, firstHoleNumber - 1) : 0;
+  const selectedHole = Array.isArray(holeNumbers) && holeNumbers.length > 0
+    ? (currentHole ?? 0) + 1
+    : (currentHole ?? 0) + 1 + holeOffset;
+  const holesWithData = Array.isArray(holeNumbers) && holeNumbers.length > 0
+    ? (loggedHoles || []).map((index) => Number(holeNumbers[index])).filter(Number.isFinite)
+    : (loggedHoles || []).map((index) => Number(index) + 1).filter(Number.isFinite);
+
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.row}
-      style={styles.wrap}
-    >
-      {holes.map((hole, idx) => {
-        const active = idx === currentHole;
-        const hasShotsLogged = loggedHoles.includes(idx);
-        return (
-          <TouchableOpacity
-            key={`${hole.hole}-${idx}`}
-            style={[
-              styles.dot,
-              active && styles.dotActive,
-              hasShotsLogged && styles.dotLogged,
-            ]}
-            onPress={() => onSelect(idx)}
-          >
-            <Text style={[styles.text, active && styles.textActive]}>{hole.hole}</Text>
-            {hasShotsLogged && <View style={styles.loggedPip} />}
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
+    <View style={styles.wrap}>
+      <HoleSelectorBar
+        totalHoles={Math.max(1, totalHoles)}
+        holeNumbers={holeNumbers || undefined}
+        holeOffset={holeOffset}
+        selectedHole={selectedHole}
+        onSelect={(hole) => onSelect?.(Array.isArray(holeNumbers) && holeNumbers.length > 0 ? hole - 1 : hole - 1 - holeOffset)}
+        holesWithData={holesWithData}
+        holeScores={holeScores}
+        contentContainerStyle={styles.row}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
-    backgroundColor: colors.bg.primary,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border.subtle,
+    backgroundColor: 'transparent',
   },
   row: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.sm,
-    gap: 5,
-  },
-  dot: {
-    width: 26,
-    height: 26,
-    borderRadius: radius.sm + 1,
-    backgroundColor: colors.bg.elevated,
-    borderWidth: 1,
-    borderColor: colors.border.subtle,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dotActive: {
-    backgroundColor: colors.brand.primaryMuted,
-    borderColor: colors.brand.primary,
-  },
-  dotLogged: {
-    borderColor: colors.border.default,
-  },
-  text: { color: colors.text.tertiary, fontSize: typography.labelMd.fontSize, fontWeight: '600' },
-  textActive: { color: colors.brand.primary, fontWeight: '700' },
-  loggedPip: {
-    position: 'absolute',
-    top: 2,
-    right: 2,
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: colors.brand.primary,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.md - 2,
   },
 });
+
+export default HoleDots;

@@ -260,13 +260,13 @@ function getErrorMessage(errorCode: string): string {
     case 'auth/wrong-password':
       return 'Incorrect password';
     case 'auth/too-many-requests':
-      return 'Too many attempts. Please try again later';
+      return 'Too many attempts. Try again later.';
     case 'auth/network-request-failed':
-      return 'Network error. Please check your connection';
+      return 'No connection. Check your signal and try again.';
     case 'auth/invalid-credential':
       return 'Invalid email or password';
     default:
-      return 'Authentication error. Please try again';
+      return 'Sign-in did not work. Try again.';
   }
 }
 

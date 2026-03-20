@@ -2,7 +2,13 @@
 // and auto-registers the reversed client ID as a URL scheme (required for Google Sign-In on iOS).
 const iosGoogleClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
 const allowCleartextTraffic = process.env.EXPO_PUBLIC_ALLOW_CLEARTEXT_TRAFFIC === 'true';
-const mapboxDownloadToken = process.env.MAPBOX_DOWNLOAD_TOKEN || '';
+const mapboxDownloadToken =
+  process.env.MAPBOX_DOWNLOAD_TOKEN ||
+  process.env.MAPBOX_DOWNLOADS_TOKEN ||
+  process.env.EXPO_PUBLIC_MAPBOX_DOWNLOADS_TOKEN ||
+  '';
+const mapboxPublicToken = process.env.EXPO_PUBLIC_MAPBOX_PUBLIC_TOKEN || '';
+const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID || 'c4865044-3a6b-42c0-93b7-64f036338f22';
 
 if (mapboxDownloadToken) {
   process.env.RNMAPBOX_MAPS_DOWNLOAD_TOKEN = mapboxDownloadToken;
@@ -74,6 +80,14 @@ module.exports = function(env) {
       favicon: './assets/favicon.png',
       bundler: 'metro',
       output: 'single',
+    },
+    extra: {
+      ...(config.extra || {}),
+      eas: {
+        ...((config.extra && config.extra.eas) || {}),
+        projectId: easProjectId,
+      },
+      mapboxPublicToken,
     },
     plugins: [
       './withWatchApp',

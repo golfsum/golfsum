@@ -21,7 +21,6 @@ import {
 } from '../utils/averagesAnalytics';
 import { formatAverage, formatPercent } from '../utils/formatStat';
 import { Sparkline } from './Sparkline';
-import { EMPTY_STATE_COPY } from '../constants/emptyStateCopy';
 
 interface DetailedStatCardProps {
   title: string;
@@ -86,8 +85,8 @@ export const DetailedStatCard: React.FC<DetailedStatCardProps> = ({
       </View>
       <Text style={styles.unlockProgressHint}>
         {roundsRemaining > 0
-          ? `Need ${roundsRemaining} more round${roundsRemaining !== 1 ? 's' : ''} with ${trackedRoundsLabel}.`
-          : 'Enough rounds tracked. Keep logging to increase confidence.'}
+          ? `${roundsRemaining} more round${roundsRemaining !== 1 ? 's' : ''} to fill this in.`
+          : 'More rounds make this steadier.'}
       </Text>
     </View>
   );
@@ -98,9 +97,9 @@ export const DetailedStatCard: React.FC<DetailedStatCardProps> = ({
         <Text style={styles.title}>{title}</Text>
         <View style={styles.insufficientContainer}>
           <Text style={styles.insufficientText}>
-            There isn't enough consistent data yet to surface this confidently.
+            Add a few more rounds to see this stat.
           </Text>
-          <Text style={styles.insufficientSubtext}>{EMPTY_STATE_COPY.unlockAfterThreeRounds}</Text>
+          <Text style={styles.insufficientSubtext}>3 rounds here shows this best.</Text>
           {renderUnlockProgress()}
         </View>
       </View>
@@ -124,9 +123,9 @@ export const DetailedStatCard: React.FC<DetailedStatCardProps> = ({
         <Text style={styles.title}>{title}</Text>
         <View style={styles.insufficientContainer}>
           <Text style={styles.insufficientText}>
-            There isn't enough consistent data yet to surface this confidently.
+            Add a few more rounds to see this stat.
           </Text>
-          <Text style={styles.insufficientSubtext}>{EMPTY_STATE_COPY.unlockAfterThreeRounds}</Text>
+          <Text style={styles.insufficientSubtext}>3 rounds here shows this best.</Text>
           {renderUnlockProgress()}
         </View>
       </View>

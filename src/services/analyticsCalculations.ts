@@ -591,12 +591,12 @@ export function getInsufficientDataTooltip(stat: StatWithConfidence, minRequired
   if (stat.state === StatState.INSUFFICIENT_DATA) {
     const remaining = minRequired - (stat.roundsUsed || 0);
     if (remaining > 0) {
-      return `Track ${remaining} more round${remaining === 1 ? '' : 's'} to unlock`;
+      return `${remaining} more round${remaining === 1 ? '' : 's'} here shows this`;
     }
     return 'Check back after 3 rounds';
   }
   if (stat.state === StatState.NOT_TRACKED) {
-    return 'Track advanced stats to unlock';
+    return 'Turn on this stat in Profile.';
   }
   return null;
 }

@@ -129,7 +129,7 @@ export const PlayerStatsSection: React.FC<PlayerStatsSectionProps> = ({
           style={styles.namePickerButton}
           onPress={showNamePicker}
           accessibilityRole="button"
-          accessibilityLabel="Choose name from scorecard"
+          accessibilityLabel="Pick name from card"
         >
           <Ionicons name="person-circle-outline" size={16} color={colors.brand.primary} />
           <Text style={styles.namePickerButtonText}>{UI_COPY.scorecardImport.chooseNameFromScorecard}</Text>
@@ -192,7 +192,7 @@ export const PlayerStatsSection: React.FC<PlayerStatsSectionProps> = ({
         )}
       </View>
       {showAdvancedColumns && (
-        <Text style={styles.firPar3HintText}>— on Par 3 means no fairway to track</Text>
+        <Text style={styles.firPar3HintText}>Par 3 means no fairway here</Text>
       )}
       {Array.from({ length: playerNineRange.end - playerNineRange.start }, (_, offset) => {
         const index = playerNineRange.start + offset;
@@ -384,7 +384,7 @@ export const PlayerStatsSection: React.FC<PlayerStatsSectionProps> = ({
           </Text>
           <TouchableOpacity onPress={onUpgrade} accessibilityRole="button">
             <Text style={{ fontSize: 13, color: '#10B981', fontWeight: '700' }}>
-              See what Pro includes
+              See full stat tracking
             </Text>
           </TouchableOpacity>
         </View>

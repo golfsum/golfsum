@@ -18,6 +18,10 @@ interface UseScoreEntryStateOptions {
   quickStart?: {
     teeName?: string;
     startingHole?: number;
+    endingHole?: number;
+    roundLength?: '18' | 'front9' | 'back9';
+    routeHoleNumbers?: number[];
+    routeLabel?: string;
   };
   gpsRoundData?: PendingGpsRoundData | null;
   defaultTeeName?: string;
@@ -26,6 +30,34 @@ interface UseScoreEntryStateOptions {
   setShowTeeSelection: (value: boolean) => void;
   courseOverride?: CourseDetails;
 }
+
+const applyRouteToTeeBox = (
+  teeBox: TeeBox,
+  routeHoleNumbers?: number[],
+): TeeBox => {
+  if (!Array.isArray(routeHoleNumbers) || routeHoleNumbers.length === 0) {
+    return teeBox;
+  }
+
+  const holeMap = new Map(teeBox.holes.map((hole) => [Number(hole.hole), hole]));
+  const routedHoles = routeHoleNumbers
+    .map((holeNumber) => holeMap.get(Number(holeNumber)))
+    .filter((hole): hole is NonNullable<typeof hole> => !!hole)
+    .map((hole, index) => ({
+      ...hole,
+      hole: index + 1,
+    }));
+
+  if (!routedHoles.length) {
+    return teeBox;
+  }
+
+  return {
+    ...teeBox,
+    holes: routedHoles,
+    yardage: routedHoles.reduce((sum, hole) => sum + (hole.yardage || 0), 0),
+  };
+};
 
 interface UseScoreEntryStateResult {
   selectedTeeBox: TeeBox | null;
@@ -64,6 +96,7 @@ export const useScoreEntryState = ({
   const [startingHole, setStartingHole] = useState(1);
   const [startType, setStartType] = useState<'standard' | 'shotgun'>('standard');
   const [resumeApplied, setResumeApplied] = useState(false);
+  const activeRouteHoleNumbers = gpsRoundData?.routeHoleNumbers ?? quickStart?.routeHoleNumbers;
 
   const holeOrder = useMemo(() => {
     const holeCount = holes.length;
@@ -135,14 +168,15 @@ export const useScoreEntryState = ({
   }, [course, selectedTeeBox, showTeeSelection]);
 
   const startRoundWithTee = (teeBox: TeeBox, holeNumber: number) => {
-    const holeCount = teeBox.holes.length;
+    const routedTeeBox = applyRouteToTeeBox(teeBox, activeRouteHoleNumbers);
+    const holeCount = routedTeeBox.holes.length;
     const nextStartingHole = Math.max(1, Math.min(holeCount || 1, holeNumber));
-    setSelectedTeeBox(teeBox);
+    setSelectedTeeBox(routedTeeBox);
     setStartType('standard');
     setStartingHole(nextStartingHole);
     setShowTeeSelection(false);
 
-    const initialHoles = applyGpsHoleSummaries(createInitialHoles(teeBox), gpsRoundData?.gpsHoleSummaries);
+    const initialHoles = applyGpsHoleSummaries(createInitialHoles(routedTeeBox), gpsRoundData?.gpsHoleSummaries);
     const nextCurrentIndex = initialHoles.findIndex((hole) => hole.hole === nextStartingHole);
     setCurrentHole(nextCurrentIndex >= 0 ? nextCurrentIndex : 0);
     setHoles(initialHoles);
@@ -185,10 +219,11 @@ export const useScoreEntryState = ({
 
     if (!teeBox) return;
 
-    const initialHoles = createInitialHoles(teeBox);
+    const routedTeeBox = applyRouteToTeeBox(teeBox, resumeDraft.routeHoleNumbers);
+    const initialHoles = createInitialHoles(routedTeeBox);
     const mergedHoles = mergeDraftHoles(initialHoles, resumeDraft.holes as InProgressHole[]);
 
-    setSelectedTeeBox(teeBox);
+    setSelectedTeeBox(routedTeeBox);
     setShowTeeSelection(false);
     setStartType(resumeDraft.startType || 'standard');
     setStartingHole(resumeDraft.startingHole || 1);
@@ -218,6 +253,10 @@ export const useScoreEntryState = ({
       courseName: course.name,
       teeName: selectedTeeBox.name,
       startingHole,
+      endingHole: gpsRoundData?.endingHole ?? quickStart?.endingHole,
+      roundLength: gpsRoundData?.roundLength ?? quickStart?.roundLength,
+      routeHoleNumbers: gpsRoundData?.routeHoleNumbers ?? quickStart?.routeHoleNumbers,
+      routeLabel: gpsRoundData?.routeLabel ?? quickStart?.routeLabel,
       startType,
       currentHole,
       holes: holes as InProgressHole[],
@@ -237,6 +276,14 @@ export const useScoreEntryState = ({
     showTeeSelection,
     startType,
     startingHole,
+    gpsRoundData?.endingHole,
+    gpsRoundData?.roundLength,
+    gpsRoundData?.routeHoleNumbers,
+    gpsRoundData?.routeLabel,
+    quickStart?.endingHole,
+    quickStart?.roundLength,
+    quickStart?.routeHoleNumbers,
+    quickStart?.routeLabel,
   ]);
 
   return {

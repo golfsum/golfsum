@@ -114,6 +114,10 @@ interface ManualScoreEntryProps {
   quickStart?: {
     teeName?: string;
     startingHole?: number;
+    endingHole?: number;
+    roundLength?: '18' | 'front9' | 'back9';
+    routeHoleNumbers?: number[];
+    routeLabel?: string;
   };
   resumeDraft?: InProgressRoundDraft | null;
   gpsRoundData?: PendingGpsRoundData | null;
@@ -939,7 +943,7 @@ export const ManualScoreEntry: React.FC<ManualScoreEntryProps> = ({
     return (
       <View style={[styles.container, styles.centerContent]}>
         <ActivityIndicator size="large" color="#10B981" />
-        <Text style={styles.loadingText}>Loading course...</Text>
+        <Text style={styles.loadingText}>Loading course</Text>
       </View>
     );
   }
@@ -1293,7 +1297,7 @@ export const ManualScoreEntry: React.FC<ManualScoreEntryProps> = ({
         {showTurnWeatherPrompt && (
           <View style={styles.turnWeatherBanner}>
             <Text style={styles.turnWeatherTitle}>Conditions changed?</Text>
-            <Text style={styles.turnWeatherBody}>Update back-nine weather for better condition insights.</Text>
+            <Text style={styles.turnWeatherBody}>Update back-nine weather for better condition reads.</Text>
             <View style={styles.turnWeatherActions}>
               <TouchableOpacity
                 style={styles.turnWeatherSecondary}

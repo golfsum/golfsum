@@ -12,6 +12,7 @@ import { HandicapSparkLine } from '../components/HandicapSparkLine';
 import { ManualScoreEntry } from '../components/ManualScoreEntry';
 import { ProfileTab } from '../components/ProfileTab';
 import { RoundAnalysisScreen } from '../components/RoundAnalysisScreen';
+import RoundDetailScreen from '../components/RoundDetailScreen';
 import { ScorecardImportScreen } from '../components/ScorecardImportScreen';
 import { ScorecardViewer } from '../components/ScorecardViewer';
 import { ProUpgradeScreen } from '../screens/ProUpgradeScreen';
@@ -27,6 +28,8 @@ import { AppScreen } from './appTypes';
 import { UpgradeTrigger } from '../components/UpgradeSheet';
 import { logger } from '../utils/logger';
 import { MilestoneEvent } from '../services/milestoneDetector';
+import { getCurrentUser } from '../services/firebaseAuthService';
+import { NativeGpsRoundScreen, NativeCoursePlanningScreen, NativeGpsRoundReviewScreen } from './nativeScreens';
 
 type AppMainContentProps = {
   currentScreen: AppScreen;
@@ -46,7 +49,7 @@ type AppMainContentProps = {
   upgradeTrigger: UpgradeTrigger;
   scorecardCourseSeed: OSMGolfCourse | null;
   scorecardImportMode: 'course' | 'completed';
-  quickStartSettings: { teeName?: string; startingHole?: number };
+  quickStartSettings: { teeName?: string; startingHole?: number; endingHole?: number; roundLength?: '18' | 'front9' | 'back9'; routeHoleNumbers?: number[]; routeLabel?: string };
   resumeDraft: InProgressRoundDraft | null;
   pendingGpsRoundData: PendingGpsRoundData | null;
   onSetActiveTab: (tab: TabName) => void;
@@ -65,6 +68,8 @@ type AppMainContentProps = {
   onCommunityCourseSelected: (course: CourseDetails) => void;
   onQuickStart: (courseId: string, teeName?: string) => void;
   onResumeRound: (draft: InProgressRoundDraft) => void;
+  isNewRound?: boolean;
+  onClearNewRound?: () => void;
   onRoundSaved: (round: SavedRound) => void;
   onCourseStatsPress: (courseName: string) => void;
   onRoundPress: (round: SavedRound) => void;
@@ -78,34 +83,21 @@ type AppMainContentProps = {
     courseName?: string;
     teeColor?: string;
     startingHole?: number;
+    endingHole?: number;
+    roundLength?: '18' | 'front9' | 'back9';
+    routeHoleNumbers?: number[];
+    routeLabel?: string;
     tournamentMode?: boolean;
   } | null;
   onStartGpsRound: (
     courseId: string,
     courseName?: string,
-    settings?: { teeName?: string; startingHole?: number; tournamentMode?: boolean }
+    settings?: { teeName?: string; startingHole?: number; endingHole?: number; roundLength?: '18' | 'front9' | 'back9'; tournamentMode?: boolean; routeHoleNumbers?: number[]; routeLabel?: string }
   ) => void;
   onFinishGpsRound: (data: PendingGpsRoundData) => void;
+  planningCourse: { courseId: string; courseName?: string; teeColor?: string } | null;
+  onStartPlanning: (courseId: string, courseName?: string, teeColor?: string) => void;
 };
-
-let NativeGpsRoundScreen: React.ComponentType<{
-  courseId: string;
-  courseName?: string;
-  teeColor?: string;
-  startingHole?: number;
-  tournamentMode?: boolean;
-  onBack: () => void;
-  onFinishRound: (data: PendingGpsRoundData) => void;
-}> | null = null;
-
-if (Platform.OS !== 'web') {
-  try {
-    const req = eval('require');
-    NativeGpsRoundScreen = req('../screens/GpsRoundScreen').GpsRoundScreen;
-  } catch {
-    NativeGpsRoundScreen = null;
-  }
-}
 
 export function AppMainContent(props: AppMainContentProps): React.ReactNode {
   const showCourseSearch = props.currentScreen === 'course-search';
@@ -117,6 +109,7 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
           <CourseSearchScreen
             onCourseSelected={props.onCourseSelected}
             onGpsRoundStart={props.onStartGpsRound}
+            onPlanCourse={props.onStartPlanning}
             onBack={props.onBack}
             onUploadScorecard={props.onUploadScorecard}
             onCommunityCourseSelected={props.onCommunityCourseSelected}
@@ -168,11 +161,38 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
   }
 
   if (props.currentScreen === 'round-detail' && props.selectedRound) {
-    logger.debug('🎬 Rendering RoundAnalysisScreen');
+    logger.debug('🎬 Rendering RoundDetailScreen');
     return (
-      <RoundAnalysisScreen
+      <RoundDetailScreen
         round={props.selectedRound}
-        onBack={props.onBack}
+        onBack={() => {
+          props.onClearNewRound?.();
+          props.onBack();
+        }}
+        onPlayAgain={() => props.onPlayAgain(props.selectedRound!)}
+        onReviewShots={() => props.onSetCurrentScreen('gps-round-review')}
+        isNewRound={props.isNewRound || false}
+      />
+    );
+  }
+
+  if (props.currentScreen === 'gps-round-review' && props.selectedRound) {
+    if (Platform.OS === 'web' || !NativeGpsRoundReviewScreen) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f1419' }}>
+          <Text style={{ color: '#9CA3AF', fontSize: 14, textAlign: 'center' }}>
+            Shot review requires a native device.
+          </Text>
+          <TouchableOpacity onPress={props.onBack} style={{ marginTop: 12, paddingHorizontal: 20, paddingVertical: 8, borderRadius: 8, backgroundColor: '#1E293B' }}>
+            <Text style={{ color: '#E5E7EB', fontSize: 14, fontWeight: '600' }}>Back</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return (
+      <NativeGpsRoundReviewScreen
+        round={props.selectedRound}
+        onBack={() => props.onSetCurrentScreen('round-detail')}
       />
     );
   }
@@ -204,6 +224,34 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
     );
   }
 
+  if (props.currentScreen === 'course-planning' && props.planningCourse) {
+    if (Platform.OS === 'web' || !NativeCoursePlanningScreen) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f1419' }}>
+          <Text style={{ color: '#9CA3AF', fontSize: 14, textAlign: 'center' }}>
+            Course planning requires a native device.
+          </Text>
+          <TouchableOpacity onPress={props.onBack} style={{ marginTop: 12, paddingHorizontal: 20, paddingVertical: 8, borderRadius: 8, backgroundColor: '#1E293B' }}>
+            <Text style={{ color: '#E5E7EB', fontSize: 14, fontWeight: '600' }}>Back</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    const uid = getCurrentUser()?.uid || null;
+    return (
+      <NativeCoursePlanningScreen
+        courseId={props.planningCourse.courseId}
+        courseName={props.planningCourse.courseName}
+        teeColor={props.planningCourse.teeColor}
+        uid={uid}
+        onBack={props.onBack}
+        onStartGpsRound={(cId, cName, tee) => {
+          props.onStartGpsRound(cId, cName, { teeName: tee });
+        }}
+      />
+    );
+  }
+
   if (props.currentScreen === 'gps-round' && props.gpsRoundCourse) {
     if (Platform.OS === 'web' || !NativeGpsRoundScreen) {
       return (
@@ -212,8 +260,13 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
           courseName={props.gpsRoundCourse.courseName}
           teeColor={props.gpsRoundCourse.teeColor}
           startingHole={props.gpsRoundCourse.startingHole}
+          endingHole={props.gpsRoundCourse.endingHole}
+          roundLength={props.gpsRoundCourse.roundLength}
+          routeHoleNumbers={props.gpsRoundCourse.routeHoleNumbers as any}
+          routeLabel={props.gpsRoundCourse.routeLabel}
           tournamentMode={props.gpsRoundCourse.tournamentMode}
           onBack={props.onBack}
+          onSwitchToManual={props.onBack}
         />
       );
     }
@@ -223,6 +276,10 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
         courseName={props.gpsRoundCourse.courseName}
         teeColor={props.gpsRoundCourse.teeColor}
         startingHole={props.gpsRoundCourse.startingHole}
+        endingHole={props.gpsRoundCourse.endingHole}
+        roundLength={props.gpsRoundCourse.roundLength}
+        routeHoleNumbers={props.gpsRoundCourse.routeHoleNumbers}
+        routeLabel={props.gpsRoundCourse.routeLabel}
         tournamentMode={props.gpsRoundCourse.tournamentMode}
         onBack={props.onBack}
         onFinishRound={props.onFinishGpsRound}
@@ -321,7 +378,7 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
                       style={styles.resumeBannerPrimary}
                       onPress={() => props.inProgressRound && props.onResumeRound(props.inProgressRound)}
                     >
-                      <Text style={styles.resumeBannerPrimaryText}>Continue</Text>
+                      <Text style={styles.resumeBannerPrimaryText}>Resume Round</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -343,7 +400,7 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
                 <Text style={styles.importScorecardText}>{UI_COPY.actions.importScorecards}</Text>
               </TouchableOpacity>
               <Text style={styles.importHint}>
-                Already have scorecards? Import 3 to unlock all your stats today.
+                Already have scorecards? Import 3 rounds and your stats will show here.
               </Text>
 
               <View style={styles.featuresList}>
@@ -357,7 +414,7 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
                 </View>
                 <View style={styles.featureItem}>
                   <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                  <Text style={styles.featureText}>Directional miss tracking & patterns</Text>
+                  <Text style={styles.featureText}>Directional miss tracking</Text>
                 </View>
                 <View style={styles.featureItem}>
                   <Ionicons name="checkmark-circle" size={20} color="#10B981" />

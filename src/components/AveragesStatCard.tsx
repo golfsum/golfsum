@@ -23,7 +23,6 @@ import {
 } from '../utils/averagesAnalytics';
 import { formatAverage, formatPercent } from '../utils/formatStat';
 import { Sparkline } from './Sparkline';
-import { EMPTY_STATE_COPY } from '../constants/emptyStateCopy';
 
 interface AveragesStatCardProps {
   title: string;
@@ -60,11 +59,9 @@ export const AveragesStatCard: React.FC<AveragesStatCardProps> = ({
             adjustsFontSizeToFit
             minimumFontScale={0.85}
           >
-            Not enough consistent data yet to show confidently.
+            Add a few more rounds to see this stat.
           </Text>
-          <Text style={styles.insufficientSubtext}>
-            {EMPTY_STATE_COPY.unlockAfterThreeRounds}
-          </Text>
+          <Text style={styles.insufficientSubtext}>3 rounds here shows this best.</Text>
         </View>
       </View>
     );
@@ -92,11 +89,9 @@ export const AveragesStatCard: React.FC<AveragesStatCardProps> = ({
             adjustsFontSizeToFit
             minimumFontScale={0.85}
           >
-            Not enough consistent data yet to show confidently.
+            Add a few more rounds to see this stat.
           </Text>
-          <Text style={styles.insufficientSubtext}>
-            {EMPTY_STATE_COPY.unlockAfterThreeRounds}
-          </Text>
+          <Text style={styles.insufficientSubtext}>3 rounds here shows this best.</Text>
         </View>
       </View>
     );

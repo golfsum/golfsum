@@ -1,11 +1,20 @@
 import { Platform } from 'react-native';
 import { getCourse, saveCourse, getCourseFromFirestore, saveCourseToFirestore } from './courseCache';
 import { fetchCourseHolesFromBackend } from './golfApi';
-import { getMockGpsCourse } from './gpsMockCourses';
 import { getCourseDetail } from './golfApiIoService';
+import { buildRoutingOptionsFromHoles } from '../utils/courseRouting';
 
 function normalizeTeeName(name) {
   return String(name || '').trim().toLowerCase();
+}
+
+function hasGpsHoleData(course) {
+  const holes = Array.isArray(course?.holes) ? course.holes : [];
+  return holes.some((hole) => {
+    const tees = Array.isArray(hole?.tees) ? hole.tees : [];
+    const pois = Array.isArray(hole?.pois) ? hole.pois : [];
+    return tees.some((tee) => Number(tee?.yards) > 0) || pois.length > 0;
+  });
 }
 
 export function getGpsTeeOptions(course) {
@@ -29,45 +38,40 @@ export function getGpsTeeOptions(course) {
   return [...teeMap.values()].sort((a, b) => b.totalYards - a.totalYards);
 }
 
-export async function loadGpsRoundSetup(courseId) {
+function buildSetupPayload(course, cached) {
+  return {
+    course,
+    cached,
+    teeOptions: getGpsTeeOptions(course),
+    holeCount: Array.isArray(course?.holes) ? course.holes.length : 0,
+    routeOptions: buildRoutingOptionsFromHoles(course?.holes),
+  };
+}
+
+export async function loadGpsRoundSetup(courseId, courseName, latitude, longitude) {
   if (!courseId) {
     throw new Error('Missing course ID');
   }
 
   // 1. Local device cache
   const local = await getCourse(courseId);
-  if (local) {
-    return {
-      course: local,
-      cached: true,
-      teeOptions: getGpsTeeOptions(local),
-      holeCount: Array.isArray(local?.holes) ? local.holes.length : 0,
-    };
+  if (local && hasGpsHoleData(local)) {
+    return buildSetupPayload(local, true);
   }
 
   // 2. Firestore community cache
   const firestored = await getCourseFromFirestore(courseId);
-  if (firestored) {
+  if (firestored && hasGpsHoleData(firestored)) {
     await saveCourse(courseId, firestored); // backfill local cache
-    return {
-      course: firestored,
-      cached: true,
-      teeOptions: getGpsTeeOptions(firestored),
-      holeCount: Array.isArray(firestored?.holes) ? firestored.holes.length : 0,
-    };
+    return buildSetupPayload(firestored, true);
   }
 
   // 3. Firebase Function → golfapi.io (server-side, works on all platforms including web)
   try {
-    const remote = await fetchCourseHolesFromBackend(courseId);
+    const remote = await fetchCourseHolesFromBackend(courseId, courseName, latitude, longitude);
     await saveCourse(courseId, remote);
     saveCourseToFirestore(courseId, remote).catch(() => {}); // fire-and-forget
-    return {
-      course: remote,
-      cached: false,
-      teeOptions: getGpsTeeOptions(remote),
-      holeCount: Array.isArray(remote?.holes) ? remote.holes.length : 0,
-    };
+    return buildSetupPayload(remote, false);
   } catch (_) {
     // fall through to golfapi.io direct (native only — blocked by CORS on web)
   }
@@ -81,41 +85,27 @@ export async function loadGpsRoundSetup(courseId) {
         const course = { ...detail, holes: detail.holesData };
         await saveCourse(courseId, course);
         saveCourseToFirestore(courseId, course).catch(() => {});
-        return {
-          course,
-          cached: false,
-          teeOptions: getGpsTeeOptions(course),
-          holeCount: course.holes.length,
-        };
+        return buildSetupPayload(course, false);
       }
     } catch (_) {
       // fall through to mock
     }
   }
 
-  const mockCourse = getMockGpsCourse(courseId);
-  if (!mockCourse) {
-    // Course not found in any source — return a shell with standard tee options
-    // so the GPS round can still start. Hole GPS data (distances to green) won't
-    // be available, but the map and scoring will work normally.
-    return {
-      course: null,
-      cached: false,
-      teeOptions: [
-        { name: 'Black', color: '#1F2937', totalYards: 0 },
-        { name: 'Blue', color: '#3B82F6', totalYards: 0 },
-        { name: 'White', color: '#F9FAFB', totalYards: 0 },
-        { name: 'Yellow', color: '#F59E0B', totalYards: 0 },
-        { name: 'Red', color: '#EF4444', totalYards: 0 },
-      ],
-      holeCount: 18,
-    };
-  }
-  await saveCourse(courseId, mockCourse);
+  // Course not found in any source — return a shell with standard tee options
+  // so the GPS round can still start. Hole GPS data (distances to green) won't
+  // be available, but the map and scoring will work normally.
   return {
-    course: mockCourse,
+    course: null,
     cached: false,
-    teeOptions: getGpsTeeOptions(mockCourse),
-    holeCount: Array.isArray(mockCourse?.holes) ? mockCourse.holes.length : 0,
+    teeOptions: [
+      { name: 'Black', color: '#1F2937', totalYards: 0 },
+      { name: 'Blue', color: '#3B82F6', totalYards: 0 },
+      { name: 'White', color: '#F9FAFB', totalYards: 0 },
+      { name: 'Yellow', color: '#F59E0B', totalYards: 0 },
+      { name: 'Red', color: '#EF4444', totalYards: 0 },
+    ],
+    holeCount: 18,
+    routeOptions: [],
   };
 }

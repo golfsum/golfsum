@@ -36,7 +36,7 @@ export const GolfDNACard: React.FC<{ dna: GolfDNA; lastUpdated: string; onRefres
     return (
       <View style={styles.card}>
         <Text style={styles.title}>Your Golf DNA</Text>
-        <Text style={styles.subtle}>Track 5+ rounds to unlock your profile.</Text>
+        <Text style={styles.subtle}>5 rounds here shows your profile.</Text>
       </View>
     );
   }

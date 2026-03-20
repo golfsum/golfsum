@@ -227,14 +227,16 @@ export async function getReportedIssuesForUser(): Promise<ReportedIssue[]> {
 
   try {
     const fs = requireDb();
-    const q = query(
-      collection(fs, 'reportedIssues'),
-      where('uid', '==', user.uid),
-      orderBy('createdAt', 'desc'),
-      limit(50)
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map(d => ({ id: d.id, ...d.data() } as ReportedIssue));
+    const snap = await getDocs(collection(fs, 'reportedIssues'));
+    return snap.docs
+      .map(d => ({ id: d.id, ...d.data() } as ReportedIssue))
+      .filter((issue) => issue.uid === user.uid)
+      .sort((left, right) => {
+        const leftStamp = new Date(left.createdAt || 0).getTime();
+        const rightStamp = new Date(right.createdAt || 0).getTime();
+        return rightStamp - leftStamp;
+      })
+      .slice(0, 50);
   } catch (error) {
     if (!isPermissionError(error)) logger.error('getReportedIssuesForUser error:', error);
     return [];

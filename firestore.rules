@@ -216,6 +216,16 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Player reports for course data and GPS issues
+    match /reports/{reportId} {
+      allow create: if isSignedIn()
+        && request.resource.data.uid is string
+        && request.resource.data.uid == request.auth.uid;
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == resource.data.uid);
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
     // OCR error reports (admin review)
     match /ocrErrors/{errorId} {
       allow create: if isSignedIn() && request.auth.uid == request.resource.data.uid;

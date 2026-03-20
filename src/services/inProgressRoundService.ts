@@ -52,6 +52,10 @@ export interface InProgressRoundDraft {
   courseName: string;
   teeName?: string;
   startingHole?: number;
+  endingHole?: number;
+  roundLength?: '18' | 'front9' | 'back9';
+  routeHoleNumbers?: number[];
+  routeLabel?: string;
   startType?: InProgressStartType;
   currentHole?: number;
   holes: InProgressHole[];

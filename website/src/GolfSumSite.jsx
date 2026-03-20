@@ -811,15 +811,22 @@ function DashboardPage({ user }) {
   const [rounds, setRounds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("overview");
+  const [playerRating, setPlayerRating] = useState(null);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       setLoading(true);
       try {
-        const data = await getUserRounds(user.uid, user);
+        const [data, profile] = await Promise.all([
+          getUserRounds(user.uid, user),
+          firestoreGet(`users/${user.uid}`, user).catch(() => null),
+        ]);
         if (!alive) return;
         setRounds([...data].sort((a, b) => toTime(b.date) - toTime(a.date)));
+        if (profile?.playerRating != null && Number.isFinite(Number(profile.playerRating))) {
+          setPlayerRating(Number(profile.playerRating));
+        }
       } catch (e) { console.error(e); }
       if (alive) setLoading(false);
     })();
@@ -866,7 +873,7 @@ function DashboardPage({ user }) {
             <div className="stat-box"><div className="stat-value">{stats.firPct != null ? fmt(stats.firPct, 0) + "%" : "—"}</div><div className="stat-label">FIR%</div></div>
             <div className="stat-box"><div className="stat-value">{stats.girPct != null ? fmt(stats.girPct, 0) + "%" : "—"}</div><div className="stat-label">GIR%</div></div>
             <div className="stat-box"><div className="stat-value">{stats.last5Avg ? fmt(stats.last5Avg, 1) : "—"}</div><div className="stat-label">Last 5 Avg</div></div>
-            <div className="stat-box"><div className="stat-value" style={{ color: C.brand }}>—</div><div className="stat-label">Player Rating</div></div>
+            <div className="stat-box"><div className="stat-value" style={{ color: C.brand }}>{playerRating != null ? playerRating.toFixed(1) : "—"}</div><div className="stat-label">Player Rating</div></div>
           </div>
           <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: `1px solid ${C.border}` }}>
             {["overview", "history"].map((t) => (
@@ -952,7 +959,7 @@ function DashboardPage({ user }) {
           )}
           {tab === "history" && (
             <div className="fade-in card" style={{ padding: 0, overflow: "auto" }}>
-              <table className="table"><thead><tr><th>Date</th><th>Course</th><th>Tee</th><th>Score</th><th>Putts</th><th>FIR</th><th>GIR</th><th>Rating</th><th>Slope</th><th>Diff</th><th>Scorecard</th></tr></thead><tbody>
+              <table className="table"><thead><tr><th>Date</th><th>Course</th><th>Tee</th><th>Score</th><th>Putts</th><th>FIR</th><th>GIR</th><th>Diff</th><th>Scorecard</th></tr></thead><tbody>
                 {rounds.map((r, i) => {
                   const scorecardUrl = safeExternalUrl(r.imageUri || r.thumbnailUri);
                   return (
@@ -964,8 +971,6 @@ function DashboardPage({ user }) {
                     <td>{r.stats?.putts || "—"}</td>
                     <td>{pct(r.stats?.fairways, r.stats?.fairwaysPossible)}</td>
                     <td>{pct(r.stats?.greens, r.stats?.greensPossible)}</td>
-                    <td>{r.stats?.courseRating || "—"}</td>
-                    <td>{r.stats?.slopeRating || "—"}</td>
                     <td>{r.differential != null ? fmt(r.differential, 1) : "—"}</td>
                     <td>
                       {scorecardUrl ? (
@@ -1021,6 +1026,7 @@ function AdminPage({ user }) {
   const [statusLoading, setStatusLoading] = useState(false);
   const [lastStatusCheck, setLastStatusCheck] = useState(null);
   const [reportedIssues, setReportedIssues] = useState([]);
+  const [golfApiUsage, setGolfApiUsage] = useState(null);
   const [reportedSearchTerm, setReportedSearchTerm] = useState("");
   const [reportedDateFrom, setReportedDateFrom] = useState("");
   const [reportedDateTo, setReportedDateTo] = useState("");
@@ -1089,6 +1095,7 @@ function AdminPage({ user }) {
       setRoundCounts(adminData.roundCounts && typeof adminData.roundCounts === "object" ? adminData.roundCounts : {});
       setOcrStats(adminData.ocrStats || { total: null, last: null });
       setReportedIssues(Array.isArray(adminData.reportedIssues) ? adminData.reportedIssues : []);
+      setGolfApiUsage(adminData.golfApiUsage && typeof adminData.golfApiUsage === "object" ? adminData.golfApiUsage : null);
       const ocrErrorItems = Array.isArray(adminData.ocrErrors) ? adminData.ocrErrors : [];
       if (!aliveRef.current || seq !== reloadSeqRef.current) return;
       setOcrErrors(ocrErrorItems);
@@ -1306,6 +1313,16 @@ function AdminPage({ user }) {
   const recentLogins = users.filter((u) => daysSince(getUserLastLoginAt(u)) <= 7).length;
   const ocrLastAt = ocrStats.last?.lastVerifiedAt ? new Date(ocrStats.last.lastVerifiedAt).toISOString() : (ocrStats.last?.updatedAt || null);
   const ocrLastName = ocrStats.last?.name || "—";
+  const golfApiLimit = Number(golfApiUsage?.monthlyLimit || 0) || 2000;
+  const golfApiLeft = Number(golfApiUsage?.requestsLeft);
+  const golfApiUsed = Number.isFinite(Number(golfApiUsage?.requestsUsed))
+    ? Number(golfApiUsage.requestsUsed)
+    : (Number.isFinite(golfApiLeft) ? Math.max(0, golfApiLimit - golfApiLeft) : null);
+  const golfApiLeftDisplay = Number.isFinite(golfApiLeft) ? golfApiLeft.toFixed(1).replace(/\.0$/, "") : "—";
+  const golfApiUsedDisplay = Number.isFinite(golfApiUsed) ? golfApiUsed.toFixed(1).replace(/\.0$/, "") : "—";
+  const golfApiPct = Number.isFinite(golfApiUsed) && golfApiLimit > 0
+    ? Math.max(0, Math.min(100, (golfApiUsed / golfApiLimit) * 100))
+    : null;
   const errorUsers = (() => {
     const byKey = new Map();
     users
@@ -1585,6 +1602,59 @@ function AdminPage({ user }) {
                     {version}: {count}
                   </span>
                 ))}
+              </div>
+            )}
+          </div>
+          <div className="card" style={{ padding: 16, marginBottom: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", marginBottom: 6 }}>GolfAPI Monthly Usage</div>
+                <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>GolfAPI Requests</h3>
+              </div>
+              <span className="badge badge-amber" style={{ fontSize: 11 }}>
+                {golfApiUsage?.monthKey || "No data"}
+              </span>
+            </div>
+            {golfApiUsage ? (
+              <>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+                  <div className="stat-box" style={{ minWidth: 180, flex: "1 1 180px" }}>
+                    <div className="stat-value" style={{ color: C.amber }}>{golfApiUsedDisplay}</div>
+                    <div className="stat-label">Used / {golfApiLimit}</div>
+                  </div>
+                  <div className="stat-box" style={{ minWidth: 180, flex: "1 1 180px" }}>
+                    <div className="stat-value">{golfApiLeftDisplay}</div>
+                    <div className="stat-label">Requests Left</div>
+                  </div>
+                </div>
+                <div style={{ height: 10, borderRadius: 999, background: "rgba(148,163,184,0.14)", overflow: "hidden", marginBottom: 12 }}>
+                  <div
+                    style={{
+                      width: `${golfApiPct ?? 0}%`,
+                      height: "100%",
+                      background: golfApiPct != null && golfApiPct >= 90 ? "#EF4444" : golfApiPct != null && golfApiPct >= 75 ? "#F59E0B" : C.brand,
+                      transition: "width 200ms ease",
+                    }}
+                  />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                  <div style={{ fontSize: 12, color: C.textMuted }}>
+                    Last updated: <span style={{ color: C.text }}>{golfApiUsage?.updatedAt ? fmtDate(golfApiUsage.updatedAt) : "—"}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: C.textMuted }}>
+                    Last endpoint: <span style={{ color: C.text, fontFamily: "monospace" }}>{golfApiUsage?.lastPath || "—"}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: C.textMuted }}>
+                    Source: <span style={{ color: C.text }}>{golfApiUsage?.lastSource || "—"}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: C.textMuted }}>
+                    Mode: <span style={{ color: C.text }}>{golfApiUsage?.lastMode || "—"}</span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 13, color: C.textMuted }}>
+                No GolfAPI usage snapshot yet. Run a search or course load through the app, then refresh this dashboard.
               </div>
             )}
           </div>
@@ -2326,7 +2396,7 @@ function AdminPage({ user }) {
                   {[
                     ["Email", getUserEmail(selectedUser)],
                     ["Home Course", getUserHomeCourse(selectedUser)],
-                    ["Player Rating", selectedUser.coursePreferences?.typicalHandicap || selectedUser.profile?.coursePreferences?.typicalHandicap],
+                    ["Player Rating", selectedUser.playerRating ?? selectedUser.profile?.playerRating ?? "—"],
                     ["Favorite Tee", selectedUser.coursePreferences?.favoriteTee || selectedUser.profile?.coursePreferences?.favoriteTee],
                     ["Subscription", getSubscriptionInfo(selectedUser).label],
                     ["Subscription Expiry", getSubscriptionInfo(selectedUser).expiry ? fmtDate(getSubscriptionInfo(selectedUser).expiry) : "—"],

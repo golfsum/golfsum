@@ -3,7 +3,7 @@ import { bearingDeg } from './haversine';
 const DEFAULT_NATIVE_PADDING = {
   top: 80,
   right: 90,
-  bottom: 180,
+  bottom: 280,
   left: 90,
 };
 
@@ -85,9 +85,15 @@ export function getBoundsFromCoords(coords) {
   if (!Array.isArray(coords) || coords.length === 0) return null;
   const lngs = coords.map((coord) => coord[0]);
   const lats = coords.map((coord) => coord[1]);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const lngPad = (maxLng - minLng) * 0.15;
+  const latPad = (maxLat - minLat) * 0.15;
   return {
-    ne: [Math.max(...lngs), Math.max(...lats)],
-    sw: [Math.min(...lngs), Math.min(...lats)],
+    ne: [maxLng + lngPad, maxLat + latPad],
+    sw: [minLng - lngPad, minLat - latPad],
   };
 }
 

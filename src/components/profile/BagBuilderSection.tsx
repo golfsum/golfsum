@@ -1,9 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { UserProfile } from '../../types';
 import { ClubYardageModal } from './ClubYardageModal';
 import { ClubYardageAnalysis } from '../../services/clubYardageIntelligence';
+import { getClubAveragePromptCandidates, getClubAverages, getClubDisplayDistance, normalizeClubKey, syncManualDistancesToGps } from '../../services/clubDistanceService';
+import Storage from '../../services/storage';
+
+const CLUB_DISTANCE_PROMPT_KEY = '@GolfSum:ClubDistancePromptDismissedAt';
 
 interface BagBuilderSectionProps {
   expanded: boolean;
@@ -27,8 +31,38 @@ export const BagBuilderSection: React.FC<BagBuilderSectionProps> = ({
   yardageAnalysis,
 }) => {
   const [yardageModalClub, setYardageModalClub] = useState<string | null>(null);
+  const [clubAverages, setClubAverages] = useState<Record<string, any>>({});
+  const [promptDismissedAt, setPromptDismissedAt] = useState<string | null>(null);
 
   const distances = profile.clubDistances ?? {};
+  const promptCandidates = useMemo(
+    () => getClubAveragePromptCandidates(distances, clubAverages),
+    [clubAverages, distances]
+  );
+  const showDistancePrompt = promptCandidates.length > 0 && (
+    !promptDismissedAt || (Date.now() - new Date(promptDismissedAt).getTime()) > (30 * 24 * 60 * 60 * 1000)
+  );
+
+  useEffect(() => {
+    let active = true;
+    getClubAverages()
+      .then((averages) => {
+        if (active) setClubAverages(averages || {});
+      })
+      .catch(() => {
+        if (active) setClubAverages({});
+      });
+    Storage.getItem(CLUB_DISTANCE_PROMPT_KEY)
+      .then((value) => {
+        if (active) setPromptDismissedAt(value);
+      })
+      .catch(() => {
+        if (active) setPromptDismissedAt(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const activeClubCount =
     (profile.bag?.driver ? 1 : 0) +
     (profile.bag?.putter ? 1 : 0) +
@@ -101,6 +135,18 @@ export const BagBuilderSection: React.FC<BagBuilderSectionProps> = ({
     setYardageModalClub(null);
   };
 
+  const dismissDistancePrompt = async () => {
+    const nowIso = new Date().toISOString();
+    setPromptDismissedAt(nowIso);
+    await Storage.setItem(CLUB_DISTANCE_PROMPT_KEY, nowIso);
+  };
+
+  const handleSyncManualDistances = async () => {
+    const nextProfile = await syncManualDistancesToGps(profile, clubAverages);
+    onUpdateProfile(nextProfile);
+    await dismissDistancePrompt();
+  };
+
   const isClubFlagged = (club: string): boolean => {
     if (!yardageAnalysis?.primaryFinding) return false;
     const finding = yardageAnalysis.primaryFinding;
@@ -116,6 +162,9 @@ export const BagBuilderSection: React.FC<BagBuilderSectionProps> = ({
   ) => {
     const active = isClubActive(club, category);
     const yardage = distances[club];
+    const normalizedClub = normalizeClubKey(club);
+    const average = clubAverages[normalizedClub] || null;
+    const displayDistance = getClubDisplayDistance(average, typeof yardage === 'number' ? yardage : null);
     const showYardage = active && club !== 'Putter';
 
     return (
@@ -131,8 +180,23 @@ export const BagBuilderSection: React.FC<BagBuilderSectionProps> = ({
         {showYardage && (
           <View style={chipStyles.yardageWrap}>
             <Text style={chipStyles.yardageLabel}>
-              {yardage ? `${yardage} yds` : 'Set yds'}
+              {displayDistance ? `${displayDistance.yards} yds` : yardage ? `${yardage} yds` : 'Set yds'}
             </Text>
+            {displayDistance?.source === 'gps' ? (
+              <Text style={chipStyles.detailLabel}>
+                {displayDistance.confidence === 'high'
+                  ? `GPS avg · ${average?.sampleCount || 0} shots`
+                  : `${average?.sampleCount || 0}/10 shots`}
+              </Text>
+            ) : yardage ? (
+              <Text style={chipStyles.detailLabel}>Entered</Text>
+            ) : null}
+            {average?.gpsAvgCarry ? (
+              <Text style={chipStyles.detailLabel}>Carry est. {average.gpsAvgCarry}y</Text>
+            ) : null}
+            {average?.gpsAvgTotal && yardage && Math.abs(average.gpsAvgTotal - yardage) >= 10 ? (
+              <Text style={chipStyles.detailLabel}>Entered {yardage}y</Text>
+            ) : null}
             {yardage && isClubFlagged(club) ? <View style={chipStyles.verifyDot} /> : null}
           </View>
         )}
@@ -158,6 +222,22 @@ export const BagBuilderSection: React.FC<BagBuilderSectionProps> = ({
 
       {expanded && (
         <View style={styles.bagContent}>
+          {showDistancePrompt ? (
+            <View style={chipStyles.promptCard}>
+              <Text style={chipStyles.promptTitle}>Your distances have updated</Text>
+              <Text style={chipStyles.promptBody}>
+                {`${promptCandidates[0].club} GPS average is now ${promptCandidates[0].gpsYards}y, ${promptCandidates[0].diff}y from your entered ${promptCandidates[0].manualYards}y. GPS drives suggestions now.`}
+              </Text>
+              <View style={chipStyles.promptActions}>
+                <TouchableOpacity style={chipStyles.promptBtnPrimary} onPress={handleSyncManualDistances}>
+                  <Text style={chipStyles.promptBtnPrimaryText}>Update entries</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={chipStyles.promptBtnSecondary} onPress={dismissDistancePrompt}>
+                  <Text style={chipStyles.promptBtnSecondaryText}>Keep as is</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
           <View style={chipStyles.metaRow}>
             <Text style={chipStyles.countPill}>{activeClubCount}/14 clubs</Text>
             {atLimit && <Text style={chipStyles.limitText}>Rules limit reached</Text>}
@@ -241,6 +321,11 @@ const chipStyles = StyleSheet.create({
     color: '#10B981',
     marginTop: 2,
   },
+  detailLabel: {
+    fontSize: 9,
+    color: '#9CA3AF',
+    marginTop: 1,
+  },
   yardageWrap: {
     alignItems: 'center',
   },
@@ -279,5 +364,52 @@ const chipStyles = StyleSheet.create({
     color: '#4B5563',
     textAlign: 'center',
     marginBottom: 8,
+  },
+  promptCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#374151',
+    backgroundColor: '#111827',
+    padding: 12,
+    marginBottom: 10,
+  },
+  promptTitle: {
+    color: '#F3F4F6',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  promptBody: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  promptActions: {
+    flexDirection: 'row',
+    marginTop: 10,
+    gap: 8,
+  },
+  promptBtnPrimary: {
+    backgroundColor: '#10B981',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  promptBtnPrimaryText: {
+    color: '#06281E',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  promptBtnSecondary: {
+    borderColor: '#374151',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  promptBtnSecondaryText: {
+    color: '#D1D5DB',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

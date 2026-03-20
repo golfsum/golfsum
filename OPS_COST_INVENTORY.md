@@ -5,7 +5,7 @@ Last updated: February 27, 2026
 | Service | What It Powers | Cost Driver | Environment Variables | Code References | Billing Status |
 |---|---|---|---|---|---|
 | Firebase (Auth + Firestore) | User auth, cloud sync, admin APIs | Auth MAU + Firestore reads/writes/storage | `EXPO_PUBLIC_FIREBASE_*`, `FIREBASE_PROJECT_ID`, `FIREBASE_API_KEY` | `src/services/firebase.ts`, `website/api/admin-dashboard.js`, `website/api/admin-user-rounds.js` | Potentially paid (usage-based) |
-| Golf Course API (`api.golfcourseapi.com`) | Course search + canonical course details | API request volume | `EXPO_PUBLIC_GOLF_COURSE_API_KEY` | `src/services/golfCourseApiService.ts` | Free tier + paid overage |
+| Golf Course API (`api.golfcourseapi.com`) | Course search + canonical course details | API request volume | `EXPO_PUBLIC_GOLFAPI_IO_TOKEN` | `src/services/golfCourseApiService.ts` | Free tier + paid overage |
 | RevenueCat | Subscription entitlements / paywall | Active subscribers + API usage | `EXPO_PUBLIC_RC_*`, `EXPO_PUBLIC_REVENUECAT_*` | `src/services/billingService.ts` | Paid service |
 | App Store / Play Billing | Actual subscription transactions | Subscriber revenue share/store fees | Product IDs configured via RevenueCat env | `src/services/billingService.ts` | Paid platform fees |
 | OCR Backend (GolfSum-hosted) | Scorecard image parse proxy target | Hosting + OCR traffic volume | `OCR_BACKEND_URL`, `OCR_API_KEY`, `EXPO_PUBLIC_SCORECARD_OCR_URL` | `website/api/ocr.js`, `src/services/scorecardOcrService.ts`, `backend/scorecard_ocr/README.md` | Paid (hosting + model usage) |
@@ -28,7 +28,7 @@ Last updated: February 27, 2026
 - `Expo EAS` is the potentially paid Expo service.
 
 ## Environment Variable Groups To Audit
-- Mobile app: `EXPO_PUBLIC_FIREBASE_*`, `EXPO_PUBLIC_GOLF_COURSE_API_KEY`, `EXPO_PUBLIC_SCORECARD_OCR_URL`, `EXPO_PUBLIC_RC_*`, `EXPO_PUBLIC_REVENUECAT_*`, `EXPO_PUBLIC_GOOGLE_*`
+- Mobile app: `EXPO_PUBLIC_FIREBASE_*`, `EXPO_PUBLIC_GOLFAPI_IO_TOKEN`, `EXPO_PUBLIC_SCORECARD_OCR_URL`, `EXPO_PUBLIC_RC_*`, `EXPO_PUBLIC_REVENUECAT_*`, `EXPO_PUBLIC_GOOGLE_*`
 - Website/serverless: `FIREBASE_PROJECT_ID`, `FIREBASE_API_KEY`, `GS_ALLOWED_ORIGINS`, `OCR_BACKEND_URL`, `OCR_API_KEY`, `GS_API_SIGNING_SECRET`, `ANALYTICS_DRAIN_SECRET`
 
 ## Ownership + Ops Metadata (Fill In)

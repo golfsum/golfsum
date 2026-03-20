@@ -73,7 +73,7 @@ npm install
 Create a `.env` file in the project root:
 
 ```bash
-EXPO_PUBLIC_GOLF_COURSE_API_KEY=your-rapidapi-key-here
+EXPO_PUBLIC_GOLFAPI_IO_TOKEN=your-rapidapi-key-here
 ```
 
 ### 4. Start the App
@@ -266,7 +266,7 @@ GolfSum/
 
 ### "API key not set"
 1. Create `.env` file in project root
-2. Add `EXPO_PUBLIC_GOLF_COURSE_API_KEY=your-key`
+2. Add `EXPO_PUBLIC_GOLFAPI_IO_TOKEN=your-key`
 3. Restart Expo dev server (`npm start`)
 
 ### "No courses found"

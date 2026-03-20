@@ -432,7 +432,7 @@ export function buildInRoundNudge(input: InRoundNudgeInput): RoundNudge | null {
         tone: holeMemory.toughestPin === 'back' ? 'red' : 'amber',
         title: 'Course note',
         body: `${pinLabel} pins have been the toughest finish on this green. Favor pace first and accept the safe side.`,
-        support: `Recurring pin-depth pattern on this hole`,
+        support: `This pin depth has been the toughest here`,
       };
     }
 
@@ -513,7 +513,7 @@ export function buildInRoundNudge(input: InRoundNudgeInput): RoundNudge | null {
         tone: 'amber',
         title: 'Course note',
         body: `This hole has punished misses ${holeMemory.missSide}. Favor the ${holeMemory.missSide === 'right' ? 'left-center' : 'right-center'} side from the tee.`,
-        support: `Recurring pattern on this hole`,
+        support: `This miss shows up often on this hole`,
       };
     }
   }
@@ -546,7 +546,7 @@ export function buildInRoundNudge(input: InRoundNudgeInput): RoundNudge | null {
         tone: 'green',
         title: 'Course note',
         body: `${holeMemory.betterApproachClub} has produced better scoring from ${targetBand} on this hole. Good spot to play the safer center-green number.`,
-        support: `Best scoring approach pattern on this hole`,
+        support: `This target line has scored best here`,
       };
     }
     if (
@@ -569,7 +569,7 @@ export function buildInRoundNudge(input: InRoundNudgeInput): RoundNudge | null {
       : '';
     const support = holeMemory.approachBand && holeMemory.approachBand === targetBand
       ? `${holeMemory.approachBand} has been the trouble approach window on this hole`
-      : 'Recurring approach pattern on this hole';
+      : 'This approach miss shows up often on this hole';
     if (holeMemory.approachMiss === 'short') {
       return {
         id: `hole-memory-approach-short-${input.holeNumber}`,
@@ -630,7 +630,7 @@ export function buildInRoundNudge(input: InRoundNudgeInput): RoundNudge | null {
         tone: penalty.deltaVsFairway >= 1.1 ? 'red' : 'amber',
         title: 'Lie penalty',
         body: `${liveLie} has been about ${penalty.deltaVsFairway.toFixed(1)} shots worse than fairway. Adjust club and target.`,
-        support: 'Based on your recent scoring pattern',
+        support: 'From your recent scoring trend',
       };
     }
   }
@@ -663,7 +663,7 @@ export function buildInRoundNudge(input: InRoundNudgeInput): RoundNudge | null {
       type: 'miss-side',
       priority: 76,
       tone: 'amber',
-      title: 'Miss pattern',
+      title: 'Miss trend',
       body: `Your tee miss has been ${missSide}. Favor the ${missSide === 'right' ? 'left-center' : 'right-center'} target here.`,
       support: `Current round misses: L ${leftMisses} / R ${rightMisses}`,
     };
@@ -685,7 +685,7 @@ export function buildInRoundNudge(input: InRoundNudgeInput): RoundNudge | null {
       body: `${context.saferTeeClub.club} has been your best scoring tee club recently. Good hole to use it.`,
       support: context.saferTeeClub.fairwayPct !== null
         ? `${Math.round(context.saferTeeClub.fairwayPct)}% fairways with better scoring`
-        : 'Recent scoring pattern',
+        : 'Recent scoring trend',
     };
   }
 

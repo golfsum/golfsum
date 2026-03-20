@@ -344,7 +344,7 @@ export function getClubUsageSummary(rounds: SavedRound[]): ClubUsageSummary {
 }
 
 /**
- * Generate AI insights and recommendations
+ * Generate stat-based recommendations
  */
 export function generateInsights(
   benchmarkDelta: BenchmarkDelta,
@@ -367,19 +367,19 @@ export function generateInsights(
   if (weakest.value < -0.3) {
     insights.push({
       category: 'weakness',
-      title: `${weakest.name} Needs Work`,
-      description: `You're about ${Math.abs(weakest.value).toFixed(1)} strokes/round behind handicap benchmark in ${weakest.name.toLowerCase()}.`,
+      title: `${weakest.name} Costs The Most`,
+      description: `${Math.abs(weakest.value).toFixed(1)} strokes a round behind your handicap benchmark in ${weakest.name.toLowerCase()}.`,
       actionItem: weakest.fix,
-      impact: `Fixing this could save ${Math.abs(weakest.value * 0.5).toFixed(1)} strokes per round`,
+      impact: `${Math.abs(weakest.value * 0.5).toFixed(1)} strokes a round can come back here`,
     });
   }
   
   if (strongest.value > 0.3) {
     insights.push({
       category: 'strength',
-      title: `${strongest.name} is Your Strength`,
-      description: `You're about ${strongest.value.toFixed(1)} strokes/round better than handicap benchmark here.`,
-      actionItem: 'Keep doing what you\'re doing!',
+      title: `${strongest.name} Leads Your Game`,
+      description: `${strongest.value.toFixed(1)} strokes a round better than your handicap benchmark here.`,
+      actionItem: 'Keep leaning on it.',
     });
   }
 
@@ -387,10 +387,10 @@ export function generateInsights(
   if (scoringBreakdown.par4.vsPar > 0.5) {
     insights.push({
       category: 'opportunity',
-      title: 'Par 4 Improvement Opportunity',
-      description: `You're ${scoringBreakdown.par4.vsPar.toFixed(1)} over par on par 4s.`,
+      title: 'Par 4s Need Attention',
+      description: `${scoringBreakdown.par4.vsPar.toFixed(1)} over par on par 4s.`,
       actionItem: 'Consider more conservative tee shots on short par 4s',
-      impact: 'Could save 1-2 strokes per round',
+      impact: 'This can save 1 to 2 strokes a round',
     });
   }
 
@@ -406,10 +406,10 @@ export function generateInsights(
     if (avgScramble < 0.4) {
       insights.push({
         category: 'weakness',
-        title: 'Up & Down Below Average',
-        description: `Your up & down rate of ${(avgScramble * 100).toFixed(0)}% is below the 40% benchmark.`,
+        title: 'Up And Down Rate Is Low',
+        description: `${(avgScramble * 100).toFixed(0)}% up and down rate. The benchmark here is 40%.`,
         actionItem: 'Practice chip-and-one-putt sequences',
-        impact: 'Improving to 50% could save 1+ stroke per round',
+        impact: 'Getting to 50% can save a stroke a round',
       });
     }
   }

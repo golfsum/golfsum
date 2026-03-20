@@ -131,7 +131,7 @@ export const PreRoundSplash: React.FC<PreRoundSplashProps> = ({
                 >
                   <Text style={styles.predictionConfidenceText}>
                     {prediction.confidence === 'HIGH'
-                      ? 'High confidence'
+                      ? 'Strong read'
                       : prediction.confidence === 'MEDIUM'
                         ? 'Good estimate'
                         : 'Early estimate'}

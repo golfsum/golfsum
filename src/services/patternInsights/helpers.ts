@@ -402,7 +402,7 @@ const getProgressForType = (
         lastRoundLabel: `${last != null ? formatPercent(last) : '—'} ${direction} miss share`,
         improvedMessage: () => `Miss direction stabilized - fewer ${direction} misses last round.`,
         regressedMessage: () => `${direction[0].toUpperCase()}${direction.slice(1)} misses increased last round. Focus start line.`,
-        unchangedMessage: () => 'Miss pattern holding. Consistent shape - plan around it.',
+        unchangedMessage: () => 'Miss trend is holding. Plan around it.',
       });
     }
     case PatternInsightType.APPROACHES_MISSED_SHORT:
@@ -426,8 +426,8 @@ const getProgressForType = (
           ? 'Short misses were up last round. Take one more club and commit.'
           : 'Long misses increased last round. Favor center-green and controlled tempo.',
         unchangedMessage: () => direction === 'short'
-          ? 'Short-miss pattern holding. Keep checking carry yardages.'
-          : 'Long-miss pattern steady. Keep tempo and target discipline.',
+          ? 'Short miss is holding. Keep checking carry yardages.'
+          : 'Long miss is holding. Keep tempo and target discipline.',
       });
     }
     case PatternInsightType.GREENS_MISSED_LEFT:
@@ -446,7 +446,7 @@ const getProgressForType = (
         lastRoundLabel: `${last != null ? formatPercent(last) : '—'} ${direction} miss share`,
         improvedMessage: () => `Approach direction improved - fewer ${direction} misses last round.`,
         regressedMessage: () => `Missed more ${direction} last round. Aim center-green.`,
-        unchangedMessage: () => 'Direction holding steady. Consistent pattern to plan around.',
+        unchangedMessage: () => 'Direction is holding steady. Plan around it.',
       });
     }
     case PatternInsightType.LOW_SHORT_PUTT_MAKE_RATE: {
@@ -615,7 +615,7 @@ const getProgressForType = (
         lastRoundLabel: `${last != null ? last.toFixed(2) : '—'} front-minus-back last round`,
         improvedMessage: () => 'Start improved last round - front-nine gap is shrinking.',
         regressedMessage: () => 'Front nine struggled again. Build a pre-round warm-up routine.',
-        unchangedMessage: () => 'Slow-start pattern holding. Warm up before hole 1.',
+        unchangedMessage: () => 'Slow start is holding. Warm up before hole 1.',
       });
     }
     case PatternInsightType.APPROACH_DISTANCE_WEAKNESS: {

@@ -146,7 +146,7 @@ function CoachingTab({ analysis }: { analysis: ReturnType<typeof buildRoundAnaly
       {analysis.focusCard ? <InsightCard {...analysis.focusCard} heading="Focus Area" /> : null}
       {analysis.shapeStrengthCard ? <InsightCard {...analysis.shapeStrengthCard} heading="Shape Strength" /> : null}
       {analysis.shapeFocusCard ? <InsightCard {...analysis.shapeFocusCard} heading="Shape Focus" /> : null}
-      {analysis.mostCostlyPattern ? <InsightCard {...analysis.mostCostlyPattern} heading="Most Costly Pattern" /> : null}
+      {analysis.mostCostlyPattern ? <InsightCard {...analysis.mostCostlyPattern} heading="Most Costly Trend" /> : null}
       {analysis.bestScoringWindowCard ? <InsightCard {...analysis.bestScoringWindowCard} heading="Best Scoring Window" /> : null}
       {analysis.targetDistanceCard ? <InsightCard {...analysis.targetDistanceCard} heading="Target Number" /> : null}
       {analysis.lieImpactCard ? <InsightCard {...analysis.lieImpactCard} heading="Lie Impact" /> : null}
@@ -166,13 +166,13 @@ function CoachingTab({ analysis }: { analysis: ReturnType<typeof buildRoundAnaly
         </View>
       ) : null}
 
-      <SectionTitle title="Pattern Insights" />
+      <SectionTitle title="Round Trends" />
       {analysis.patternInsights.length ? (
         analysis.patternInsights.map((insight) => (
           <InsightListRow key={`${insight.badge}-${insight.title}`} {...insight} />
         ))
       ) : (
-        <EmptyCard message="No strong scoring pattern fired from this round yet." />
+        <EmptyCard message="No strong scoring trend showed up in this round yet." />
       )}
     </>
   );
@@ -377,7 +377,7 @@ function AveragesTab({
         <EmptyCard message="Lie impact needs enough GPS-tagged lies across the round." />
       )}
 
-      <SectionTitle title="Club Miss Pattern" />
+      <SectionTitle title="Club Miss Trend" />
       {analysis.clubMissRows.length ? (
         analysis.clubMissRows.map((row) => (
           <View key={row.club} style={styles.metricRowCard}>
@@ -394,7 +394,7 @@ function AveragesTab({
           </View>
         ))
       ) : (
-        <EmptyCard message="Miss pattern needs at least a few approach shots with directional results." />
+        <EmptyCard message="Miss trend needs a few approach shots with left-right or short-long results." />
       )}
 
       <SectionTitle title="Tee Club Performance" />
@@ -514,7 +514,7 @@ function DispersionTab({
           </View>
 
           <View style={styles.patternCard}>
-            <Text style={styles.patternTitle}>Pattern</Text>
+            <Text style={styles.patternTitle}>Trend</Text>
             <Text style={styles.patternBody}>{selectedDispersion.note}</Text>
           </View>
         </>

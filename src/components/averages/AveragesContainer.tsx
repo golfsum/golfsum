@@ -260,7 +260,7 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
   const buildFocusSummary = (stats: PerformanceStats | null): { primary: string; secondary: string } => {
     if (!stats) {
       return {
-        primary: 'Use these patterns to guide decisions and practice priorities, not to judge individual shots.',
+        primary: 'Use these stats to guide decisions and practice, not to judge one shot.',
         secondary: 'Variation like this is normal in golf. Small improvements in any area can lead to better scoring.',
       };
     }
@@ -374,7 +374,7 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
     };
     return {
       title: titleByArchetype[scoringProfile.archetype] ?? 'Your Scoring Style',
-      summary: `Volatility ${scoringProfile.volatility.level.toLowerCase()} (std dev ${scoringProfile.volatility.stdDev.toFixed(1)}). Blowups ${(scoringProfile.distribution.blowupRate * 100).toFixed(0)}%. Birdie-or-better ${(scoringProfile.distribution.scoringRate * 100).toFixed(0)}%.`,
+      summary: `Score swings ${scoringProfile.volatility.level.toLowerCase()} (${scoringProfile.volatility.stdDev.toFixed(1)} shots). Blowups ${(scoringProfile.distribution.blowupRate * 100).toFixed(0)}%. Birdie-or-better ${(scoringProfile.distribution.scoringRate * 100).toFixed(0)}%.`,
       focus,
     };
   }, [scoringProfile]);
@@ -383,7 +383,7 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
     return (
       <View style={styles.emptyContainer}>
         <Ionicons name="hourglass-outline" size={48} color="#6B7280" />
-        <Text style={styles.emptyText}>Loading stats...</Text>
+        <Text style={styles.emptyText}>Loading stats</Text>
       </View>
     );
   }
@@ -394,8 +394,8 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
   const averagesProgressText = `${rounds.length} of ${averagesRequiredRounds} rounds recorded`;
   const averagesRemainingText =
     averagesRoundsRemaining > 0
-      ? `Need ${averagesRoundsRemaining} more round${averagesRoundsRemaining === 1 ? '' : 's'}`
-      : 'Averages unlocked';
+      ? `${averagesRoundsRemaining} more round${averagesRoundsRemaining === 1 ? '' : 's'}`
+      : 'Averages ready';
 
   if (rounds.length === 0) {
     const progress = 0;
@@ -427,17 +427,17 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
           <Ionicons name="bar-chart-outline" size={52} color="#10B981" />
           <Text style={styles.emptyStateTitle}>{EMPTY_STATE_COPY.titles.nothingToAverageYet}</Text>
           <Text style={styles.emptyStateText}>
-            Play or import your first round to see your stats.
+            Play or import a round and your stats will show here.
           </Text>
           <View style={styles.progressSection}>
-            <Text style={styles.progressText}>0 of {averagesRequiredRounds} rounds complete</Text>
+            <Text style={styles.progressText}>0 of {averagesRequiredRounds} rounds here</Text>
             <View style={styles.progressBarTrack}>
               {progress > 0 && (
                 <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
               )}
             </View>
             <Text style={styles.progressSubtext}>
-              {averagesRequiredRounds} rounds builds your scoring averages and trend stats
+              {averagesRequiredRounds} rounds here shows your averages and score trend
             </Text>
           </View>
           {onNavigateToPlay && (
@@ -453,7 +453,7 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
 
           <View style={[styles.previewChartBlock, { width: '100%', marginTop: 16, marginBottom: 0 }]}>
             <View style={styles.previewChartHeader}>
-              <Text style={styles.previewChartTitle}>What You'll See</Text>
+              <Text style={styles.previewChartTitle}>WHAT SHOWS HERE</Text>
               <View style={styles.previewBadge}>
                 <Text style={styles.previewBadgeText}>Example</Text>
               </View>
@@ -486,13 +486,13 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
           <View style={[styles.unlockSummaryCard, { width: '100%', marginTop: 12 }]}>
             <View style={styles.unlockSummaryHeader}>
               <Ionicons name="stats-chart" size={18} color="#10B981" />
-              <Text style={styles.unlockSummaryTitle}>After 3 rounds, you'll see:</Text>
+              <Text style={styles.unlockSummaryTitle}>3 ROUNDS HERE SHOWS</Text>
             </View>
             <View style={styles.unlockSummaryList}>
               <Text style={styles.unlockSummaryItem}>• Average score and scoring trend</Text>
               <Text style={styles.unlockSummaryItem}>• FIR and GIR breakdown</Text>
               <Text style={styles.unlockSummaryItem}>• Putting averages by round</Text>
-              <Text style={styles.unlockSummaryItem}>• Progress toward your goals</Text>
+              <Text style={styles.unlockSummaryItem}>• Goal progress</Text>
             </View>
           </View>
         </View>
@@ -505,11 +505,11 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
     return (
       <ScrollView contentContainerStyle={styles.emptyPreviewContainer}>
         <View style={styles.compactProgress}>
-          <Text style={styles.progressText}>1 of {averagesRequiredRounds} rounds complete</Text>
+          <Text style={styles.progressText}>1 of {averagesRequiredRounds} rounds here</Text>
           <View style={styles.progressBarTrack}>
             <View style={[styles.progressBarFill, { width: `${averagesProgress}%` }]} />
           </View>
-          <Text style={styles.progressSubtext}>Averages get more accurate with more rounds.</Text>
+          <Text style={styles.progressSubtext}>More rounds here fills this in.</Text>
         </View>
 
         <View style={styles.previewCard}>
@@ -582,7 +582,7 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
           onPress={onNavigateToPlay}
           disabled={!onNavigateToPlay}
         >
-          <Text style={styles.trackRoundButtonText}>Track Your Next Round</Text>
+          <Text style={styles.trackRoundButtonText}>Start Round</Text>
         </TouchableOpacity>
 
         {/* Import shortcut — elevated card */}
@@ -592,9 +592,9 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
               <Ionicons name="camera" size={24} color="#10B981" />
             </View>
             <View style={styles.importCardTextContainer}>
-              <Text style={styles.importCardTitle}>Import Past Scorecards</Text>
+              <Text style={styles.importCardTitle}>Import Scorecards</Text>
               <Text style={styles.importCardDesc}>
-                Photograph your scorecards to add stats today. No round needed.
+                Add past scorecards here.
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color="#6B7280" />
@@ -604,7 +604,7 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
         {/* Latest round preview */}
         {previewStats && (
           <View style={[styles.previewCard, { marginTop: 16 }]}>
-            <Text style={styles.previewTitle}>Latest Round Preview</Text>
+            <Text style={styles.previewTitle}>LATEST ROUND</Text>
             <View style={styles.previewRow}>
               <View style={styles.previewStat}>
                 <Text style={styles.previewValue}>{previewStats.score}</Text>
@@ -631,7 +631,7 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
         )}
 
         <View style={styles.previewCard}>
-          <Text style={styles.previewTitle}>Scoring Trend Preview</Text>
+          <Text style={styles.previewTitle}>SCORING TREND</Text>
           <View style={styles.previewSparklineRow}>
             {realScores.map((score, i) => {
               const lo = Math.min(...realScores);
@@ -653,7 +653,7 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
         </View>
 
         <View style={styles.previewCard}>
-          <Text style={styles.previewTitle}>Ball Striking Preview</Text>
+          <Text style={styles.previewTitle}>BALL STRIKING</Text>
           <View style={styles.previewAccuracyRow}>
             <View style={styles.previewAccuracyStat}>
               <Text style={styles.previewAccuracyValue}>
@@ -675,16 +675,16 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
         <View style={styles.unlockSummaryCard}>
           <View style={styles.unlockSummaryHeader}>
             <Ionicons name="stats-chart" size={18} color="#10B981" />
-            <Text style={styles.unlockSummaryTitle}>After 3 rounds, you'll see:</Text>
+            <Text style={styles.unlockSummaryTitle}>3 ROUNDS HERE SHOWS</Text>
           </View>
           <View style={styles.unlockSummaryList}>
             <Text style={styles.unlockSummaryItem}>• Average score & scoring trend</Text>
             <Text style={styles.unlockSummaryItem}>• FIR% and GIR% with round-by-round breakdown</Text>
             <Text style={styles.unlockSummaryItem}>• Putting average per round</Text>
-            <Text style={styles.unlockSummaryItem}>• Goal tracking with progress bars</Text>
-            <Text style={styles.unlockSummaryItem}>• Front 9 vs Back 9 comparison</Text>
+            <Text style={styles.unlockSummaryItem}>• Goal progress</Text>
+            <Text style={styles.unlockSummaryItem}>• Front 9 and Back 9 split</Text>
           </View>
-          <Text style={styles.unlockSummaryFooter}>The more you track, the smarter your insights become.</Text>
+          <Text style={styles.unlockSummaryFooter}>More rounds fills this in.</Text>
         </View>
       </ScrollView>
     );
@@ -693,7 +693,7 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
   if (!performanceStats) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>Calculating statistics...</Text>
+        <Text style={styles.emptyText}>Calculating stats</Text>
       </View>
     );
   }
@@ -782,7 +782,7 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
             <Text style={styles.handicapMeta}>
               {whsDetails
                 ? `Based on ${whsDetails.acceptableRoundsCount} rated round${whsDetails.acceptableRoundsCount === 1 ? '' : 's'}${notEligibleCount > 0 ? ` · ${notEligibleCount} unrated` : ''} · ${whsDetails.reason}`
-                : 'Calculating player rating...'}
+                : 'Calculating player rating'}
             </Text>
           </View>
         </View>
@@ -988,7 +988,7 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
             <View style={styles.softUpgradeCard}>
               <Text style={styles.softUpgradeTitle}>See where your strokes go</Text>
               <Text style={styles.softUpgradeBody}>
-                Track fairways, greens, and clubs to add direction patterns, scrambling rate, and club-by-club performance.
+                Track fairways, greens, and clubs to see scrambling rate and club-by-club performance.
               </Text>
               <TouchableOpacity onPress={handleUpgradePress} accessibilityRole="button">
                 <Text style={styles.softUpgradeLink}>See what Pro tracks</Text>

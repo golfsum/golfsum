@@ -1,10 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
   Modal,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,30 +12,55 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { getCourse, saveCourse } from '../services/courseCache';
 import { fetchCourseHolesFromBackend } from '../services/golfApi';
 import { haversineYards } from '../services/haversine';
-import { HoleHeader } from '../components/gps/HoleHeader';
-import { HoleDots } from '../components/gps/HoleDots';
-import { YardagePanel } from '../components/gps/YardagePanel';
-import { getMockGpsCourse } from '../services/gpsMockCourses';
+import GpsRoundHud from '../components/gps/GpsRoundHud';
+import GpsGlassChrome from '../components/gps/GpsGlassChrome';
 import { MAPBOX_PUBLIC_TOKEN } from '../config/mapbox';
-import { getStaticMapCameraConfig } from '../services/mapFraming';
+import { getHoleFramingCoords, getStaticMapCameraConfig } from '../services/mapFraming';
 import { buildInRoundNudge } from '../services/inRoundNudgeService';
-import { getRecentHoleNote } from '../services/holeNotesService';
-import { colors, spacing } from '../theme/tokens';
+import { getSuggestion } from '../services/courseStatsService';
+import { buildEffectiveClubDistanceMap, getActiveBagClubs, getBestClubForPar3, getClubAverages } from '../services/clubDistanceService';
+import { buildHazardCarryModel, buildHoleStrategyModel, getPreferredLeaveYards } from '../services/holeStrategyModel';
+import ReportModal from '../components/ReportModal';
+import { isGpsDistanceSuspect, isTeeMarkerSuspect } from '../services/reportDetection';
+import { getRounds } from '../services/roundsService';
+import { getUserProfile } from '../services/userService';
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { elevationDiffToYardageAdjustment, getElevationDifferenceFeet } from '../services/weatherService';
+import { getSelectedTeeCoordinates } from '../utils/holeUtils';
+import { colors, radius, spacing } from '../theme/tokens';
 
-const CLUB_PATTERN = /\b(driver|3w|3 wood|5w|5 wood|2i|3i|4i|5i|6i|7i|8i|9i|pw|gw|aw|sw|lw|60|58|56|54|52|50|48|lob wedge|gap wedge|pitching wedge|sand wedge)\b/i;
+const WEB_NAV_BAR_HEIGHT = 52;
+const WEB_HOLE_META_HEIGHT = 32;
+const WEB_HOLE_SELECTOR_HEIGHT = 52;
+const WEB_BOTTOM_BAR_HEIGHT = 48;
+const WEB_YARDAGE_BAR_HEIGHT = 0;
+const MAPBOX_STATIC_MAX_DIMENSION = 1280;
 
-function extractClubFromNote(noteText) {
-  if (!noteText) return null;
-  const match = noteText.match(CLUB_PATTERN);
-  return match ? match[0] : null;
+function getStaticImageSize(imageWidth, imageHeight) {
+  const width = Math.max(1, Math.round(imageWidth || 0));
+  const height = Math.max(1, Math.round(imageHeight || 0));
+  const maxDimension = Math.max(width, height);
+  if (maxDimension <= MAPBOX_STATIC_MAX_DIMENSION) {
+    return { width, height };
+  }
+  const scale = MAPBOX_STATIC_MAX_DIMENSION / maxDimension;
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
 }
 
-function buildGreenStaticMapUrl(greenPoi, imageWidth, imageHeight) {
+function buildGreenStaticMapRequest(greenPoi, imageWidth, imageHeight) {
   if (!MAPBOX_PUBLIC_TOKEN || !greenPoi) return null;
-  return `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/${greenPoi.Longitude},${greenPoi.Latitude},19.5,0/${imageWidth}x${imageHeight}?access_token=${MAPBOX_PUBLIC_TOKEN}&attribution=false`;
+  const size = getStaticImageSize(imageWidth, imageHeight);
+  return {
+    url: `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/${greenPoi.Longitude},${greenPoi.Latitude},19.5,0/${size.width}x${size.height}?access_token=${encodeURIComponent(MAPBOX_PUBLIC_TOKEN)}&attribution=false`,
+    ...size,
+  };
 }
 
 const CLUB_OPTIONS = [
@@ -52,7 +76,7 @@ const CLUB_OPTIONS = [
 ];
 
 const PREVIEW_POINTS = {
-  tee: { x: 0.52, y: 0.84 },
+  tee: { x: 0.52, y: 0.79 },
   greenFront: { x: 0.51, y: 0.18 },
   greenCenter: { x: 0.51, y: 0.15 },
   greenBack: { x: 0.51, y: 0.12 },
@@ -87,7 +111,25 @@ const PREVIEW_NUDGE_CONTEXT = {
   },
 };
 
+const WEB_PADDING_RATIO = {
+  top: 0.08,
+  right: 0.1,
+  bottom: 0.12,
+  left: 0.1,
+};
+const MIN_WORLD_SPAN = 1e-6;
+
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+function getHazardPillOffsetStyle(hazard, index = 0) {
+  const sideShift = hazard?.side === 'left' ? -34 : hazard?.side === 'right' ? 34 : 0;
+  const rowLift = index % 2 === 1 ? -10 : 0;
+  const greenLift = hazard?.kind === 'green-bunker' ? -12 : 0;
+  return {
+    marginLeft: -18 + sideShift,
+    marginTop: -24 + rowLift + greenLift,
+  };
+}
 
 function distanceBetweenPoints(a, b) {
   return Math.hypot((a?.x ?? 0) - (b?.x ?? 0), (a?.y ?? 0) - (b?.y ?? 0));
@@ -98,6 +140,49 @@ function getBestClub(targetYards) {
   return CLUB_OPTIONS.reduce((best, club) => (
     Math.abs(club.yards - targetYards) < Math.abs(best.yards - targetYards) ? club : best
   ), CLUB_OPTIONS[0]);
+}
+
+function normalizeClubLabel(label) {
+  return String(label || '').trim().toLowerCase();
+}
+
+function normalizeDegrees(deg) {
+  return ((deg % 360) + 360) % 360;
+}
+
+function directionDelta(a, b) {
+  const delta = Math.abs(normalizeDegrees(a) - normalizeDegrees(b));
+  return Math.min(delta, 360 - delta);
+}
+
+function getPlayingAdjustment(baseYards, weather, shotBearingDeg) {
+  const tempAdj = Number.isFinite(weather?.tempF) ? Math.round((70 - weather.tempF) * 0.35) : 0;
+  let windAdj = 0;
+  if (Number.isFinite(weather?.windMph) && Number.isFinite(weather?.windDegrees) && Number.isFinite(shotBearingDeg)) {
+    const windToShot = directionDelta(weather.windDegrees, shotBearingDeg);
+    if (windToShot <= 45) windAdj = Math.round(weather.windMph * 0.6);
+    else if (windToShot >= 135) windAdj = Math.round(weather.windMph * -0.45);
+    else windAdj = Math.round(weather.windMph * 0.1);
+  }
+  return {
+    adjustedYards: Math.max(0, Math.round(baseYards + tempAdj + windAdj)),
+    tempAdj,
+    windAdj,
+  };
+}
+
+async function getGpsWeather(lat, lng) {
+  const response = await fetchWithTimeout(
+    `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto`
+  );
+  if (!response.ok) throw new Error(`Weather lookup failed (${response.status})`);
+  const data = await response.json();
+  return {
+    tempF: Number(data?.current?.temperature_2m ?? NaN),
+    windMph: Number(data?.current?.wind_speed_10m ?? NaN),
+    windDegrees: Number(data?.current?.wind_direction_10m ?? NaN),
+    humidity: Number(data?.current?.relative_humidity_2m ?? NaN),
+  };
 }
 
 function computePreviewYardages(playerPoint, baseYardages) {
@@ -142,6 +227,44 @@ function detectPreviewLie(point, hole) {
     : { lie: 'Right Rough', color: '#A3E635', showDot: true };
 }
 
+function toWorldX(lng) {
+  return (lng + 180) / 360;
+}
+
+function toWorldY(lat) {
+  const clampedLat = Math.max(-85.05112878, Math.min(85.05112878, lat));
+  const rad = (clampedLat * Math.PI) / 180;
+  return (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2;
+}
+
+function buildScreenProjection(hole) {
+  const coords = getHoleFramingCoords(hole, null, { includeUser: false });
+  if (!coords.length) return null;
+  const worldPoints = coords.map(([lng, lat]) => ({ x: toWorldX(lng), y: toWorldY(lat) }));
+  const minX = Math.min(...worldPoints.map((point) => point.x));
+  const maxX = Math.max(...worldPoints.map((point) => point.x));
+  const minY = Math.min(...worldPoints.map((point) => point.y));
+  const maxY = Math.max(...worldPoints.map((point) => point.y));
+  const spanX = Math.max(maxX - minX, MIN_WORLD_SPAN);
+  const spanY = Math.max(maxY - minY, MIN_WORLD_SPAN);
+  return {
+    minX: minX - (spanX * WEB_PADDING_RATIO.left),
+    maxX: maxX + (spanX * WEB_PADDING_RATIO.right),
+    minY: minY - (spanY * WEB_PADDING_RATIO.top),
+    maxY: maxY + (spanY * WEB_PADDING_RATIO.bottom),
+  };
+}
+
+function projectLatLngToPercent(projection, lat, lng) {
+  if (!projection || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const worldX = toWorldX(lng);
+  const worldY = toWorldY(lat);
+  return {
+    x: clamp((worldX - projection.minX) / Math.max(projection.maxX - projection.minX, MIN_WORLD_SPAN), 0.02, 0.98),
+    y: clamp((worldY - projection.minY) / Math.max(projection.maxY - projection.minY, MIN_WORLD_SPAN), 0.02, 0.98),
+  };
+}
+
 function findPoi(hole, poi, location) {
   return (hole?.pois || []).find((p) => p?.POI === poi && (!location || p?.Location === location));
 }
@@ -166,20 +289,133 @@ function getHazardTags(hole) {
   return tags;
 }
 
-function getYardageMarkers(hole) {
-  if (!hole || hole.par === 3) return [];
-  return hole.par === 5
-    ? [
-        { yds: 100, color: '#F87171', top: '68%', left: '53%' },
-        { yds: 150, color: '#FFFFFF', top: '56%', left: '51%' },
-        { yds: 200, color: '#60A5FA', top: '44%', left: '49%' },
-        { yds: 250, color: '#F6C90E', top: '32%', left: '47%' },
-      ]
-    : [
-        { yds: 100, color: '#F87171', top: '66%', left: '53%' },
-        { yds: 150, color: '#FFFFFF', top: '53%', left: '50%' },
-        { yds: 200, color: '#60A5FA', top: '39%', left: '47%' },
-      ];
+function interpolatePoint(start, end, ratio) {
+  return {
+    lat: start.lat + ((end.lat - start.lat) * ratio),
+    lng: start.lng + ((end.lng - start.lng) * ratio),
+  };
+}
+
+function isRouteWaypointReasonable(tee, green, point) {
+  const latScale = 111_320;
+  const lngScale = Math.cos((tee.lat * Math.PI) / 180) * 111_320;
+  const b = {
+    x: (green.lng - tee.lng) * lngScale,
+    y: (green.lat - tee.lat) * latScale,
+  };
+  const p = {
+    x: (point.lng - tee.lng) * lngScale,
+    y: (point.lat - tee.lat) * latScale,
+  };
+  const ab2 = (b.x * b.x) + (b.y * b.y);
+  if (ab2 === 0) return false;
+  const t = ((p.x * b.x) + (p.y * b.y)) / ab2;
+  const proj = { x: b.x * t, y: b.y * t };
+  const dx = p.x - proj.x;
+  const dy = p.y - proj.y;
+  const corridorDistance = Math.sqrt((dx * dx) + (dy * dy));
+  return t >= 0.15 && t <= 0.9 && corridorDistance <= 45;
+}
+
+function getPolylineSegments(points) {
+  const segments = [];
+  let totalYards = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    const start = points[index - 1];
+    const end = points[index];
+    const yards = haversineYards(start.lat, start.lng, end.lat, end.lng);
+    if (!Number.isFinite(yards) || yards <= 0) continue;
+    segments.push({ start, end, yards });
+    totalYards += yards;
+  }
+  return { segments, totalYards };
+}
+
+function interpolateAlongPolylineFromGreen(points, yardsFromGreen) {
+  if (!Array.isArray(points) || points.length < 2 || !Number.isFinite(yardsFromGreen) || yardsFromGreen <= 0) return null;
+  const reversed = [...points].reverse();
+  const { segments, totalYards } = getPolylineSegments(reversed);
+  if (!segments.length || yardsFromGreen >= totalYards) return null;
+  let remaining = yardsFromGreen;
+  for (const segment of segments) {
+    if (remaining <= segment.yards) {
+      const ratio = remaining / segment.yards;
+      return interpolatePoint(segment.start, segment.end, ratio);
+    }
+    remaining -= segment.yards;
+  }
+  return null;
+}
+
+function getCenteredMarkerGroups(hole) {
+  const grouped = new Map();
+  (hole?.pois || []).forEach((poi) => {
+    const match = String(poi?.POI || '').match(/(\d{2,3})\s*marker/i);
+    const yds = match ? Number(match[1]) : NaN;
+    if (!Number.isFinite(yds) || !Number.isFinite(poi?.Latitude) || !Number.isFinite(poi?.Longitude)) return;
+    const key = String(yds);
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(poi);
+  });
+
+  return [...grouped.entries()].map(([key, pois]) => {
+    const yds = Number(key);
+    const centerPoi = pois.find((poi) => String(poi?.SideOfFairway || '').toUpperCase() === 'C');
+    if (centerPoi) return { yds, lat: centerPoi.Latitude, lng: centerPoi.Longitude };
+    const leftPoi = pois.find((poi) => String(poi?.SideOfFairway || '').toUpperCase() === 'L');
+    const rightPoi = pois.find((poi) => String(poi?.SideOfFairway || '').toUpperCase() === 'R');
+    if (leftPoi && rightPoi) {
+      return {
+        yds,
+        lat: (leftPoi.Latitude + rightPoi.Latitude) / 2,
+        lng: (leftPoi.Longitude + rightPoi.Longitude) / 2,
+      };
+    }
+    return {
+      yds,
+      lat: pois.reduce((sum, poi) => sum + poi.Latitude, 0) / pois.length,
+      lng: pois.reduce((sum, poi) => sum + poi.Longitude, 0) / pois.length,
+    };
+  }).sort((a, b) => b.yds - a.yds);
+}
+
+function getRoutePoints(hole, teePoi, greenPoi) {
+  if (!hole || !teePoi || !greenPoi) return [];
+  const tee = { lat: teePoi.Latitude, lng: teePoi.Longitude };
+  const green = { lat: greenPoi.Latitude, lng: greenPoi.Longitude };
+  const doglegs = (hole.pois || [])
+    .filter((poi) => poi?.POI === 'Dogleg' && Number.isFinite(poi?.Latitude) && Number.isFinite(poi?.Longitude))
+    .sort((a, b) => (
+      haversineYards(tee.lat, tee.lng, a.Latitude, a.Longitude) -
+      haversineYards(tee.lat, tee.lng, b.Latitude, b.Longitude)
+    ))
+    .map((poi) => ({ lat: poi.Latitude, lng: poi.Longitude, kind: 'dogleg' }));
+  const routeWaypoints = doglegs.filter((point) => isRouteWaypointReasonable(tee, green, point));
+  return [{ ...tee, kind: 'tee' }, ...routeWaypoints, { ...green, kind: 'green' }];
+}
+
+function getRouteLabels(routePoints) {
+  if (routePoints.length < 3) return [];
+  const green = routePoints[routePoints.length - 1];
+  return routePoints.slice(1, -1).map((point, index) => ({
+    id: `route-${index}`,
+    lat: point.lat,
+    lng: point.lng,
+    yardsToGreen: Math.round(haversineYards(point.lat, point.lng, green.lat, green.lng)),
+  }));
+}
+
+function getYardageMarkers(hole, teePoi, greenPoi, routePoints = []) {
+  if (!hole || !teePoi || !greenPoi || hole.par === 3) return [];
+  const colorMap = { 100: '#F87171', 150: '#FFFFFF', 250: '#60A5FA' };
+  return [250, 150, 100]
+    .map((yds) => {
+      const point = interpolateAlongPolylineFromGreen(routePoints, yds);
+      if (!point) return null;
+      return { yds, color: colorMap[yds] || '#E5E7EB', lat: point.lat, lng: point.lng, synthetic: true };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.yds - a.yds);
 }
 
 function getHazardCarryLabels(hole, yardages) {
@@ -207,11 +443,25 @@ function getWindArrowRotation(degrees) {
   return `${(((degrees - 180) % 360) + 360) % 360}deg`;
 }
 
-function buildStaticMapUrl(hole, imageWidth, imageHeight) {
+function buildStaticMapRequest(hole, imageWidth, imageHeight) {
   if (!MAPBOX_PUBLIC_TOKEN || !hole) return null;
-  const frame = getStaticMapCameraConfig(hole, imageWidth, imageHeight);
+  const size = getStaticImageSize(imageWidth, imageHeight);
+  const frame = getStaticMapCameraConfig(hole, size.width, size.height);
   if (!frame) return null;
-  return `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/${frame.centerLng},${frame.centerLat},${frame.zoom},${frame.heading}/${frame.pixelWidth}x${frame.pixelHeight}?access_token=${MAPBOX_PUBLIC_TOKEN}&attribution=false`;
+  return {
+    url: `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/${frame.centerLng},${frame.centerLat},${frame.zoom},${frame.heading}/${frame.pixelWidth}x${frame.pixelHeight}?access_token=${encodeURIComponent(MAPBOX_PUBLIC_TOKEN)}&attribution=false`,
+    width: frame.pixelWidth,
+    height: frame.pixelHeight,
+  };
+}
+
+function hasGpsHoleData(course) {
+  const holes = Array.isArray(course?.holes) ? course.holes : [];
+  return holes.some((hole) => {
+    const tees = Array.isArray(hole?.tees) ? hole.tees : [];
+    const pois = Array.isArray(hole?.pois) ? hole.pois : [];
+    return tees.some((tee) => Number(tee?.yards) > 0) || pois.length > 0;
+  });
 }
 
 export function WebGpsRoundPreview({
@@ -219,10 +469,16 @@ export function WebGpsRoundPreview({
   courseName,
   teeColor = 'Blue',
   startingHole = 1,
+  endingHole = 18,
+  roundLength = '18',
+  routeHoleNumbers = undefined,
+  routeLabel = '',
   tournamentMode = false,
   onBack,
   onSwitchToManual,
 }) {
+  const safeAreaInsets = useContext(SafeAreaInsetsContext);
+  const insets = safeAreaInsets || { top: 0, right: 0, bottom: 0, left: 0 };
   const { width, height } = useWindowDimensions();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -230,6 +486,8 @@ export function WebGpsRoundPreview({
   const [course, setCourse] = useState(null);
   const [currentHoleIndex, setCurrentHoleIndex] = useState(Math.max(0, (startingHole || 1) - 1));
   const [mapLoadError, setMapLoadError] = useState('');
+  const [mapImageUri, setMapImageUri] = useState('');
+  const [mapImageLoading, setMapImageLoading] = useState(false);
   const [clubPickerOpen, setClubPickerOpen] = useState(false);
   const [shotFlow, setShotFlow] = useState('idle');
   const [selectedClub, setSelectedClub] = useState(null);
@@ -242,11 +500,38 @@ export function WebGpsRoundPreview({
   const [showGreenSheet, setShowGreenSheet] = useState(false);
   const [showGreenView, setShowGreenView] = useState(false);
   const [greenPinPosition, setGreenPinPosition] = useState(null);
-  const [holeNoteClub, setHoleNoteClub] = useState(null);
+  const [measurePin, setMeasurePin] = useState(null);
   const [gpsActive, setGpsActive] = useState(true);
   const [showNudge, setShowNudge] = useState(false);
+  const [dismissedHoles, setDismissedHoles] = useState(() => new Set());
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportContext, setReportContext] = useState(null);
+  const [reportedGpsMismatchHoles, setReportedGpsMismatchHoles] = useState(() => new Set());
+  const [recentRounds, setRecentRounds] = useState([]);
+  const [userPlayerRating, setUserPlayerRating] = useState(null);
+  const [userClubs, setUserClubs] = useState(() => Object.fromEntries(CLUB_OPTIONS.map((club) => [club.name, club.yards])));
+  const [activeBagClubs, setActiveBagClubs] = useState(() => CLUB_OPTIONS.map((club) => club.name));
+  const [clubAverages, setClubAverages] = useState({});
+  const [weather, setWeather] = useState(null);
+  const [elevationDiffFt, setElevationDiffFt] = useState(0);
 
-  const currentHole = course?.holes?.[currentHoleIndex] || null;
+  const holeWindow = useMemo(() => {
+    if (Array.isArray(routeHoleNumbers) && routeHoleNumbers.length > 0) {
+      return { startIndex: 0, endIndex: routeHoleNumbers.length - 1, custom: true };
+    }
+    if (roundLength === 'front9') return { startIndex: 0, endIndex: 8, custom: false };
+    if (roundLength === 'back9') return { startIndex: 9, endIndex: 17, custom: false };
+    return { startIndex: 0, endIndex: Math.max(0, (course?.holes?.length || 18) - 1), custom: false };
+  }, [course?.holes?.length, roundLength, routeHoleNumbers]);
+  const visibleHoles = useMemo(() => {
+    const allHoles = course?.holes || [];
+    if (holeWindow.custom) {
+      const holeMap = new Map(allHoles.map((hole) => [Number(hole?.hole ?? hole?.number), hole]));
+      return routeHoleNumbers.map((holeNumber) => holeMap.get(Number(holeNumber))).filter(Boolean);
+    }
+    return allHoles.slice(holeWindow.startIndex, holeWindow.endIndex + 1);
+  }, [course?.holes, holeWindow.custom, holeWindow.endIndex, holeWindow.startIndex, routeHoleNumbers]);
+  const currentHole = visibleHoles[currentHoleIndex] || null;
   const hazardTags = useMemo(() => getHazardTags(currentHole), [currentHole]);
   const teeBack = useMemo(
     () => findPoi(currentHole, 'Tee Back', 'C') || findPoi(currentHole, 'Tee Front', 'C'),
@@ -261,20 +546,18 @@ export function WebGpsRoundPreview({
     setError('');
     try {
       const local = await getCourse(courseId);
-      if (local) {
+      if (local && hasGpsHoleData(local)) {
         setCourse(local);
         setCached(true);
       } else {
         try {
-          const remote = await fetchCourseHolesFromBackend(courseId);
+          const remote = await fetchCourseHolesFromBackend(courseId, courseName);
           await saveCourse(courseId, remote);
           setCourse(remote);
           setCached(false);
-        } catch (remoteErr) {
-          const mockCourse = getMockGpsCourse(courseId);
-          if (!mockCourse) throw remoteErr;
-          await saveCourse(courseId, mockCourse);
-          setCourse(mockCourse);
+        } catch (_remoteErr) {
+          // No course found anywhere — continue with null so GPS round still starts.
+          // Hole distances won't show but the round can proceed.
           setCached(false);
         }
       }
@@ -283,15 +566,15 @@ export function WebGpsRoundPreview({
     } finally {
       setLoading(false);
     }
-  }, [courseId]);
+  }, [courseId, courseName]);
 
   useEffect(() => {
     loadCourse();
   }, [loadCourse]);
 
   useEffect(() => {
-    setCurrentHoleIndex(Math.max(0, (startingHole || 1) - 1));
-  }, [startingHole, courseId]);
+    setCurrentHoleIndex(Math.max(0, Math.min(visibleHoles.length - 1, (startingHole || 1) - 1)));
+  }, [startingHole, courseId, visibleHoles.length]);
 
   const baseYardages = useMemo(() => {
     if (!teeBack || !greenFront || !greenCenter || !greenBack) {
@@ -318,63 +601,352 @@ export function WebGpsRoundPreview({
   const loggedHoles = useMemo(
     () => Object.keys(loggedShotsByHole)
       .filter((key) => (loggedShotsByHole[key]?.length || 0) > 0 || (holePutts[key] || 0) > 0)
-      .map((key) => Number(key) + 1),
+      .map((key) => Number(key)),
     [holePutts, loggedShotsByHole]
   );
+  const visibleLoggedHoles = useMemo(
+    () => holeWindow.custom
+      ? loggedHoles.filter((index) => index >= 0 && index < visibleHoles.length)
+      : loggedHoles
+          .filter((index) => index >= holeWindow.startIndex && index <= holeWindow.endIndex)
+          .map((index) => index - holeWindow.startIndex),
+    [holeWindow.custom, holeWindow.endIndex, holeWindow.startIndex, loggedHoles, visibleHoles.length]
+  );
+
+  // Build holeScores record for HoleSelectorBar pill coloring
+  const holeScoresForSelector = useMemo(() => {
+    const result = {};
+    visibleHoles.forEach((h, idx) => {
+      const shots = (loggedShotsByHole[idx] || []).length;
+      const putts = holePutts[idx] || 0;
+      const computed = shots + putts;
+      if (computed > 0) {
+        result[idx] = { score: computed, par: h?.par || 4 };
+      }
+    });
+    return result;
+  }, [visibleHoles, loggedShotsByHole, holePutts]);
+
+  const isOffCourse = liveLie?.lie === 'Off Course' || (Number.isFinite(yardages.center) && yardages.center > 800);
 
   const selectedTee = useMemo(
     () => currentHole?.tees?.find((tee) => normalizeTeeName(tee.name) === normalizeTeeName(teeColor)) || currentHole?.tees?.[0] || null,
     [currentHole, teeColor]
   );
-  const yardageMarkers = useMemo(() => getYardageMarkers(currentHole), [currentHole]);
-  const hazardCarryLabels = useMemo(() => getHazardCarryLabels(currentHole, yardages), [currentHole, yardages]);
-  const suggestedClub = useMemo(() => {
-    if (holeNoteClub) {
-      const noteClubLower = holeNoteClub.toLowerCase();
-      const match = CLUB_OPTIONS.find((c) => c.name.toLowerCase() === noteClubLower || c.abbr.toLowerCase() === noteClubLower);
-      if (match) return { ...match, fromNote: true };
-      return { id: 'note', abbr: holeNoteClub.slice(0, 3).toUpperCase(), name: holeNoteClub, yards: null, color: '#10B981', fromNote: true };
+  const selectedTeeYardage = Number(selectedTee?.yards) || null;
+  const selectedTeeMarker = useMemo(
+    () => (currentHole?.par === 3 ? null : getSelectedTeeCoordinates(currentHole, selectedTee?.name || teeColor)),
+    [currentHole, currentHole?.par, selectedTee?.name, teeColor]
+  );
+  const selectedTeePoi = useMemo(
+    () => (selectedTeeMarker
+      ? { Latitude: selectedTeeMarker.lat, Longitude: selectedTeeMarker.lng }
+      : null),
+    [selectedTeeMarker]
+  );
+  const playingDistance = useMemo(() => {
+    if (tournamentMode || !Number.isFinite(yardages.center)) return null;
+    const base = getPlayingAdjustment(yardages.center, weather, 0);
+    const elevAdj = elevationDiffToYardageAdjustment(elevationDiffFt || 0);
+    return {
+      adjustedYards: Math.max(0, Math.round(yardages.center + (base?.windAdj ?? 0) + (base?.tempAdj ?? 0) + elevAdj)),
+      tempAdj: base?.tempAdj ?? 0,
+      windAdj: base?.windAdj ?? 0,
+      elevAdj,
+    };
+  }, [elevationDiffFt, tournamentMode, weather, yardages.center]);
+  const distanceSuggestedClub = useMemo(
+    () => getBestClubForPar3(
+      tournamentMode ? yardages.center : playingDistance?.adjustedYards ?? yardages.center,
+      activeBagClubs,
+      clubAverages,
+      userClubs,
+    ),
+    [activeBagClubs, clubAverages, playingDistance?.adjustedYards, tournamentMode, userClubs, yardages.center]
+  );
+  const holeSuggestion = useMemo(() => getSuggestion(
+    recentRounds,
+    currentHole?.hole || currentHoleIndex + 1,
+    {
+      par: currentHole?.par || 4,
+      holeLength: selectedTeeYardage || null,
+      gpsDistanceYards: tournamentMode ? yardages.center : playingDistance?.adjustedYards ?? yardages.center,
+      fallbackClub: distanceSuggestedClub ? {
+        club: distanceSuggestedClub.club,
+        yards: distanceSuggestedClub.displayYards,
+        source: distanceSuggestedClub.source,
+        sampleCount: distanceSuggestedClub.sampleCount,
+        confidence: distanceSuggestedClub.confidence,
+        matchQuality: distanceSuggestedClub.matchQuality,
+      } : null,
+      clubTotals: userClubs,
+      playerRating: userPlayerRating,
+    },
+  ), [
+    currentHole?.hole,
+    currentHole?.par,
+    currentHoleIndex,
+    distanceSuggestedClub,
+    playingDistance?.adjustedYards,
+    recentRounds,
+    selectedTeeYardage,
+    tournamentMode,
+    userClubs,
+    userPlayerRating,
+    yardages.center,
+  ]);
+  const preferredLeaveYards = useMemo(
+    () => getPreferredLeaveYards({ holeSuggestion, bestDistanceBand: PREVIEW_NUDGE_CONTEXT.bestDistanceBand }),
+    [holeSuggestion]
+  );
+  const maxTeeShotYards = useMemo(
+    () => CLUB_OPTIONS.reduce((max, club) => Math.max(max, Number(club.yards) || 0), 0),
+    []
+  );
+  const likelyTeeShotYards = useMemo(() => {
+    const matchedClub = Object.entries(userClubs || {}).find(([club]) => normalizeClubLabel(club) === normalizeClubLabel(holeSuggestion?.label));
+    return (matchedClub ? Number(matchedClub[1]) : distanceSuggestedClub?.displayYards) || Math.round(maxTeeShotYards * 0.88);
+  }, [distanceSuggestedClub?.displayYards, holeSuggestion?.label, maxTeeShotYards, userClubs]);
+  const likelyAdvanceYards = useMemo(() => {
+    const nonDriver = CLUB_OPTIONS
+      .filter((club) => normalizeClubLabel(club.name) !== 'driver')
+      .map((club) => Number(club.yards) || 0)
+      .sort((a, b) => b - a);
+    return nonDriver[0] || Math.max(150, Math.round(likelyTeeShotYards * 0.8));
+  }, [likelyTeeShotYards]);
+  const holeMissSide = PREVIEW_NUDGE_CONTEXT.holeMemory?.[currentHole?.hole || currentHoleIndex + 1]?.missSide || null;
+  const strategyModel = useMemo(
+    () => buildHoleStrategyModel(currentHole, selectedTeePoi, greenCenter, preferredLeaveYards, {
+      maxTeeShotYards,
+      likelyTeeShotYards,
+      likelyAdvanceYards,
+      tournamentMode,
+      preferredMissSide: holeMissSide,
+    }),
+    [currentHole, currentHole?.hole, currentHoleIndex, greenCenter, holeMissSide, likelyAdvanceYards, likelyTeeShotYards, maxTeeShotYards, preferredLeaveYards, selectedTeePoi, tournamentMode]
+  );
+  const routePoints = strategyModel.routePoints;
+  const yardageMarkers = strategyModel.yardageMarkers;
+  const routeLabels = strategyModel.routeLabels;
+  const layupTarget = strategyModel.layupTarget;
+  const layupTargets = strategyModel.layupTargets || [];
+  const hazardCarryLabels = useMemo(
+    () => buildHazardCarryModel({
+      hole: currentHole,
+      userPos: selectedTeeMarker ? { lat: selectedTeeMarker.lat, lng: selectedTeeMarker.lng } : null,
+      weather,
+      shotBearingDeg: 0,
+      elevationYards: elevationDiffToYardageAdjustment(elevationDiffFt || 0),
+      centerYards: yardages.center,
+      routePoints,
+    }),
+    [currentHole, elevationDiffFt, routePoints, selectedTeeMarker, weather, yardages.center]
+  );
+  const teeMarkerLooksWrong = useMemo(
+    () => isTeeMarkerSuspect(selectedTeeMarker, greenCenter ? { lat: greenCenter.Latitude, lng: greenCenter.Longitude } : null),
+    [greenCenter, selectedTeeMarker]
+  );
+  const gpsDistanceLooksWrong = useMemo(
+    () => isGpsDistanceSuspect(Number(yardages.center), Number(selectedTeeYardage)),
+    [selectedTeeYardage, yardages.center]
+  );
+  const currentHoleNumber = currentHole?.hole || currentHoleIndex + 1;
+  const quietReportLinks = useMemo(() => {
+    const links = [];
+    if (teeMarkerLooksWrong) {
+      links.push({
+        id: 'wrong-tee-marker',
+        text: 'Tee markers look wrong? Report it.',
+        onPress: () => {
+          setReportContext({
+            category: 'wrong_tee_marker',
+            source: 'gps_round_screen',
+            courseId,
+            courseName,
+            teeName: selectedTee?.name || teeColor,
+            teeOptions: (currentHole?.tees || []).map((tee) => ({
+              name: tee?.name,
+              color: tee?.color || null,
+            })),
+            holeNumber: currentHoleNumber,
+            holePar: currentHole?.par || null,
+            teeYardage: selectedTeeYardage || null,
+          });
+          setReportModalVisible(true);
+        },
+      });
     }
-    return getBestClub(yardages.center);
-  }, [holeNoteClub, yardages.center]);
+    if (gpsDistanceLooksWrong && !reportedGpsMismatchHoles.has(currentHoleNumber)) {
+      links.push({
+        id: 'wrong-gps-distance',
+        text: 'Distance look wrong? Report it.',
+        onPress: () => {
+          setReportedGpsMismatchHoles((prev) => {
+            const next = new Set(prev);
+            next.add(currentHoleNumber);
+            return next;
+          });
+          setReportContext({
+            category: 'wrong_gps_distance',
+            source: 'gps_round_screen',
+            courseId,
+            courseName,
+            teeName: selectedTee?.name || teeColor,
+            teeOptions: (currentHole?.tees || []).map((tee) => ({
+              name: tee?.name,
+              color: tee?.color || null,
+            })),
+            holeNumber: currentHoleNumber,
+            holePar: currentHole?.par || null,
+            gpsDistance: Number(yardages.center),
+            teeYardage: selectedTeeYardage || null,
+          });
+          setReportModalVisible(true);
+        },
+      });
+    }
+    return links;
+  }, [courseId, courseName, currentHole?.par, currentHoleNumber, gpsDistanceLooksWrong, reportedGpsMismatchHoles, selectedTee?.name, selectedTeeYardage, teeColor, teeMarkerLooksWrong, yardages.center]);
+  const suggestedClub = useMemo(() => {
+    const matchedClub = Object.entries(userClubs || {}).find(([club]) => normalizeClubLabel(club) === normalizeClubLabel(holeSuggestion?.label));
+    if (matchedClub) {
+      return {
+        name: matchedClub[0],
+        yards: Number(matchedClub[1]) || null,
+      };
+    }
+    if (!distanceSuggestedClub) return null;
+    return {
+      name: distanceSuggestedClub.club,
+      yards: distanceSuggestedClub.displayYards,
+    };
+  }, [distanceSuggestedClub, holeSuggestion?.label, userClubs]);
 
   const activeNudge = useMemo(() => coachingEnabled ? buildInRoundNudge({
     holeNumber: currentHole?.hole || currentHoleIndex + 1,
     holePar: currentHole?.par || 4,
     liveLie: liveLie?.lie || null,
     selectedClub: selectedClub?.name || null,
-    suggestedClub: suggestedClub?.name || null,
+    suggestedClub: holeSuggestion?.label || suggestedClub?.name || null,
     centerYards: Number.isFinite(yardages.center) ? yardages.center : null,
-    playingYards: tournamentMode ? (Number.isFinite(yardages.center) ? yardages.center : null) : (Number.isFinite(yardages.center) ? yardages.center + 2 : null),
+    playingYards: tournamentMode ? (Number.isFinite(yardages.center) ? yardages.center : null) : (playingDistance?.adjustedYards ?? null),
     tournamentMode,
-    weather: tournamentMode ? null : { windMph: 14 },
-    hazardCarries: hazardCarryLabels.map((label) => ({ label: label.color === '#60A5FA' ? 'Water' : 'FW Bkr', actual: Number(label.text.slice(0, -1)) })),
+    weather: tournamentMode ? null : weather,
+    hazardCarries: hazardCarryLabels.map((label) => ({ label: label.label, actual: label.front, color: label.color })),
     currentRoundShots,
     greenSummary: currentHoleSummary,
     context: PREVIEW_NUDGE_CONTEXT,
-  }) : null, [coachingEnabled, currentHole?.hole, currentHole?.par, currentHoleIndex, currentHoleSummary, currentRoundShots, hazardCarryLabels, liveLie?.lie, selectedClub?.name, suggestedClub?.name, tournamentMode, yardages.center]);
-
+  }) : null, [coachingEnabled, currentHole?.hole, currentHole?.par, currentHoleIndex, currentHoleSummary, currentRoundShots, hazardCarryLabels, holeSuggestion?.label, liveLie?.lie, playingDistance?.adjustedYards, selectedClub?.name, suggestedClub?.name, tournamentMode, weather, yardages.center]);
+  const displayNudge = useMemo(() => {
+    if (!activeNudge) return null;
+    if (activeNudge.type === 'tee-club') return null;
+    return activeNudge;
+  }, [activeNudge]);
+  const coachingOverlayBottom = WEB_BOTTOM_BAR_HEIGHT + WEB_YARDAGE_BAR_HEIGHT + insets.bottom + 14;
   const isCompact = width < 700;
-  const horizontalPadding = isCompact ? 16 : 28;
-  const mapAspectRatio = 0.58; // width / height (portrait — golf holes are tall)
-  const maxMapWidth = isCompact ? 460 : 720;
-  const mapWidth = Math.min(width - horizontalPadding * 2, maxMapWidth);
-  // Cap map height so it never overflows the screen.
-  // Fixed UI overhead: topBar(50) + holeHeader(48) + holeDots(44) + bottomBar(58) + yardagePanel(48) + margins(32)
-  const UI_OVERHEAD = 280;
-  const mapHeight = Math.min(Math.round(mapWidth / mapAspectRatio), height - UI_OVERHEAD);
-  const holeImageUrl = useMemo(
-    () => buildStaticMapUrl(currentHole, mapWidth, mapHeight),
+  const mapWidth = Math.max(320, Math.round(width));
+  const mapHeight = Math.max(220, height + insets.top + insets.bottom);
+  const holeImageRequest = useMemo(
+    () => buildStaticMapRequest(currentHole, mapWidth, mapHeight),
     [currentHole, mapWidth, mapHeight]
   );
-  const greenStaticUrl = useMemo(
-    () => buildGreenStaticMapUrl(greenCenter, mapWidth, mapHeight),
+  const greenStaticRequest = useMemo(
+    () => buildGreenStaticMapRequest(greenCenter, mapWidth, mapHeight),
     [greenCenter, mapWidth, mapHeight]
   );
+  const activeMapRequest = showGreenView ? greenStaticRequest : holeImageRequest;
+  const projection = useMemo(() => buildScreenProjection(currentHole), [currentHole]);
+  const screenYardageMarkers = useMemo(() => (
+    yardageMarkers.map((marker) => {
+      const point = projectLatLngToPercent(projection, marker.lat, marker.lng);
+      return point ? { ...marker, ...point } : null;
+    }).filter(Boolean)
+  ), [projection, yardageMarkers]);
+  const screenRouteLabels = useMemo(() => (
+    routeLabels.map((label) => {
+      const point = projectLatLngToPercent(projection, label.lat, label.lng);
+      return point ? { ...label, ...point } : null;
+    }).filter(Boolean)
+  ), [projection, routeLabels]);
+  const screenLayupTargets = useMemo(() => (
+    layupTargets.map((target) => {
+      const point = projectLatLngToPercent(projection, target.lat, target.lng);
+      return point ? { ...target, ...point } : null;
+    }).filter(Boolean)
+  ), [layupTargets, projection]);
+  const screenHazardCarries = useMemo(() => (
+    hazardCarryLabels.map((label) => {
+      const point = projectLatLngToPercent(projection, label.lat, label.lng);
+      return point ? { ...label, ...point } : null;
+    }).filter(Boolean)
+  ), [hazardCarryLabels, projection]);
+  const screenStrategyPoints = useMemo(() => (
+    (strategyModel.strategyLinePoints || []).map((point, index) => {
+      const projected = projectLatLngToPercent(projection, point.lat, point.lng);
+      return projected ? { ...point, id: `strategy-${index}`, ...projected } : null;
+    }).filter(Boolean)
+  ), [projection, strategyModel]);
 
   useEffect(() => {
     setMapLoadError('');
-  }, [holeImageUrl, greenStaticUrl, showGreenView, currentHoleIndex, mapWidth, mapHeight]);
+  }, [holeImageRequest, greenStaticRequest, showGreenView, currentHoleIndex, mapWidth, mapHeight]);
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl = null;
+
+    async function loadStaticMap() {
+      if (!activeMapRequest) {
+        setMapImageUri('');
+        setMapImageLoading(false);
+        if (!MAPBOX_PUBLIC_TOKEN) {
+          setMapLoadError('Map preview is not configured for web.');
+        }
+        return;
+      }
+
+      setMapImageLoading(true);
+      setMapLoadError('');
+
+      try {
+        const response = await fetch(activeMapRequest.url);
+
+        if (!response.ok) {
+          throw new Error(`mapbox_${response.status}`);
+        }
+
+        const blob = await response.blob();
+        objectUrl = URL.createObjectURL(blob);
+        if (!active) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        setMapImageUri(objectUrl);
+      } catch (error) {
+        if (active) {
+          setMapImageUri('');
+          const errorCode = error instanceof Error ? error.message : '';
+          if (__DEV__) {
+            console.warn('[WebGpsRoundPreview] Static map load failed', errorCode || error);
+          }
+          setMapLoadError('Map preview could not load right now.');
+        }
+      } finally {
+        if (active) {
+          setMapImageLoading(false);
+        }
+      }
+    }
+
+    loadStaticMap();
+
+    return () => {
+      active = false;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [activeMapRequest]);
 
   useEffect(() => {
     setShotFlow('idle');
@@ -385,26 +957,112 @@ export function WebGpsRoundPreview({
 
   useEffect(() => {
     let active = true;
-    if (!courseId || !currentHole?.hole) { setHoleNoteClub(null); return undefined; }
-    getRecentHoleNote(courseId, currentHole.hole)
-      .then((note) => { if (active) setHoleNoteClub(note ? extractClubFromNote(note.text) : null); })
-      .catch(() => { if (active) setHoleNoteClub(null); });
+    getRounds()
+      .then((rounds) => {
+        if (active) setRecentRounds(rounds.filter((round) => round.courseId === courseId || round.courseName === courseName).slice(0, 12));
+      })
+      .catch(() => {
+        if (active) setRecentRounds([]);
+      });
     return () => { active = false; };
-  }, [courseId, currentHole?.hole]);
+  }, [courseId, courseName]);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([getUserProfile(), getClubAverages()])
+      .then(([profile, averages]) => {
+        if (active) {
+          setClubAverages(averages || {});
+          const bagClubs = getActiveBagClubs(profile);
+          setActiveBagClubs(bagClubs.length ? bagClubs : CLUB_OPTIONS.map((club) => club.name));
+          setUserClubs(
+            Object.keys(profile?.clubDistances || {}).length > 0 || Object.keys(averages || {}).length > 0
+              ? buildEffectiveClubDistanceMap(profile?.clubDistances ?? null, averages || {})
+              : Object.fromEntries(CLUB_OPTIONS.map((club) => [club.name, club.yards]))
+          );
+          setUserPlayerRating(typeof profile?.playerRating === 'number' ? profile.playerRating : null);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setClubAverages({});
+          setActiveBagClubs(CLUB_OPTIONS.map((club) => club.name));
+          setUserClubs(Object.fromEntries(CLUB_OPTIONS.map((club) => [club.name, club.yards])));
+          setUserPlayerRating(null);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!teeBack || tournamentMode) {
+      setWeather(null);
+      return undefined;
+    }
+    const refreshWeather = () => {
+      getGpsWeather(teeBack.Latitude, teeBack.Longitude)
+        .then((next) => {
+          if (!cancelled) setWeather(next);
+        })
+        .catch(() => {
+          if (!cancelled) setWeather(null);
+        });
+    };
+    refreshWeather();
+    const intervalId = setInterval(refreshWeather, 300000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [teeBack, tournamentMode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!teeBack || !greenCenter) {
+      setElevationDiffFt(0);
+      return undefined;
+    }
+    getElevationDifferenceFeet(teeBack.Latitude, teeBack.Longitude, greenCenter.Latitude, greenCenter.Longitude)
+      .then((next) => {
+        if (!cancelled) setElevationDiffFt(next ?? 0);
+      })
+      .catch(() => {
+        if (!cancelled) setElevationDiffFt(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [greenCenter, teeBack]);
 
   const handleSelectHole = useCallback((nextIndex) => {
     setCurrentHoleIndex(nextIndex);
+    setMeasurePin(null);
   }, []);
 
   const handleStartShot = useCallback(() => {
+    if (shotFlow !== 'idle' || clubPickerOpen) return;
     setClubPickerOpen(true);
-  }, []);
+    setMeasurePin(null);
+  }, [clubPickerOpen, shotFlow]);
 
   const handlePickClub = useCallback((club) => {
     setSelectedClub(club);
     setClubPickerOpen(false);
     setShotFlow('mark');
   }, []);
+
+  const handleMapMeasureTap = useCallback((event) => {
+    if (!mapLayout.width || !mapLayout.height) return;
+    const x = clamp(event.nativeEvent.locationX / mapLayout.width, 0.04, 0.96);
+    const y = clamp(event.nativeEvent.locationY / mapLayout.height, 0.04, 0.96);
+    const tapPoint = { x, y };
+    const fromYou = Math.max(1, Math.round(getShotDistance(playerPoint, tapPoint, baseYardages.center)));
+    const toGreen = Math.max(1, Math.round(getShotDistance(tapPoint, PREVIEW_POINTS.greenCenter, baseYardages.center)));
+    setMeasurePin({ x, y, fromYou, toGreen });
+  }, [baseYardages.center, mapLayout.height, mapLayout.width, playerPoint]);
 
   const handleMapShotPlacement = useCallback((event) => {
     if (shotFlow !== 'mark' || !selectedClub || !mapLayout.width || !mapLayout.height) return;
@@ -440,6 +1098,7 @@ export function WebGpsRoundPreview({
     setPlayerPositionsByHole((prev) => ({ ...prev, [currentHoleIndex]: targetPoint }));
     setShotFlow('idle');
     setSelectedClub(null);
+    setMeasurePin(null);
   }, [baseYardages.center, currentHole, currentHoleIndex, mapLayout.height, mapLayout.width, playerPoint, selectedClub, shotFlow, tournamentMode]);
 
   const handleResetHole = useCallback(() => {
@@ -448,88 +1107,71 @@ export function WebGpsRoundPreview({
     setPlayerPositionsByHole((prev) => ({ ...prev, [currentHoleIndex]: PREVIEW_POINTS.tee }));
     setShotFlow('idle');
     setSelectedClub(null);
+    setMeasurePin(null);
   }, [currentHoleIndex]);
 
   const handleAdvanceHole = useCallback((direction = 1) => {
     setShotFlow('idle');
     setSelectedClub(null);
-    setCurrentHoleIndex((prev) => clamp(prev + direction, 0, (course?.holes?.length || 1) - 1));
-  }, [course?.holes?.length]);
+    setMeasurePin(null);
+    setCurrentHoleIndex((prev) => clamp(prev + direction, 0, Math.max(visibleHoles.length - 1, 0)));
+  }, [visibleHoles.length]);
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={styles.container}>
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#10B981" />
-          <Text style={styles.loadingText}>Loading GPS preview…</Text>
+          <Text style={styles.loadingText}>Loading GPS preview</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
-  if (error || !course?.holes?.length) {
+  if (error) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={styles.container}>
         <View style={styles.center}>
-          <Text style={styles.errorText}>{error || 'Course data unavailable'}</Text>
+          <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity style={styles.backBtn} onPress={onBack}>
             <Text style={styles.backBtnText}>Back</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.topBar}>
-          <TouchableOpacity onPress={onBack} style={styles.iconBtn}>
-            <Ionicons name="arrow-back" size={20} color="#E5E7EB" />
-          </TouchableOpacity>
-          <View style={styles.topBarCenter}>
-            <Text style={styles.courseName} numberOfLines={1}>{courseName || course.courseName || 'GPS Preview'}</Text>
-            <Text style={styles.subMeta}>
-              {cached ? 'Cached on device' : course?.source === 'LOCAL_SAMPLE' ? 'Local sample data' : 'Loaded now'} • {selectedTee?.name || teeColor} • Hole {currentHoleIndex + 1}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={[styles.gpsPill, !gpsActive && styles.gpsPillOff]}
-            onPress={() => setGpsActive((v) => !v)}
-          >
-            <Ionicons name="navigate" size={11} color="#FFFFFF" />
-            <Text style={styles.gpsPillText}>{gpsActive ? 'GPS' : 'Manual'}</Text>
-          </TouchableOpacity>
-        </View>
-
-        <HoleHeader hole={currentHole} hazardTags={[]} liveLie={liveLie} />
-        <HoleDots holes={course.holes} currentHole={currentHoleIndex} onSelect={handleSelectHole} loggedHoles={loggedHoles} />
-
+    <View style={styles.container}>
+      <View style={styles.screenShell}>
         <View
-          style={[styles.mapWrap, { minHeight: mapHeight }]}
+          style={[styles.mapWrap, { height: mapHeight }]}
           onLayout={(event) => setMapLayout({
             width: event.nativeEvent.layout.width,
             height: event.nativeEvent.layout.height,
           })}
         >
-          {(showGreenView ? greenStaticUrl : holeImageUrl) && !mapLoadError ? (
+          {mapImageUri && !mapLoadError ? (
             <Image
-              source={{ uri: showGreenView ? greenStaticUrl : holeImageUrl }}
+              source={{ uri: mapImageUri }}
               style={[styles.mapImage, { height: mapHeight }]}
               resizeMode="cover"
-              onError={() => setMapLoadError('Mapbox image failed to load. Check token validity and any token URL restrictions.')}
             />
           ) : (
             <View style={[styles.mapFallback, { minHeight: mapHeight }]}>
-              <Ionicons name="image-outline" size={28} color="#6B7280" />
-              <Text style={styles.mapFallbackTitle}>Map Preview Unavailable</Text>
-              <Text style={styles.mapFallbackBody}>
-                {mapLoadError || 'Add EXPO_PUBLIC_MAPBOX_PUBLIC_TOKEN to load satellite hole imagery in the browser preview.'}
-              </Text>
-              {!!holeImageUrl && (
-                <Text style={styles.mapFallbackUrl} numberOfLines={2}>
-                  {holeImageUrl}
-                </Text>
+              {mapImageLoading ? (
+                <>
+                  <ActivityIndicator color="#60A5FA" />
+                  <Text style={styles.mapFallbackTitle}>Loading Map Preview</Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="image-outline" size={28} color="#6B7280" />
+                  <Text style={styles.mapFallbackTitle}>Map Preview Unavailable</Text>
+                  <Text style={styles.mapFallbackBody}>
+                    {mapLoadError || 'Map preview is not configured for web.'}
+                  </Text>
+                </>
               )}
             </View>
           )}
@@ -581,27 +1223,78 @@ export function WebGpsRoundPreview({
               </View>
             </React.Fragment>
           ))}
-          {yardageMarkers.map((marker) => (
+          {screenStrategyPoints.slice(1).map((point, index) => {
+            const from = screenStrategyPoints[index];
+            const dx = point.x - from.x;
+            const dy = point.y - from.y;
+            const length = Math.hypot(dx, dy);
+            const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+            return (
+              <View
+                key={`strategy-line-${index}`}
+                pointerEvents="none"
+                style={[
+                  styles.strategyLine,
+                  {
+                    left: `${from.x * 100}%`,
+                    top: `${from.y * 100}%`,
+                    width: `${length * 100}%`,
+                    transform: [{ rotate: `${angle}deg` }],
+                  },
+                ]}
+              />
+            );
+          })}
+          {screenYardageMarkers.map((marker) => (
             <View
               key={`marker-${marker.yds}`}
               pointerEvents="none"
-              style={[styles.ydMarkerWrap, { top: marker.top, left: marker.left }]}
+              style={[styles.ydMarkerWrap, { top: `${marker.y * 100}%`, left: `${marker.x * 100}%` }]}
             >
               <View style={[styles.ydLine, { borderColor: marker.color }]} />
-              <View style={[styles.ydDiamond, { borderColor: marker.color, backgroundColor: `${marker.color}2E` }]}>
+              <View style={[styles.ydDiamond, { borderColor: marker.color, backgroundColor: marker.synthetic ? colors.bg.secondary : `${marker.color}2E` }]}>
                 <Text style={[styles.ydNum, { color: marker.color }]}>{marker.yds}</Text>
               </View>
             </View>
           ))}
-          {hazardCarryLabels.map((label) => (
+          {screenLayupTargets.map((target, index) => (
             <View
-              key={`${label.text}-${label.top}-${label.left}`}
+              key={target.id}
               pointerEvents="none"
-              style={[styles.carryWrap, { top: label.top, left: label.left }]}
+              style={[
+                styles.layupWrap,
+                index > 0 && styles.layupWrapSecondary,
+                target.labelOffsetY ? { marginTop: -18 + target.labelOffsetY } : null,
+                { top: `${target.y * 100}%`, left: `${target.x * 100}%` },
+              ]}
+            >
+              <View style={[styles.layupDot, index > 0 && styles.layupDotSecondary]} />
+              <View style={[styles.layupPill, index > 0 && styles.layupPillSecondary]}>
+                <Text style={styles.layupTag}>{target.tag}</Text>
+                <Text style={styles.layupText}>{target.label}</Text>
+              </View>
+            </View>
+          ))}
+          {screenRouteLabels.map((label) => (
+            <View
+              key={label.id}
+              pointerEvents="none"
+              style={[styles.routeLabelWrap, { top: `${label.y * 100}%`, left: `${label.x * 100}%` }]}
+            >
+              <View style={styles.routeLabelPill}>
+                <Text style={styles.routeLabelText}>{label.yardsToGreen}y</Text>
+              </View>
+            </View>
+          ))}
+          {screenHazardCarries.map((label, index) => (
+            <View
+              key={label.id}
+              pointerEvents="none"
+              style={[styles.carryWrap, getHazardPillOffsetStyle(label, index), { top: `${label.y * 100}%`, left: `${label.x * 100}%` }]}
             >
               <View style={styles.carryPill}>
                 <Text style={[styles.carryTxt, { color: label.color }]}>
-                  {label.text.slice(0, -1)}
+                  {label.front} front {label.carry} carry
                   <Text style={styles.carrySuffix}>y</Text>
                 </Text>
               </View>
@@ -653,61 +1346,64 @@ export function WebGpsRoundPreview({
               )}
             </Pressable>
           )}
-          {!showGreenView && shotFlow === 'mark' && (
-            <Pressable style={styles.mapTapCatcher} onPress={handleMapShotPlacement}>
-              <View style={styles.mapTapScrim}>
-                <Text style={styles.mapTapPrompt}>Tap where {selectedClub?.name || suggestedClub.name} finishes</Text>
-                <Text style={styles.mapTapSubprompt}>This will log the shot and move you there.</Text>
-              </View>
+          {!showGreenView && (shotFlow === 'idle' || shotFlow === 'mark') && (
+            <Pressable style={styles.mapTapCatcher} onPress={shotFlow === 'mark' ? handleMapShotPlacement : handleMapMeasureTap}>
+              {measurePin ? (
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.measurePinWrap,
+                    {
+                      left: `${measurePin.x * 100}%`,
+                      top: `${measurePin.y * 100}%`,
+                    },
+                  ]}
+                >
+                  {measurePin.fromYou != null && (
+                    <View style={styles.measurePinBadge}>
+                      <Text style={styles.measurePinFromYou}>{measurePin.fromYou}y from you</Text>
+                      <Text style={styles.measurePinText}>{measurePin.toGreen}y to green</Text>
+                    </View>
+                  )}
+                  <View style={styles.measurePinDot} />
+                </View>
+          ) : null}
+          <GpsGlassChrome
+            courseName={courseName || course?.courseName || 'GPS Preview'}
+            cachedLabel={cached ? 'Cached on device' : course?.source === 'LOCAL_SAMPLE' ? 'Local sample data' : 'Loaded now'}
+            selectedTeeName={selectedTee?.name || teeColor}
+            selectedTeeYardage={selectedTeeYardage}
+            routeLabel={routeLabel}
+            hole={currentHole}
+            currentHoleIndex={currentHoleIndex}
+            holes={visibleHoles}
+            holeNumbers={holeWindow.custom ? routeHoleNumbers : undefined}
+            loggedHoles={visibleLoggedHoles}
+            onSelectHole={(holeNumber) => handleSelectHole(holeWindow.custom ? holeNumber - 1 : holeNumber - 1 + holeWindow.startIndex)}
+            onBack={onBack}
+            onGpsPress={() => setGpsActive((v) => !v)}
+            gpsLabel={gpsActive ? 'GPS' : 'MANUAL'}
+            gpsIcon="navigate"
+            onCardPress={() => {}}
+            onFinishRound={() => {}}
+            weatherText={!tournamentMode
+              ? `${Number.isFinite(weather?.windMph) ? `${Math.round(weather.windMph)} mph` : '--'}  ${Number.isFinite(weather?.tempF) ? `${Math.round(weather.tempF)}F` : '--'}  ${Number.isFinite(weather?.humidity) ? `${Math.round(weather.humidity)}%` : '--'}`
+              : 'Tournament mode'}
+            yardages={yardages}
+            playingDistance={playingDistance}
+            tournamentMode={tournamentMode}
+            topInset={insets.top}
+            holeScores={holeScoresForSelector}
+            isOffCourse={isOffCourse}
+            showOffCourse={isOffCourse}
+            teeYardage={selectedTeeYardage}
+          />
+          <View pointerEvents="none" style={[styles.mapboxWordmark, { bottom: insets.bottom + WEB_BOTTOM_BAR_HEIGHT + 22 }]}>
+            <Text style={styles.mapboxWordmarkText}>mapbox</Text>
+          </View>
             </Pressable>
           )}
-          <View style={styles.weatherStrip}>
-            {!tournamentMode ? (
-              <>
-                <Ionicons
-                  name="navigate"
-                  size={12}
-                  color="rgba(255,255,255,0.7)"
-                  style={{ transform: [{ rotate: getWindArrowRotation(35) }] }}
-                />
-                <Text style={styles.weatherText}>14 mph</Text>
-                <View style={styles.weatherDivider} />
-                <Text style={styles.weatherText}>62F</Text>
-                <View style={styles.weatherDivider} />
-                <Ionicons name="water-outline" size={12} color="rgba(255,255,255,0.7)" />
-                <Text style={styles.weatherText}>71%</Text>
-              </>
-            ) : (
-              <Text style={styles.weatherText}>Tournament mode</Text>
-            )}
-          </View>
-          <View style={styles.mapRightCol}>
-            <View style={styles.distanceBadge}>
-              <Text style={styles.distanceBadgeLabel}>{tournamentMode ? 'GPS' : 'PLAYING'}</Text>
-              <Text style={styles.distanceValue}>
-                {Number.isFinite(yardages.center)
-                  ? (tournamentMode ? yardages.center : Math.max(0, yardages.center + 2))
-                  : '--'}
-              </Text>
-              <Text style={styles.distGps}>GPS {Number.isFinite(yardages.center) ? yardages.center : '--'}</Text>
-              <Text style={styles.distanceUnit}>yds</Text>
-              {!tournamentMode && <Text style={styles.distanceAdjust}>W +4 · T -2</Text>}
-            </View>
-            <TouchableOpacity
-              style={[styles.greenViewBtn, showGreenView && styles.greenViewBtnActive]}
-              onPress={() => { setShowGreenView((v) => !v); setGreenPinPosition(null); }}
-            >
-              <Ionicons
-                name={showGreenView ? 'expand-outline' : 'map'}
-                size={12}
-                color={showGreenView ? colors.brand.primary : 'rgba(255,255,255,0.55)'}
-              />
-              <Text style={[styles.greenViewBtnText, showGreenView && { color: colors.brand.primary }]}>
-                {showGreenView ? 'Overview' : 'Green'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-          {!clubPickerOpen && shotFlow === 'idle' && currentHoleShots.length > 0 && !activeNudge && (
+          {!clubPickerOpen && shotFlow === 'idle' && currentHoleShots.length > 0 && !displayNudge && (
             <View style={styles.shotRow}>
               {currentHoleShots.map((shot) => (
                 <View key={`pill-${shot.id}`} style={[styles.shotPill, { borderColor: shot.color }]}>
@@ -747,63 +1443,47 @@ export function WebGpsRoundPreview({
           )}
         </View>
 
-        {/* Course notes nudge — above the control bar */}
-        {showNudge && activeNudge && shotFlow === 'idle' && !clubPickerOpen && !showGreenSheet && (
-          <View style={[
-            styles.nudgeCard,
-            activeNudge.tone === 'green' ? styles.nudgeCardGreen : activeNudge.tone === 'red' ? styles.nudgeCardRed : styles.nudgeCardAmber,
-          ]}>
-            <View style={[
-              styles.nudgeAccent,
-              activeNudge.tone === 'green' ? styles.nudgeAccentGreen : activeNudge.tone === 'red' ? styles.nudgeAccentRed : styles.nudgeAccentAmber,
-            ]} />
-            <View style={styles.nudgeCopy}>
-              <Text style={styles.nudgeTitle}>{activeNudge.title}</Text>
-              <Text style={styles.nudgeBody}>{activeNudge.body}</Text>
-              {activeNudge.support ? <Text style={styles.nudgeSupport}>{activeNudge.support}</Text> : null}
-            </View>
-          </View>
-        )}
+        <GpsRoundHud
+          suggestion={holeSuggestion}
+          holeNumber={currentHole?.hole || currentHoleIndex + 1}
+          displayNudge={displayNudge}
+          showNudgeCard={!showNudge && Boolean(displayNudge) && shotFlow === 'idle' && !clubPickerOpen && !showGreenSheet}
+          nudgeOverlayBottom={coachingOverlayBottom}
+          onPressSuggestion={() => setShowNudge((v) => !v)}
+          suggestionActive={showNudge}
+          bottomBarHeight={WEB_BOTTOM_BAR_HEIGHT}
+          yardageBarHeight={WEB_YARDAGE_BAR_HEIGHT}
+          currentPutts={currentPutts}
+          onDecrementPutts={() => setHolePutts((prev) => ({ ...prev, [currentHoleIndex]: Math.max(0, currentPutts - 1) }))}
+          onIncrementPutts={() => setHolePutts((prev) => ({ ...prev, [currentHoleIndex]: currentPutts + 1 }))}
+          addShotLabel="ADD SHOT"
+          onPressAddShot={handleStartShot}
+          yardages={yardages}
+          bottomInset={insets.bottom}
+          quietLinks={quietReportLinks}
+          onNextHole={() => {
+            if (currentHoleIndex < visibleHoles.length - 1) {
+              handleSelectHole(currentHoleIndex + 1);
+            }
+          }}
+          isLastHole={currentHoleIndex >= visibleHoles.length - 1}
+          holeScore={holeScore > 0 ? holeScore : null}
+          holePar={currentHole?.par || 4}
+          onScorePress={() => {}}
+          isPlacing={shotFlow === 'mark'}
+          placementClub={selectedClub?.abbr || suggestedClub?.abbr || null}
+          onCancelPlacement={() => { setShotFlow('idle'); setSelectedClub(null); }}
+          onConfirmPlacement={() => {}}
+        />
 
-        {/* Bottom control bar — 3 equal columns aligned with Front / Center / Back */}
-        <View style={styles.bottomMapBar}>
-          {/* Suggested — aligns with Front */}
-          <TouchableOpacity
-            style={[styles.suggestedChip, suggestedClub?.fromNote && styles.suggestedChipNote, showNudge && styles.suggestedChipActive]}
-            onPress={() => setShowNudge((v) => !v)}
-          >
-            <Text style={styles.suggestedLabel}>{suggestedClub?.fromNote ? '📝 NOTE' : 'SUGGESTED'}</Text>
-            <Text style={styles.suggestedClubText} numberOfLines={1}>{suggestedClub.name}</Text>
-          </TouchableOpacity>
-
-          {/* Putts — aligns with Center */}
-          <View style={styles.bottomPuttStepper}>
-            <TouchableOpacity
-              style={styles.bottomPuttBtn}
-              onPress={() => setHolePutts((prev) => ({ ...prev, [currentHoleIndex]: Math.max(0, currentPutts - 1) }))}
-            >
-              <Text style={styles.bottomPuttBtnText}>−</Text>
-            </TouchableOpacity>
-            <View style={styles.bottomPuttValueWrap}>
-              <Text style={styles.bottomPuttValue}>{currentPutts}</Text>
-              <Text style={styles.bottomPuttLabel}>PUTTS</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.bottomPuttBtn}
-              onPress={() => setHolePutts((prev) => ({ ...prev, [currentHoleIndex]: currentPutts + 1 }))}
-            >
-              <Text style={styles.bottomPuttBtnText}>+</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Add Shot — aligns with Back */}
-          <TouchableOpacity style={styles.addShotButton} onPress={handleStartShot}>
-            <Ionicons name="add" size={16} color="#FFFFFF" />
-            <Text style={styles.addShotButtonText}>Add Shot</Text>
-          </TouchableOpacity>
-        </View>
-
-        <YardagePanel yardages={yardages} />
+        <ReportModal
+          visible={reportModalVisible}
+          context={reportContext}
+          onClose={() => {
+            setReportModalVisible(false);
+            setReportContext(null);
+          }}
+        />
 
         <Modal visible={clubPickerOpen} transparent animationType="fade" onRequestClose={() => setClubPickerOpen(false)}>
           <View style={styles.modalBackdrop}>
@@ -922,16 +1602,20 @@ export function WebGpsRoundPreview({
             </View>
           </View>
         </Modal>
-      </ScrollView>
-    </SafeAreaView>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg.primary },
-  scrollContent: { paddingBottom: 28 },
+  container: { flex: 1, backgroundColor: 'transparent' },
+  screenShell: { flex: 1, backgroundColor: 'transparent' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  topBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8, backgroundColor: colors.bg.primary },
+  topBarFrame: { justifyContent: 'center', backgroundColor: 'transparent' },
+  holeHeaderFrame: { justifyContent: 'center', backgroundColor: 'transparent', overflow: 'hidden' },
+  holeSelectorFrame: { justifyContent: 'center', backgroundColor: 'transparent', overflow: 'hidden' },
+  yardageBarFrame: { justifyContent: 'center', backgroundColor: 'transparent' },
+  topBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8, backgroundColor: 'transparent' },
   topBarCenter: { flex: 1, paddingHorizontal: 10 },
   iconBtn: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg.elevated },
   iconBtnActive: { borderWidth: 1, borderColor: colors.brand.primaryBorder },
@@ -952,14 +1636,10 @@ const styles = StyleSheet.create({
   },
   backBtnText: { color: '#E5E7EB', fontWeight: '600' },
   mapWrap: {
-    marginTop: 0,
-    marginBottom: 0,
     alignSelf: 'stretch',
-    borderRadius: 0,
     overflow: 'hidden',
-    backgroundColor: '#111827',
     position: 'relative',
-    paddingBottom: 24,
+    flex: 1,
   },
   mapImage: {
     width: '100%',
@@ -975,23 +1655,44 @@ const styles = StyleSheet.create({
   },
   ydLine: {
     position: 'absolute',
-    width: 28,
-    borderTopWidth: 1,
-    borderStyle: 'dashed',
-    opacity: 0.45,
+    width: 32,
+    borderTopWidth: 2,
+    opacity: 0.8,
   },
   ydDiamond: {
-    width: 12,
-    height: 12,
-    borderWidth: 1.2,
+    width: 16,
+    height: 16,
+    borderWidth: 2,
     transform: [{ rotate: '45deg' }],
     alignItems: 'center',
     justifyContent: 'center',
   },
   ydNum: {
-    fontSize: 6,
-    fontWeight: '800',
+    fontSize: 8,
+    fontWeight: '900',
     transform: [{ rotate: '-45deg' }],
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowRadius: 4,
+  },
+  routeLabelWrap: {
+    position: 'absolute',
+    marginLeft: -20,
+    marginTop: -18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  routeLabelPill: {
+    backgroundColor: 'rgba(5,10,20,0.88)',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  routeLabelText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
   },
   carryWrap: {
     position: 'absolute',
@@ -1014,6 +1715,51 @@ const styles = StyleSheet.create({
     fontSize: 7,
     color: 'rgba(255,255,255,0.70)',
   },
+  layupWrap: {
+    position: 'absolute',
+    marginLeft: -26,
+    marginTop: -18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  layupWrapSecondary: {
+    marginTop: -40,
+  },
+  layupDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#34D399',
+    borderWidth: 2,
+    borderColor: '#052E2B',
+    marginBottom: 4,
+  },
+  layupDotSecondary: {
+    backgroundColor: '#22C55E',
+  },
+  layupPill: {
+    backgroundColor: 'rgba(5,46,43,0.92)',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(52,211,153,0.45)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  layupPillSecondary: {
+    backgroundColor: 'rgba(6,78,59,0.94)',
+  },
+  layupTag: {
+    color: '#86EFAC',
+    fontSize: 8,
+    fontWeight: '800',
+    marginBottom: 2,
+    textAlign: 'center',
+  },
+  layupText: {
+    color: '#D1FAE5',
+    fontSize: 9,
+    fontWeight: '700',
+  },
   mapFallback: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1025,35 +1771,35 @@ const styles = StyleSheet.create({
   mapFallbackUrl: { color: '#6B7280', fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: 4 },
   weatherStrip: {
     position: 'absolute',
-    top: 10,
+    top: 20,
     alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.bg.secondary,
+    backgroundColor: 'rgba(0,0,0,0.78)',
     borderWidth: 1,
-    borderColor: colors.border.subtle,
+    borderColor: 'rgba(255,255,255,0.16)',
     borderRadius: 20,
     paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingVertical: 5,
   },
-  weatherText: { color: colors.text.primary, fontSize: 11, fontWeight: '500' },
+  weatherText: { color: '#F3F4F6', fontSize: 11, fontWeight: '700' },
   weatherDivider: { width: 1, height: 10, backgroundColor: 'rgba(255,255,255,0.12)', marginHorizontal: 6 },
   mapRightCol: {
     position: 'absolute',
     right: 10,
-    top: 10,
+    top: 20,
     alignItems: 'flex-end',
     gap: 6,
     zIndex: 10,
   },
   distanceBadge: {
-    backgroundColor: colors.bg.secondary,
-    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.82)',
+    borderRadius: radius.md + 1,
     borderWidth: 1,
-    borderColor: colors.brand.primaryBorder,
+    borderColor: 'rgba(255,255,255,0.18)',
     paddingHorizontal: 10,
     paddingVertical: 8,
-    minWidth: 58,
+    width: 118,
     alignItems: 'center',
   },
   distanceBadgeLabel: { color: colors.text.tertiary, fontSize: 8, fontWeight: '700', letterSpacing: 1.2, marginBottom: 2 },
@@ -1061,12 +1807,44 @@ const styles = StyleSheet.create({
   distGps: { color: 'rgba(255,255,255,0.38)', fontSize: 11, fontWeight: '600', marginTop: 2 },
   distanceUnit: { color: colors.text.secondary, fontSize: 9, letterSpacing: 1, marginBottom: 3 },
   distanceAdjust: { color: colors.brand.primary, fontSize: 8, fontWeight: '600', lineHeight: 11, textAlign: 'center' },
+  playingDetailsCard: {
+    width: 118,
+    backgroundColor: 'rgba(0,0,0,0.82)',
+    borderRadius: radius.md + 1,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  playingDetailRow: {
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  playingDetailDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+  },
+  playingDetailLabel: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 8,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+  },
+  playingDetailValue: {
+    color: '#1ac855',
+    fontSize: 22,
+    fontWeight: '800',
+    marginTop: 1,
+    textShadowColor: 'rgba(0,0,0,0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
   suggestedChip: {
     flex: 1,
-    backgroundColor: colors.bg.secondary,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: colors.border.subtle,
+    borderColor: 'rgba(255,255,255,0.14)',
     paddingVertical: 6,
     paddingHorizontal: 6,
     alignItems: 'center',
@@ -1074,27 +1852,27 @@ const styles = StyleSheet.create({
   },
   suggestedChipNote: { borderColor: colors.brand.primaryBorder },
   suggestedChipActive: { backgroundColor: colors.brand.primaryMuted, borderColor: colors.brand.primaryBorder },
-  suggestedLabel: { color: 'rgba(255,255,255,0.3)', fontSize: 8, fontWeight: '700', letterSpacing: 1.2, marginBottom: 1 },
+  suggestedLabel: { color: 'rgba(255,255,255,0.42)', fontSize: 8, fontWeight: '700', letterSpacing: 1.2, marginBottom: 1 },
   suggestedClubText: { color: colors.text.primary, fontSize: 12, fontWeight: '700' },
   playerRing: {
     position: 'absolute',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    marginLeft: -12,
-    marginTop: -12,
-    backgroundColor: 'rgba(66,153,225,0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    marginLeft: -11,
+    marginTop: -11,
+    backgroundColor: 'rgba(26,200,85,0.18)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.26)',
   },
   playerDot: {
     position: 'absolute',
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginLeft: -5,
-    marginTop: -5,
-    backgroundColor: '#4299E1',
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    marginLeft: -4.5,
+    marginTop: -4.5,
+    backgroundColor: '#1ac855',
     borderWidth: 1.5,
     borderColor: '#FFFFFF',
   },
@@ -1105,6 +1883,15 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     opacity: 0.7,
     transform: [{ rotate: '0deg' }],
+  },
+  strategyLine: {
+    position: 'absolute',
+    borderWidth: 0,
+    borderTopWidth: 1.6,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(52,211,153,0.88)',
+    opacity: 0.95,
+    transformOrigin: '0 0',
   },
   shotTarget: {
     position: 'absolute',
@@ -1290,6 +2077,57 @@ const styles = StyleSheet.create({
     marginTop: -24,
     zIndex: 10,
   },
+  measurePinWrap: {
+    position: 'absolute',
+    marginLeft: -15,
+    marginTop: -18,
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  measurePinBadge: {
+    backgroundColor: 'rgba(0,0,0,0.88)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  measurePinFromYou: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  measurePinText: {
+    color: '#FBBF24',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    marginTop: 1,
+  },
+  measurePinDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FBBF24',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0,0,0,0.5)',
+  },
+  mapboxWordmark: {
+    position: 'absolute',
+    left: 8,
+    bottom: WEB_BOTTOM_BAR_HEIGHT + 6,
+    paddingHorizontal: 2,
+    paddingVertical: 1,
+    zIndex: 10,
+  },
+  mapboxWordmarkText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 8,
+    fontWeight: '500',
+    letterSpacing: 0.4,
+  },
   greenPinEmoji: {
     fontSize: 24,
     lineHeight: 28,
@@ -1310,8 +2148,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   nudgeCard: {
-    marginHorizontal: 14,
-    marginTop: 6,
+    position: 'absolute',
+    left: 14,
+    right: 14,
     flexDirection: 'row',
     alignItems: 'flex-start',
     backgroundColor: colors.bg.secondary,
@@ -1320,6 +2159,13 @@ const styles = StyleSheet.create({
     borderColor: colors.border.subtle,
     paddingVertical: 10,
     paddingRight: 12,
+    zIndex: 12,
+  },
+  coachingCardWrap: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    zIndex: 13,
   },
   nudgeCardGreen: {
     borderColor: colors.brand.primaryBorder,
@@ -1365,7 +2211,15 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginTop: 4,
   },
-  bottomMapBar: { flexDirection: 'row', alignItems: 'stretch', gap: 8, paddingHorizontal: spacing.md, paddingVertical: 8, backgroundColor: colors.bg.primary, borderTopWidth: 1, borderTopColor: colors.border.subtle },
+  bottomMapBar: {
+    height: WEB_BOTTOM_BAR_HEIGHT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    backgroundColor: 'transparent',
+  },
   // Suggested club chip in bottom bar
   suggestedBarChip: { flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, backgroundColor: colors.bg.secondary, borderWidth: 1, borderColor: colors.border.subtle, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, minWidth: 52 },
   suggestedBarChipNote: { borderColor: colors.brand.primaryBorder, backgroundColor: colors.brand.primaryMuted },

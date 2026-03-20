@@ -64,7 +64,7 @@ export const TopSummarySection: React.FC<Props> = (props) => {
             {UI_COPY.scorecardImport.reviewCardTitle}
           </Text>
           <Text style={{ color: colors.text.secondary, fontSize: 12, lineHeight: 16 }}>
-            {UI_COPY.scorecardImport.reviewCardBody}
+            Check the scores and yardages. Tap any cell to fix it.
           </Text>
         </View>
       )}

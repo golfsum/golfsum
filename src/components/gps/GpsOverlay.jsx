@@ -3,6 +3,7 @@ import React, {
   useEffect,
   useImperativeHandle,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -14,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Crypto from 'expo-crypto';
 import { haversineYards } from '../../services/haversine';
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout';
 import { colors, radius } from '../../theme/tokens';
@@ -110,26 +112,50 @@ function pickSuggestedClub(targetYards, userClubs) {
   return { best: ranked[0], ranked };
 }
 
+const lieChoicesMap = {
+  'Tee Box': '#60A5FA',
+  'Fairway': '#4CAF7D',
+  'Left Rough': '#A3E635',
+  'Right Rough': '#A3E635',
+  'Sand': '#FBBF24',
+  'Green': '#34D399',
+  'Trees': '#86EFAC',
+  'Water': '#60A5FA',
+};
+
 export const GpsOverlay = forwardRef(function GpsOverlay(
   {
     userPos,
+    startPoint,
     greenCenter,
     teePoi,
     holePar,
     userClubs = null,
+    activeBagClubs = [],
     tournamentMode = false,
     detectLieAtCoordinate,
     onOverlayStateChange,
     onShotLogged,
+    shotNumber = 1,
+    previousLie = null,
   },
   ref
 ) {
   const [weather, setWeather] = useState(null);
   const [weatherError, setWeatherError] = useState('');
-  const [targetPoint, setTargetPoint] = useState(null);
+  // NOTE: This component previously used `targetPoint` as the implicit "in-progress shot".
+  // We now treat shot tracking as an explicit state machine so shot coords come ONLY from map tap.
+  const [targetPoint, setTargetPoint] = useState(null); // { lng, lat } derived from shotInProgress.coords
+  const [shotInProgress, setShotInProgress] = useState(null); // { id, coords:{latitude,longitude}|null, club:string|null }
+  const shotInProgressRef = useRef(null);
+  const [mapMode, setMapMode] = useState('gps'); // 'gps' | 'placing' | 'confirming'
+  const mapModeRef = useRef('gps');
   const [clubPickerOpen, setClubPickerOpen] = useState(false);
   const [selectedClub, setSelectedClub] = useState(null);
   const [manualLie, setManualLie] = useState(null);
+  const [penalty, setPenalty] = useState(null); // null | 'OB' | 'Water' | 'Unplayable'
+  const logShotRef = useRef(null);
+  const cycleLieRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,51 +183,134 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
   }, [tournamentMode, userPos?.lat, userPos?.lng]);
 
   useImperativeHandle(ref, () => ({
-    handleLongPress(event) {
-      const coordinates = event?.geometry?.coordinates;
-      if (!Array.isArray(coordinates) || coordinates.length < 2) return;
-      setTargetPoint({
-        lng: coordinates[0],
-        lat: coordinates[1],
-      });
-      setManualLie(null);
-    },
     openClubPicker() {
       setClubPickerOpen(true);
     },
+    getMapMode() {
+      return mapModeRef.current;
+    },
+    handleShotMapTap(tapCoords) {
+      // Move the shot marker using tap coordinates.
+      // In `placing`, we transition to `confirming` and open the club picker.
+      if (mapModeRef.current !== 'placing' && mapModeRef.current !== 'confirming') return false;
+      if (!tapCoords || !Number.isFinite(tapCoords.latitude) || !Number.isFinite(tapCoords.longitude)) return false;
+      const currentShot = shotInProgressRef.current;
+      if (!currentShot?.id) return false;
+
+      const nextCoords = {
+        latitude: tapCoords.latitude,
+        longitude: tapCoords.longitude,
+      };
+
+      // Keep existing overlay logic working by deriving targetPoint for distance/lie suggestions.
+      const nextTargetPoint = { lng: nextCoords.longitude, lat: nextCoords.latitude };
+      setTargetPoint(nextTargetPoint);
+
+      if (mapModeRef.current === 'placing') {
+        mapModeRef.current = 'confirming';
+        setMapMode('confirming');
+
+        const nextShot = currentShot ? ({
+          ...currentShot,
+          coords: nextCoords,
+          club: null,
+        }) : currentShot;
+
+        shotInProgressRef.current = nextShot;
+        setShotInProgress(nextShot);
+
+        setSelectedClub(null);
+        setClubPickerOpen(true);
+      } else {
+        // confirming: just move the marker; keep club selection
+        const nextShot = currentShot ? ({
+          ...currentShot,
+          coords: nextCoords,
+        }) : currentShot;
+        shotInProgressRef.current = nextShot;
+        setShotInProgress(nextShot);
+      }
+      return true;
+    },
     startShotEntry() {
-      if (!userPos?.lat || !userPos?.lng) return;
-      setTargetPoint({
-        lng: userPos.lng,
-        lat: userPos.lat,
-      });
-      setManualLie(null);
+      // IDLE → PLACING (fresh shot object + fresh ID)
+      if (mapModeRef.current !== 'gps') return;
+
+      const shotId =
+        typeof Crypto.randomUUID === 'function'
+          ? Crypto.randomUUID()
+          : `shot-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+      const origin =
+        Number.isFinite(startPoint?.lat) && Number.isFinite(startPoint?.lng)
+          ? startPoint
+          : null;
+      const initialCoords = origin ? { latitude: origin.lat, longitude: origin.lng } : null;
+
+      const nextShot = {
+        id: shotId,
+        coords: initialCoords,
+        club: null,
+      };
+
+      shotInProgressRef.current = nextShot;
+      setShotInProgress(nextShot);
+      mapModeRef.current = 'placing';
+      setMapMode('placing');
+
+      // Clear previous shot state so each shot starts completely fresh
+      setSelectedClub(null);
+      setClubPickerOpen(false);
+      setPenalty(null);
+      setTargetPoint(initialCoords ? { lng: initialCoords.longitude, lat: initialCoords.latitude } : null);
+
+      // Smart lie defaults: shot 1 = Tee, shot 2 = Fairway, shot 3+ = inherit previous
+      if (shotNumber <= 1) {
+        setManualLie({ lie: 'Tee Box', color: '#60A5FA' });
+      } else if (shotNumber === 2) {
+        setManualLie({ lie: 'Fairway', color: '#4CAF7D' });
+      } else if (previousLie) {
+        setManualLie({ lie: previousLie, color: lieChoicesMap[previousLie] || '#9CA3AF' });
+      } else {
+        setManualLie(null);
+      }
     },
     handleCameraChanged(event) {
-      if (!targetPoint) return;
+      // Pan-to-place: while placing/confirming, keep marker aligned to camera center.
+      if (mapModeRef.current === 'gps') return;
+
       const center = event?.properties?.center ?? event?.properties?.centerCoordinate ?? event?.geometry?.coordinates;
       if (!Array.isArray(center) || center.length < 2) return;
-      setTargetPoint({
-        lng: center[0],
-        lat: center[1],
-      });
-      setManualLie(null);
+
+      const currentShot = shotInProgressRef.current;
+      if (!currentShot?.id) return;
+
+      const nextTargetPoint = { lng: center[0], lat: center[1] };
+      const nextCoords = { latitude: nextTargetPoint.lat, longitude: nextTargetPoint.lng };
+
+      setTargetPoint(nextTargetPoint);
+      shotInProgressRef.current = { ...currentShot, coords: nextCoords };
     },
     resetOverlay() {
+      mapModeRef.current = 'gps';
+      setMapMode('gps');
+      shotInProgressRef.current = null;
+      setShotInProgress(null);
       setTargetPoint(null);
       setClubPickerOpen(false);
       setSelectedClub(null);
       setManualLie(null);
+      setPenalty(null);
+    },
+    confirmAndLog() {
+      logShotRef.current?.();
+    },
+    cycleLie() {
+      cycleLieRef.current?.();
     },
   }));
 
-  useEffect(() => {
-    onOverlayStateChange?.({
-      anySheet: clubPickerOpen,
-      shotFlow: targetPoint ? 'draft' : selectedClub ? 'mark' : clubPickerOpen ? 'club' : 'idle',
-      selectedClub,
-    });
-  }, [clubPickerOpen, onOverlayStateChange, selectedClub, targetPoint]);
+  // Overlay state is reported in a single effect below (after computed values are ready)
 
   const greenDistance = useMemo(() => {
     if (!userPos || !greenCenter) return null;
@@ -300,13 +409,21 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
   }, [targetPoint, userPos]);
 
   const logShot = () => {
-    if (!targetPoint || !userPos || !activeClub) return;
+    // CONFIRMING → IDLE
+    const currentShot = shotInProgressRef.current;
+    // Use ref coords (synchronously updated by handleCameraChanged) as authoritative position,
+    // falling back to targetPoint React state
+    const shotCoords = currentShot?.coords
+      ? { lat: currentShot.coords.latitude, lng: currentShot.coords.longitude }
+      : targetPoint;
+    if (!shotCoords || !activeClub || !currentShot?.id) return;
     onShotLogged?.({
+      id: currentShot.id,
       club: activeClub,
       holePar,
-      from: { ...targetPoint },
+      from: { ...shotCoords },
       to: greenCenter ? { lat: greenCenter.Latitude, lng: greenCenter.Longitude } : null,
-      actualYards: targetDistance,
+      actualYards: null,              // calculated post-round from consecutive shot.from coords
       playingYards: tournamentMode ? targetDistance : targetPlaying?.adjustedYards ?? targetDistance,
       weather: tournamentMode ? null : weather,
       lie: activeLie?.lie || null,
@@ -315,11 +432,58 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
         ? { lat: teePoi.Latitude, lng: teePoi.Longitude }
         : null,
       targetKind: 'map',
+      penalty: penalty || null,
+      penaltyStrokes: penalty ? 1 : 0,
       loggedAt: new Date().toISOString(),
     });
     setTargetPoint(null);
     setManualLie(null);
+    setPenalty(null);
+    setShotInProgress(null);
+    shotInProgressRef.current = null;
+    mapModeRef.current = 'gps';
+    setMapMode('gps');
+    setClubPickerOpen(false);
+    setSelectedClub(null);
   };
+
+  // Keep refs in sync for imperative access
+  logShotRef.current = logShot;
+  cycleLieRef.current = () => {
+    const lieList = [
+      { lie: 'Tee Box', color: '#60A5FA' },
+      { lie: 'Fairway', color: '#4CAF7D' },
+      { lie: 'Left Rough', color: '#A3E635' },
+      { lie: 'Right Rough', color: '#A3E635' },
+      { lie: 'Sand', color: '#FBBF24' },
+      { lie: 'Green', color: '#34D399' },
+    ];
+    const currentIdx = lieList.findIndex(l => l.lie === (activeLie?.lie));
+    const nextIdx = (currentIdx + 1) % lieList.length;
+    setManualLie(lieList[nextIdx]);
+  };
+
+  // Report overlay state to parent (single effect with all computed values)
+  useEffect(() => {
+    const shotFlow =
+      mapModeRef.current !== 'gps'
+        ? 'placing'
+        : selectedClub
+          ? 'mark'
+          : clubPickerOpen
+            ? 'club'
+            : 'idle';
+    onOverlayStateChange?.({
+      anySheet: clubPickerOpen,
+      shotFlow,
+      hasPlacementCoords: Boolean(targetPoint),
+      selectedClub,
+      activeClub: activeClub,
+      activeLie: activeLie,
+      targetDistance: targetDistance,
+      targetPlaying: tournamentMode ? targetDistance : targetPlaying?.adjustedYards ?? targetDistance,
+    });
+  }, [activeClub, activeLie, clubPickerOpen, onOverlayStateChange, selectedClub, targetDistance, targetPlaying?.adjustedYards, targetPoint, tournamentMode, mapMode]);
 
   return (
     <>
@@ -343,93 +507,6 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
         </MapboxGL.ShapeSource>
       )}
 
-      <View pointerEvents="box-none" style={styles.overlayRoot}>
-        {targetPoint && (
-          <View style={styles.targetCard}>
-            <View style={styles.targetCardHeader}>
-              <Text style={styles.targetTitle}>Shot From</Text>
-              <TouchableOpacity onPress={() => setTargetPoint(null)}>
-                <Ionicons name="close" size={18} color="#9CA3AF" />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.targetYardages}>
-              <View style={styles.targetYardageItem}>
-                <Text style={styles.targetYardageLabel}>GPS</Text>
-                <Text style={styles.targetGpsValue}>{targetDistance ?? '--'}</Text>
-              </View>
-              <Text style={styles.targetArrow}>→</Text>
-              <View style={styles.targetPlayingWrap}>
-                <Text style={styles.targetYardageLabel}>PLAYING</Text>
-                <Text style={styles.targetPlayingValue}>
-                  {tournamentMode ? targetDistance ?? '--' : targetPlaying?.adjustedYards ?? '--'}
-                </Text>
-              </View>
-            </View>
-            {!tournamentMode && (
-              <View style={styles.targetBreakdown}>
-                <View style={styles.targetBreakdownRow}>
-                  <Text style={styles.targetBreakdownLabel}>Wind</Text>
-                  <Text style={[
-                    styles.targetBreakdownValue,
-                    (targetPlaying?.windAdj ?? 0) > 0 ? styles.targetBreakdownValueHot : styles.targetBreakdownValueGood,
-                  ]}>
-                    {(targetPlaying?.windAdj ?? 0) > 0 ? '+' : ''}{targetPlaying?.windAdj ?? 0} yds
-                  </Text>
-                </View>
-                <View style={styles.targetBreakdownRow}>
-                  <Text style={styles.targetBreakdownLabel}>Temp</Text>
-                  <Text style={[
-                    styles.targetBreakdownValue,
-                    (targetPlaying?.tempAdj ?? 0) > 0 ? styles.targetBreakdownValueHot : styles.targetBreakdownValueGood,
-                  ]}>
-                    {(targetPlaying?.tempAdj ?? 0) > 0 ? '+' : ''}{targetPlaying?.tempAdj ?? 0} yds
-                  </Text>
-                </View>
-              </View>
-            )}
-            <View style={styles.targetClubRow}>
-              <Text style={styles.targetClubLabel}>CLUB</Text>
-              <TouchableOpacity style={styles.inlineChip} onPress={() => setClubPickerOpen(true)}>
-                <Text style={styles.targetClubValue}>{activeClub || 'Select club'}</Text>
-              </TouchableOpacity>
-              {clubSuggestion.best?.yards ? (
-                <Text style={styles.targetClubMeta}>{clubSuggestion.best.yards}y</Text>
-              ) : null}
-            </View>
-            <View style={styles.targetLieRow}>
-              <Text style={styles.targetClubLabel}>LIE</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.lieRail}>
-                {lieChoices.map((option) => {
-                  const active = activeLie?.lie === option.lie;
-                  return (
-                    <TouchableOpacity
-                      key={option.lie}
-                      style={[
-                        styles.lieChip,
-                        active && { borderColor: option.color, backgroundColor: `${option.color}20` },
-                      ]}
-                      onPress={() => setManualLie(option)}
-                    >
-                      <View style={[styles.lieChipDot, { backgroundColor: option.color }]} />
-                      <Text style={[styles.lieChipText, active && { color: option.color }]}>{option.lie}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
-            <Text style={styles.targetHint}>
-              {weatherError ? weatherError : tournamentMode ? 'Tournament mode active' : 'Pan the map to place where you hit from'}
-            </Text>
-            <Text style={styles.targetFootnote}>The lie auto-updates with the marker. Tap a chip if you need to override it.</Text>
-            {activeClub && (
-              <TouchableOpacity style={styles.logButton} onPress={logShot}>
-                <Text style={styles.logButtonText}>Save Shot</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-      </View>
-
       <Modal visible={clubPickerOpen} transparent animationType="fade" onRequestClose={() => setClubPickerOpen(false)}>
         <View style={styles.modalBackdrop}>
           <TouchableOpacity style={styles.modalScrim} activeOpacity={1} onPress={() => setClubPickerOpen(false)} />
@@ -437,7 +514,7 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
               <View>
-                <Text style={styles.modalTitle}>Log Shot</Text>
+                <Text style={styles.modalTitle}>Select Club</Text>
                 <Text style={styles.sheetSubtitle}>
                   {tournamentMode
                     ? `GPS ${targetDistance ?? '--'} yds`
@@ -483,6 +560,29 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
                   );
                 })}
               </ScrollView>
+            ) : activeBagClubs.length > 0 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.clubRail}
+              >
+                {activeBagClubs.map((club) => {
+                  const active = selectedClub === club;
+                  return (
+                    <TouchableOpacity
+                      key={club}
+                      style={[styles.clubCard, active && styles.clubCardActive]}
+                      onPress={() => {
+                        setSelectedClub(club);
+                        setClubPickerOpen(false);
+                      }}
+                    >
+                      <View style={[styles.clubCardAccent, active && styles.clubCardAccentActive]} />
+                      <Text style={[styles.clubCardName, active && styles.clubCardNameActive]}>{club}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             ) : (
               <Text style={styles.emptyText}>No club distances saved yet.</Text>
             )}
@@ -522,23 +622,23 @@ const styles = StyleSheet.create({
   },
   targetCard: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
+    left: 10,
+    right: 10,
+    bottom: 76,
+    maxHeight: 200,
     backgroundColor: 'rgba(10, 10, 10, 0.98)',
     borderWidth: 1,
     borderColor: 'rgba(246, 201, 14, 0.15)',
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 26,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 12,
   },
   targetCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 6,
   },
   targetTitle: {
     color: 'rgba(255,255,255,0.6)',
@@ -565,9 +665,9 @@ const styles = StyleSheet.create({
   },
   targetGpsValue: {
     color: 'rgba(255,255,255,0.5)',
-    fontSize: 38,
+    fontSize: 28,
     fontWeight: '700',
-    lineHeight: 38,
+    lineHeight: 28,
     letterSpacing: -1,
   },
   targetArrow: {
@@ -583,36 +683,16 @@ const styles = StyleSheet.create({
   },
   targetPlayingValue: {
     color: '#F6C90E',
-    fontSize: 38,
+    fontSize: 28,
     fontWeight: '700',
-    lineHeight: 38,
+    lineHeight: 28,
     letterSpacing: -1,
   },
-  targetBreakdown: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 9,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginBottom: 10,
-  },
-  targetBreakdownRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 2,
-  },
-  targetBreakdownLabel: {
-    color: 'rgba(255,255,255,0.4)',
-    fontSize: 12,
-  },
-  targetBreakdownValue: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  targetBreakdownValueHot: {
-    color: '#F87171',
-  },
-  targetBreakdownValueGood: {
-    color: colors.brand.primary,
+  targetAdjInline: {
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 10,
+    textAlign: 'center',
+    marginBottom: 8,
   },
   targetClubRow: {
     flexDirection: 'row',
@@ -677,13 +757,41 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  targetPenaltyRow: {
+    marginTop: 10,
+  },
+  penaltyChips: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 6,
+  },
+  penaltyChip: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  penaltyChipActive: {
+    borderColor: '#EF4444',
+    backgroundColor: 'rgba(239,68,68,0.15)',
+  },
+  penaltyChipText: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  penaltyChipTextActive: {
+    color: '#EF4444',
+  },
+  penaltyNote: {
+    color: '#EF4444',
+    fontSize: 10,
+    marginTop: 4,
+  },
   targetHint: {
     color: '#9CA3AF',
-    fontSize: 12,
-    marginTop: 8,
-  },
-  targetFootnote: {
-    color: 'rgba(255,255,255,0.28)',
     fontSize: 10,
     marginTop: 6,
   },

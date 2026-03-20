@@ -60,6 +60,11 @@ const RoundCardComponent: React.FC<RoundCardProps> = ({
   const rawCourseName = typeof round.courseName === 'string' ? round.courseName.trim() : '';
   const isCourseMissing = rawCourseName.length === 0 || rawCourseName.toLowerCase() === 'test';
   const displayCourseName = isCourseMissing ? 'Unknown Course' : formatCourseName(rawCourseName);
+  const roundLengthLabel = round.roundLength === 'front9'
+    ? '9 Holes - Front'
+    : round.roundLength === 'back9'
+      ? '9 Holes - Back'
+      : '9 Holes';
   const weatherParts: string[] = [];
   if (round.weather?.temp) weatherParts.push(round.weather.temp);
   if (round.weather?.conditions) weatherParts.push(round.weather.conditions);
@@ -231,7 +236,7 @@ const RoundCardComponent: React.FC<RoundCardProps> = ({
               {round.isNineHoleRound && !round.startType && (
                 <View style={[styles.customCourseBadge, styles.nineHoleBadge]}>
                   <Ionicons name="golf" size={12} color="#F59E0B" />
-                  <Text style={[styles.customCourseBadgeText, styles.nineHoleBadgeText]}>9 Holes</Text>
+                  <Text style={[styles.customCourseBadgeText, styles.nineHoleBadgeText]}>{roundLengthLabel}</Text>
                 </View>
               )}
               {round.isIncomplete && !round.isNineHoleRound && round.startType !== 'shotgun' && (

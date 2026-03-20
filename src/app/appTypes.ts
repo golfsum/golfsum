@@ -9,6 +9,8 @@ export type AppScreen =
   | 'scorecard-import'
   | 'course-analytics'
   | 'pro-upgrade'
-  | 'gps-round';
+  | 'gps-round'
+  | 'gps-round-review'
+  | 'course-planning';
 
 export type ActiveTab = TabName;

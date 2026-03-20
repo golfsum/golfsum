@@ -28,53 +28,53 @@ interface UpgradeSheetProps {
 const FEATURES = [
   'Live GPS yardages during your round',
   'Advanced scoring with directional tracking',
-  'AI coaching insights from your patterns',
-  'Course-specific strategy cards',
-  'Digital yardage book (hole notes)',
-  'Club performance analysis',
+  'Coaching tips from your rounds',
+  'Hole notes and yardage book',
+  'Club distances by club',
+  'Round history and stat trends',
 ];
 const COPY_VARIANT = 'upgrade_sheet_v1';
 
 const COPY_BY_TRIGGER: Record<UpgradeTrigger, { title: string; subtitle: string }> = {
   detailed_toggle: {
-    title: 'Unlock Detailed Scoring',
-    subtitle: 'Track FIR/GIR direction, scrambling, and penalties in every round.',
+    title: 'Detailed Scoring',
+    subtitle: 'Add FIR and GIR direction, scrambling, and penalties to each round.',
   },
   score_entry_lock: {
-    title: 'Unlock Full Hole Tracking',
-    subtitle: 'Capture directional stats and get better coaching from each hole.',
+    title: 'Full Hole Tracking',
+    subtitle: 'Add directional stats and see where shots are getting away from you.',
   },
   insights_card: {
-    title: 'Unlock New Insights',
-    subtitle: 'Your pattern is forming. Keep tracking to unlock sharper coaching.',
+    title: 'More Round History',
+    subtitle: 'More rounds give you a clearer picture of your game.',
   },
   post_round: {
-    title: 'Unlock Post-Round Analysis',
-    subtitle: 'See the fairway, GIR, and club details that explain your score.',
+    title: 'Post-Round Breakdown',
+    subtitle: 'See the fairway, GIR, and club details behind your score.',
   },
   nudge_card: {
-    title: 'Unlock Data-Driven Nudges',
-    subtitle: 'Turn pre-round tips into personalized coaching from your stats.',
+    title: 'In-Round Tips',
+    subtitle: 'Use your rounds to get better tips during the round.',
   },
   trial_banner: {
     title: 'Keep Advanced Tracking',
-    subtitle: 'You still have trial momentum. Keep building your patterns.',
+    subtitle: 'Keep building your round history each time you play.',
   },
   trial_ended_card: {
-    title: 'Continue After Trial',
-    subtitle: 'Your trial insights are saved. Upgrade to keep them fresh each round.',
+    title: 'Keep Going After Trial',
+    subtitle: 'Your trial stats are saved. Keep adding rounds to build them out.',
   },
   scorecard_import: {
-    title: 'Unlock Full Import Insights',
-    subtitle: 'Use imported rounds plus detailed stats to power full coaching.',
+    title: 'Imported Round Stats',
+    subtitle: 'Keep the fairways, greens, and penalties from imported rounds.',
   },
   averages_tab: {
-    title: 'Unlock Advanced Averages',
-    subtitle: 'View full ball-striking trends and deeper stat breakdowns.',
+    title: 'Advanced Averages',
+    subtitle: 'See fairway, GIR, and short-game averages together.',
   },
   profile: {
-    title: 'Unlock GolfSum Pro',
-    subtitle: 'Upgrade anytime to enable full tracking and coaching features.',
+    title: 'Full Stat Tracking',
+    subtitle: 'Keep fairways, greens, penalties, and hole-by-hole stats together.',
   },
 };
 
@@ -140,16 +140,16 @@ export default function UpgradeSheet({ visible, trigger, onClose }: UpgradeSheet
           ))}
         </View>
 
-        <Text style={styles.anchor}>$5.83/month — save 17% annually</Text>
+        <Text style={styles.anchor}>$5.83 a month when paid yearly</Text>
 
         <TouchableOpacity style={styles.primaryButton} onPress={handleSubscribe} disabled={isBusy}>
           <Text style={styles.primaryButtonText}>
-            {isBusy ? FEEDBACK_COPY.actions.pleaseWait : 'Upgrade to Pro'}
+            {isBusy ? FEEDBACK_COPY.actions.pleaseWait : 'Start yearly plan'}
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={handleRestore} disabled={isBusy}>
-          <Text style={styles.link}>Restore Purchase</Text>
+          <Text style={styles.link}>Restore purchase</Text>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={handleDismiss}>

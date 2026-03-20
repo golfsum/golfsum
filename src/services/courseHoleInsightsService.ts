@@ -487,7 +487,7 @@ export const buildCourseHoleInsights = (
         return withRecentNote(h.number, {
           hole: h.number,
           title: `Hole ${h.number}, Par ${h.par}, ${yardageText}. Avg ${avg}.`,
-          body: `You miss ${overallMiss.direction} here with ${topClubNames}. Pattern is consistent across clubs.`,
+          body: `You miss ${overallMiss.direction} here with ${topClubNames}. The miss holds across clubs.`,
           action: `This is more aim/start-line than club choice. Favor ${opposite(overallMiss.direction)}-center.`,
         });
       }
@@ -559,7 +559,7 @@ export const buildCourseHoleInsights = (
         hole: h.number,
         title: `Hole ${h.number}, Par ${h.par}, ${yardageText}. Avg ${avg}.`,
         body: 'Your miss is left of this green.',
-        action: 'Aim right-center and let your pattern move toward the target.',
+        action: 'Aim right-center and let your miss move toward the target.',
       });
     }
     if (girDataReady && girMissRight >= 60 && !usedTroubleTemplates.has('gir_right')) {
@@ -742,7 +742,7 @@ export const buildCourseHoleInsights = (
   const ballStrikingAvailable = roundsWithFwData > 0 || roundsWithGirData > 0;
   const ballStrikingText = ballStrikingAvailable
     ? `FW: ${fwKnown ? Math.round(fwPctCourse) + '%' : '—'}${fwKnown ? fwDirText : ''}. GIR: ${girKnown ? Math.round(girPctCourse) + '%' : '—'}${girKnown ? girDirText : ''}.`
-    : 'No directional data yet. Use Detailed scoring on your next round to see ball striking patterns.';
+    : 'No directional data yet. Use Detailed scoring on your next round to see ball striking trends.';
   const ballStrikingSampleText = roundsWithFwData > 0 || roundsWithGirData > 0
     ? `Based on ${roundsWithFwData}/${rounds.length} round(s) with FW tracking and ${roundsWithGirData}/${rounds.length} with GIR tracking.`
     : undefined;

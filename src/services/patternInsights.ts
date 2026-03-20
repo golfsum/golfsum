@@ -657,11 +657,11 @@ function analyzeApproachDirectionPattern(rounds: SavedRound[], userHandicap?: nu
     type: insightType,
     title: `Greens Missed ${dominantSide.charAt(0).toUpperCase() + dominantSide.slice(1)}`,
     patternObserved: `${(dominantRate * 100).toFixed(0)}% of your directional approach misses are finishing ${dominantSide} of the green.`,
-    whatThisIndicates: 'Consistent directional misses often result from alignment or start-line bias, shot shape not matching target line, or aiming at pins that don\'t suit your miss pattern.',
+    whatThisIndicates: 'Consistent directional misses often come from alignment or start-line bias, shot shape not matching the target, or aiming at pins that do not fit your usual miss.',
     commonContributors: [
       'Alignment or start-line bias',
       'Shot shape not matching target line',
-      'Aiming at pins that don\'t suit your miss pattern'
+      'Aiming at pins that do not fit your usual miss'
     ],
     whatToWorkOn: [
       'Aim for center-green bias',
@@ -778,9 +778,9 @@ function analyzeThreePuttPattern(rounds: SavedRound[], userHandicap?: number): P
 
   return {
     type: insightType,
-    title: 'High 3-Putt Frequency',
+    title: 'Too Many 3-Putts',
     patternObserved: `You're 3-putting ${(threePuttRate * 100).toFixed(0)}% of the time (${threePutts} in ${totalHoles} holes).`,
-    whatThisIndicates: 'Frequent three-putts typically indicate lag putting distance control issues, speed misreads (especially downhill), or first putts finishing too far past the hole.',
+    whatThisIndicates: 'Three-putts usually come from weak lag speed, bad speed reads, or first putts running too far by.',
     commonContributors: [
       'Lag putting distance control issues',
       'Speed misreads (especially downhill)',
@@ -876,9 +876,9 @@ function analyzePenaltyPattern(rounds: SavedRound[], userHandicap?: number): Pat
 
   return {
     type: insightType,
-    title: 'Penalties Hurting Scores',
+    title: 'Penalties Are Costing Strokes',
     patternObserved: `You're averaging ${avgPenaltiesPerRound.toFixed(1)} penalty strokes per round.`,
-    whatThisIndicates: 'Frequent penalties typically result from aggressive targets off the tee, playing shots that don\'t suit your typical miss, or trying to recover too much after a mistake.',
+    whatThisIndicates: 'Penalties usually come from aggressive tee targets, shots that do not fit your usual miss, or trying to pull off too much after a mistake.',
     commonContributors: [
       'Aggressive targets off the tee',
       'Playing shots that don\'t suit your typical miss',
@@ -889,7 +889,7 @@ function analyzePenaltyPattern(rounds: SavedRound[], userHandicap?: number): Pat
       'Play to your stock shot shape',
       'Take medicine early to avoid compounding errors'
     ],
-    scoringNote: 'Reducing penalties is often the fastest way to lower scores, even faster than improving swing mechanics.',
+    scoringNote: 'Cutting penalties is often the fastest way to lower scores.',
     confidence: adjustedConfidence,
     stars,
     confidenceLabel: getConfidenceLabel(stars),
@@ -1269,7 +1269,7 @@ function analyzeBackNineScoringDrop(rounds: SavedRound[], userHandicap?: number)
     title: getHandicapAwareTitle(type, userHandicap),
     patternObserved: `Back nine is ${drop.toFixed(1)} strokes worse than front nine on average.`,
     whatThisIndicates: 'Late-round routine and decision quality are slipping.',
-    commonContributors: ['Decision fatigue', 'Tempo drift under fatigue', 'Reduced commitment to target lines'],
+    commonContributors: ['Decision fatigue', 'Tempo slipping late', 'Reduced commitment to target lines'],
     whatToWorkOn: ['Use the same routine cadence after hole 12', 'Take one reset breath before every tee shot', 'Favor conservative targets late'],
     confidence: confidenceCalc.confidence,
     stars: calculateStars(confidenceCalc.confidence),
@@ -1436,7 +1436,7 @@ function analyzeWeatherScoringDrop(rounds: SavedRound[], userHandicap?: number):
     type,
     title: getHandicapAwareTitle(type, userHandicap),
     patternObserved: `Windy rounds average ${drop.toFixed(1)} strokes higher than calmer rounds.`,
-    whatThisIndicates: 'Wind-specific shot selection and trajectory control need a repeatable plan.',
+    whatThisIndicates: 'You need a repeatable wind plan for club choice and ball flight.',
     commonContributors: ['Under-clubbing into wind', 'Swinging harder instead of smoother', 'Over-penalizing misses in crosswinds'],
     whatToWorkOn: ['Take one extra club in wind', 'Use 75-80% swings', 'Target the fat side of greens and fairways'],
     confidence: confidenceCalc.confidence,
@@ -1486,7 +1486,7 @@ function analyzeApproachContactPattern(rounds: SavedRound[], userHandicap?: numb
 
   return {
     type,
-    title: isContact ? 'Approach Contact Pattern' : `Between Clubs at ${finding.band}`,
+    title: isContact ? 'Approach Contact Trend' : `Between Clubs at ${finding.band}`,
     patternObserved: finding.message,
     whatThisIndicates: isContact
       ? 'Misses split short and long from the same range usually point to strike-quality variation.'
@@ -1531,28 +1531,28 @@ export function getSuppressionMessage(reason: string): {title: string; message: 
   switch (reason) {
     case 'LOW_SAMPLE':
       return {
-        title: 'More Data Needed',
-        message: 'This pattern needs more shots before it can be analyzed reliably.'
+        title: 'More Shots Needed',
+        message: 'This trend needs more shots before it is ready.'
       };
     case 'LOW_CONFIDENCE':
       return {
-        title: 'Insight Not Shown',
-        message: 'There isn\'t enough consistent data yet to surface this insight confidently.'
+        title: 'Tip Not Shown',
+        message: 'There is not enough steady history yet to show this tip.'
       };
     case 'INCONSISTENT':
       return {
-        title: 'Pattern Not Consistent',
-        message: 'This trend doesn\'t appear consistently enough across rounds yet.'
+        title: 'Trend Not Steady',
+        message: 'This trend does not show up steadily enough across rounds yet.'
       };
     case 'CONFLICTING':
       return {
         title: 'Conditions Vary',
-        message: 'Changing conditions make this insight less reliable right now.'
+        message: 'Changing conditions make this tip less reliable right now.'
       };
     default:
       return {
         title: 'Too Early to Call',
-        message: 'Early-round data can be noisy. Insights become more accurate over time.'
+        message: 'Early rounds can be noisy. This gets clearer over time.'
       };
   }
 }
@@ -1857,7 +1857,7 @@ function getDrillForInsight(type: PatternInsightType, handicap: number | undefin
       }
       if (tier === 'MID') {
         return {
-          title: 'Short Putt Confidence',
+          title: 'Short Putt Routine',
           duration: '10 min',
           category: 'PUTTING',
           steps: ['3-4 feet, straight putts only', 'No decel through impact', 'Build out from tap-in range', '20 putts total'],
@@ -1942,7 +1942,7 @@ function getDrillForInsight(type: PatternInsightType, handicap: number | undefin
     case PatternInsightType.WEATHER_SCORING_DROP:
       if (tier === 'SCRATCH') return { title: 'Wind Shot Shaping', duration: '20 min', category: 'APPROACH', steps: ['Hit 5 knockdowns', 'Hit 5 into headwind and 5 with tailwind targets', 'Track distance deltas vs stock', 'Track launch and line control'], constraints: { successGoal: 'Knockdown flies 85-90% stock distance consistently' } };
       if (tier === 'LOW') return { title: 'Knockdown Iron Practice', duration: '15 min', category: 'APPROACH', steps: ['Choke down 1 inch', '3/4 swing with ball slightly back', '10 shots at one target', 'Compare carry to stock'], constraints: { successGoal: 'Consistent trajectory at 80-90% stock distance' } };
-      if (tier === 'MID') return { title: 'Wind Club Selection Practice', duration: '15 min', category: 'APPROACH', steps: ['Pick one target distance', 'Hit normal club then one-more-club/easy swing', 'Compare consistency', '10 comparison shots'], constraints: { successGoal: 'Identify your best wind pattern' } };
+      if (tier === 'MID') return { title: 'Wind Club Selection Practice', duration: '15 min', category: 'APPROACH', steps: ['Pick one target distance', 'Hit normal club then one-more-club/easy swing', 'Compare consistency', '10 comparison shots'], constraints: { successGoal: 'Find your best wind shot' } };
       return { title: 'Swing Easy in Wind', duration: '15 min', category: 'APPROACH', steps: ['Take one extra club', 'Swing at 75% effort', 'Compare contact vs full speed', '10 shots total'], constraints: { successGoal: '8/10 solid contact with controlled swing' } };
 
     case PatternInsightType.APPROACH_CONTACT_INCONSISTENCY:
@@ -2218,5 +2218,5 @@ export function generateGamePlanCard(insights: PatternInsight[], userHandicap?: 
  * Format insight for display
  */
 export function getInsightFooter(): string {
-  return 'Insights are based on observed patterns, not single shots. Use them to guide decision-making and practice focus, not to diagnose your swing.';
+  return 'These trends come from your rounds, not one shot. Use them to guide decisions and practice, not to diagnose your swing.';
 }

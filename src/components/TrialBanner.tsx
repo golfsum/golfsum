@@ -1,8 +1,8 @@
 /**
- * TrialBanner — Shows trial progress during the 3-round experience.
+ * TrialBanner - Shows trial progress during the 3-round experience.
  *
  * Variants:
- *  - During trial (rounds 1-3): "Round 2 of 3 — full stats unlocked"
+ *  - During trial (rounds 1-3): "2 of 3 advanced rounds used"
  *  - Trial just ended (round 4): "Advanced preview complete"
  *
  * Non-intrusive: small bar, no modal.
@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 interface TrialBannerProps {
   trialRoundsUsed: number;
   trialLimit: number;
-  /** Only shown when trial is active — not after expiry */
+  /** Only shown when trial is active, not after expiry */
   variant: 'in-trial' | 'ended';
   /** Called when user taps the banner after trial ends */
   onUpgrade?: () => void;
@@ -33,7 +33,7 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({
       <View style={styles.bannerActive}>
         <Ionicons name="sparkles" size={14} color="#10B981" />
         <Text style={styles.bannerActiveText}>
-          {used} of {trialLimit} Advanced rounds used
+          {used} of {trialLimit} advanced rounds used
         </Text>
       </View>
     );
@@ -47,7 +47,7 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({
     >
       <Ionicons name="information-circle-outline" size={14} color="#9CA3AF" />
       <Text style={styles.bannerEndedText}>
-        Advanced preview complete · Continue with Basic scoring
+        Advanced preview is done. Basic scoring stays on.
       </Text>
       <Ionicons name="chevron-forward" size={14} color="#9CA3AF" />
     </TouchableOpacity>

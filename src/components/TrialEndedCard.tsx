@@ -28,7 +28,7 @@ export const TrialEndedCard: React.FC<TrialEndedCardProps> = ({
 
     <Text style={styles.title}>Your free preview is complete</Text>
     <Text style={styles.subtitle}>
-      You tracked 3 rounds with full stat analysis. Upgrade to keep tracking fairways, greens, scrambling, and more.
+      You tracked 3 rounds with full stats. Keep logging fairways, greens, scrambling, and penalties each round.
     </Text>
 
     {statLine && (
@@ -39,7 +39,7 @@ export const TrialEndedCard: React.FC<TrialEndedCardProps> = ({
 
     <TouchableOpacity style={styles.upgradeButton} onPress={onUpgrade} activeOpacity={0.8}>
       <Ionicons name="sparkles" size={16} color="#0f1419" />
-      <Text style={styles.upgradeText}>Upgrade to Pro</Text>
+      <Text style={styles.upgradeText}>See full stat tracking</Text>
     </TouchableOpacity>
 
     <Text style={styles.pricingHint}>$69.99/year</Text>

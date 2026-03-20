@@ -37,7 +37,7 @@ import {
   appendReportReply,
   ReportedIssue,
 } from '../services/userService';
-import { syncLocalDataToFirestore, getRounds, clearLocalRounds } from '../services/roundsService';
+import { syncLocalDataToFirestore, getRounds, clearLocalRounds, seedPebbleHistoryRounds } from '../services/roundsService';
 import { getStatPreferencesFromProfile } from '../utils/statPreferences';
 import { getHandicapCalculationDetails } from '../services/whsCalculations';
 import { exportRoundsCsv, exportRoundsExcel, exportRoundsJson } from '../services/dataExportService';
@@ -83,6 +83,9 @@ import {
   getPushPermissionSnapshot,
   syncPushRegistrationForProfile,
 } from '../services/pushNotificationService';
+import ReportModal from './ReportModal';
+import AdminReportsScreen from './AdminReportsScreen';
+import { isAdminUser } from '../services/ReportService';
 
 const PROFILE_STORAGE_KEY = '@GolfSum:UserProfile';
 const LAST_SYNC_KEY = '@GolfSum:LastSync';
@@ -185,12 +188,16 @@ export const ProfileTab: React.FC<Props> = ({
   const [reportSectionY, setReportSectionY] = useState<number | null>(null);
   const [lastSeenReportSignature, setLastSeenReportSignature] = useState<string | null>(null);
   const [pendingReportSignature, setPendingReportSignature] = useState<string | null>(null);
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [adminReportsVisible, setAdminReportsVisible] = useState(false);
+  const [adminEnabled, setAdminEnabled] = useState(false);
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
   const [subscriptionRenewalLabel, setSubscriptionRenewalLabel] = useState<string | null>(null);
   const [subscriptionWillRenew, setSubscriptionWillRenew] = useState(true);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [watchDebugQueueCount, setWatchDebugQueueCount] = useState(0);
   const [watchDebugLastEvent, setWatchDebugLastEvent] = useState<string>('—');
+  const [isSeedingPebbleHistory, setIsSeedingPebbleHistory] = useState(false);
   const scrollRef = useRef<ScrollView | null>(null);
   const autoHomeCourseAppliedRef = useRef(false);
   const { canAccess, inTrial, trialRoundsUsed, trialLimit, refreshTrial } = useFeatureGate({ refreshKey: isActive ? 1 : 0 });
@@ -210,6 +217,23 @@ export const ProfileTab: React.FC<Props> = ({
       setWatchDebugLastEvent(`${last.type} • H${last.holeNumber} • ${ts}`);
     } catch {
       setWatchDebugLastEvent('error');
+    }
+  };
+
+  const handleSeedPebbleHistory = async () => {
+    try {
+      setIsSeedingPebbleHistory(true);
+      const seeded = await seedPebbleHistoryRounds();
+      await loadRounds();
+      Alert.alert(
+        'Pebble history added',
+        `${seeded.length} Pebble Beach rounds added to History.`
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not add Pebble rounds.';
+      Alert.alert('Could not add Pebble rounds', message);
+    } finally {
+      setIsSeedingPebbleHistory(false);
     }
   };
 
@@ -349,6 +373,24 @@ export const ProfileTab: React.FC<Props> = ({
     };
     hydrate().catch(() => undefined);
   }, [user?.uid, isActive]);
+
+  useEffect(() => {
+    let active = true;
+    if (!user) {
+      setAdminEnabled(false);
+      return undefined;
+    }
+    isAdminUser()
+      .then((value) => {
+        if (active) setAdminEnabled(value);
+      })
+      .catch(() => {
+        if (active) setAdminEnabled(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user?.uid]);
 
   useEffect(() => {
     if (!user) {
@@ -1188,7 +1230,7 @@ export const ProfileTab: React.FC<Props> = ({
           'Enter your password to continue account deletion.',
           [
             { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
-            { text: 'Continue', style: 'destructive', onPress: (value: string) => resolve(String(value || '').trim() || null) },
+            { text: 'Delete Account', style: 'destructive', onPress: (value: string) => resolve(String(value || '').trim() || null) },
           ],
           'secure-text'
         );
@@ -1966,6 +2008,34 @@ export const ProfileTab: React.FC<Props> = ({
           styles={styles}
         />
 
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderNoPress}>
+            <Text style={styles.sectionTitle}>SUPPORT</Text>
+          </View>
+          <TouchableOpacity style={styles.settingRow} onPress={() => setReportModalVisible(true)}>
+            <View style={styles.settingIcon}>
+              <Ionicons name="alert-circle-outline" size={18} color="#F59E0B" />
+            </View>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Report an issue</Text>
+              <Text style={styles.settingValue}>Course data, GPS issue, app bug, or other</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+          </TouchableOpacity>
+          {adminEnabled ? (
+            <TouchableOpacity style={styles.settingRow} onPress={() => setAdminReportsVisible(true)}>
+              <View style={styles.settingIcon}>
+                <Ionicons name="document-text-outline" size={18} color="#10B981" />
+              </View>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>View reports</Text>
+                <Text style={styles.settingValue}>Admin review</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
         <View onLayout={(e) => setReportSectionY(e.nativeEvent.layout.y)}>
           <ReportIssueSection
             expanded={reportSectionExpanded}
@@ -2014,6 +2084,22 @@ export const ProfileTab: React.FC<Props> = ({
               <Text style={styles.settingLabel}>Bridge Available: {isWatchBridgeAvailable() ? 'Yes' : 'No'}</Text>
               <Text style={styles.settingValue}>Queued Events: {watchDebugQueueCount}</Text>
               <Text style={styles.settingValue}>Last Event: {watchDebugLastEvent}</Text>
+              <TouchableOpacity
+                style={[styles.settingRow, { marginTop: 12 }]}
+                onPress={handleSeedPebbleHistory}
+                disabled={isSeedingPebbleHistory}
+              >
+                <View style={styles.settingIcon}>
+                  <Ionicons name="golf-outline" size={18} color="#10B981" />
+                </View>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>
+                    {isSeedingPebbleHistory ? 'Adding Pebble rounds' : 'Add Pebble Beach rounds'}
+                  </Text>
+                  <Text style={styles.settingValue}>Adds 3 low-80s Pebble test rounds</Text>
+                </View>
+                <Ionicons name="add-circle-outline" size={18} color="#9CA3AF" />
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -2040,6 +2126,17 @@ export const ProfileTab: React.FC<Props> = ({
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      <ReportModal
+        visible={reportModalVisible}
+        context={{ source: 'profile_manual', category: 'wrong_course_data' } as any}
+        onClose={() => setReportModalVisible(false)}
+      />
+
+      <AdminReportsScreen
+        visible={adminReportsVisible}
+        onClose={() => setAdminReportsVisible(false)}
+      />
 
     </>
     );

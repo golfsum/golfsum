@@ -67,7 +67,7 @@ export const RoundSummaryCard: React.FC<RoundSummaryCardProps> = ({
       </View>
       {showAdvancedDataHint && (
         <Text style={styles.summaryHint}>
-          We found fairway and green data on this card. Save that tracking with Pro.
+          Fairway and green data are on this card. Save the round to keep them.
         </Text>
       )}
     </View>

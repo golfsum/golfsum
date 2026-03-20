@@ -393,7 +393,7 @@ export const HistoryTab: React.FC<Props> = ({
     return (
       <View style={styles.emptyContainer}>
         <Ionicons name="hourglass-outline" size={48} color={colors.text.tertiary} />
-        <Text style={styles.emptyText}>Loading rounds...</Text>
+        <Text style={styles.emptyText}>Loading rounds</Text>
       </View>
     );
   }
@@ -405,7 +405,7 @@ export const HistoryTab: React.FC<Props> = ({
         <Text style={styles.emptyTitle}>Your Round History</Text>
         <Text style={styles.emptyText}>
           Every round you play or import will appear here.{'\n'}
-          Build your history to unlock trends and insights.
+          Add a few rounds and your stats will show here.
         </Text>
         <View style={styles.emptyActions}>
           <TouchableOpacity
@@ -427,18 +427,18 @@ export const HistoryTab: React.FC<Props> = ({
         </View>
         {/* Preview of what populated history looks like */}
         <View style={styles.emptyPreviewCard}>
-          <Text style={styles.emptyPreviewTitle}>What You'll See</Text>
+          <Text style={styles.emptyPreviewTitle}>WHAT SHOWS HERE</Text>
           <View style={styles.emptyPreviewItem}>
             <Ionicons name="golf-outline" size={14} color={colors.text.tertiary} />
             <Text style={styles.emptyPreviewItemText}>Every hole, every stat, every round</Text>
           </View>
           <View style={styles.emptyPreviewItem}>
             <Ionicons name="search-outline" size={14} color={colors.text.tertiary} />
-            <Text style={styles.emptyPreviewItemText}>Search and filter your full history</Text>
+            <Text style={styles.emptyPreviewItemText}>Search and filter your rounds</Text>
           </View>
           <View style={styles.emptyPreviewItem}>
             <Ionicons name="swap-horizontal-outline" size={14} color={colors.text.tertiary} />
-            <Text style={styles.emptyPreviewItemText}>Compare rounds to spot what changed</Text>
+            <Text style={styles.emptyPreviewItemText}>Compare rounds side by side</Text>
           </View>
         </View>
       </View>
@@ -511,7 +511,7 @@ export const HistoryTab: React.FC<Props> = ({
                   <Ionicons name="search" size={18} color={colors.text.tertiary} style={styles.searchIcon} />
                   <TextInput
                     style={styles.searchInput}
-                    placeholder="Search by course, date, or notes..."
+                    placeholder="Search by course, date, or notes"
                     placeholderTextColor={colors.text.tertiary}
                     value={searchQuery}
                     onChangeText={setSearchQuery}

@@ -1,7 +1,5 @@
 /**
  * Pattern Insight Card Component
- * 
- * Displays detailed, educational insights based on tracked patterns
  */
 
 import React, { useState } from 'react';
@@ -34,15 +32,15 @@ export const PatternInsightCard: React.FC<Props> = ({
   const getConfidenceTooltip = (stars: number): string => {
     switch (stars) {
       case 1:
-        return 'Limited data so far. This insight may change as more shots are recorded.';
+        return 'Light sample so far. This may change as more shots are logged.';
       case 2:
-        return 'A possible trend is forming, but more data is needed to confirm it.';
+        return 'A trend is forming, but it needs more shots.';
       case 3:
-        return 'This pattern appears consistently and is likely affecting performance.';
+        return 'This trend shows up often and is likely affecting scores.';
       case 4:
-        return 'A clear and consistent pattern across multiple rounds.';
+        return 'A clear trend across multiple rounds.';
       case 5:
-        return 'This is a dominant pattern and a high-impact area to focus on.';
+        return 'This is a strong trend and a high-impact spot to work on.';
       default:
         return '';
     }
@@ -135,7 +133,7 @@ export const PatternInsightCard: React.FC<Props> = ({
         <View style={styles.content}>
           {/* Pattern Observed */}
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Pattern observed</Text>
+            <Text style={styles.sectionLabel}>What shows up</Text>
             <Text style={styles.sectionText}>{insight.patternObserved}</Text>
             
             {/* Start Line Inference (if available) */}
@@ -151,7 +149,7 @@ export const PatternInsightCard: React.FC<Props> = ({
           {!coachView ? (
             /* Player View - Simple */
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>What this often indicates</Text>
+              <Text style={styles.sectionLabel}>What this points to</Text>
               <Text style={styles.sectionText}>{insight.whatThisIndicates}</Text>
             </View>
           ) : (
@@ -160,7 +158,7 @@ export const PatternInsightCard: React.FC<Props> = ({
               <View style={[styles.section, styles.coachSection]}>
                 <View style={styles.coachHeader}>
                   <Ionicons name="school" size={16} color="#3B82F6" />
-                  <Text style={styles.coachLabel}>Coach Explanation</Text>
+              <Text style={styles.coachLabel}>Coach Notes</Text>
                 </View>
                 <Text style={styles.sectionText}>{insight.coachExplanation}</Text>
               </View>
@@ -170,7 +168,7 @@ export const PatternInsightCard: React.FC<Props> = ({
           {/* Coach View - Resources and Fixes */}
           {coachView && coachResources.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>Coach Resources</Text>
+              <Text style={styles.sectionLabel}>Watch</Text>
               {coachResources.map((resource) => (
                 <TouchableOpacity
                   key={resource.url}
@@ -212,7 +210,7 @@ export const PatternInsightCard: React.FC<Props> = ({
           {/* Common Contributors */}
           {insight.commonContributors.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>Common contributors</Text>
+              <Text style={styles.sectionLabel}>Common causes</Text>
               {insight.commonContributors.map((contributor, index) => (
                 <View key={index} style={styles.bulletItem}>
                   <Text style={styles.bullet}>•</Text>
@@ -272,7 +270,7 @@ export const PatternInsightCard: React.FC<Props> = ({
             </View>
           )}
 
-          {/* Confidence Indicator with Stars */}
+          {/* Trend strength */}
           <View style={styles.confidenceSection}>
             <View style={styles.starsRow}>
               {[1, 2, 3, 4, 5].map((star) => (
@@ -305,14 +303,14 @@ export const PatternInsightCard: React.FC<Props> = ({
             </View>
           </View>
 
-          {/* Confidence Explanation (Collapsible) */}
+          {/* Trend strength explanation */}
           {showConfidenceInfo && (
             <View style={styles.confidenceTooltip}>
               <Text style={styles.confidenceTooltipText}>
                 {getConfidenceTooltip(insight.stars)}
               </Text>
               <Text style={styles.confidenceTooltipSubtext}>
-                Based on sample size, pattern strength, and consistency across rounds.
+                Sample size, trend strength, and how often it shows up across rounds.
               </Text>
               
               {/* Debug Info (Optional - only if meta exists) */}
@@ -321,7 +319,7 @@ export const PatternInsightCard: React.FC<Props> = ({
                   <Text style={styles.debugLabel}>Debug Info:</Text>
                   <Text style={styles.debugText}>
                     Sample: {(insight.meta.debugInfo.sampleScore * 100).toFixed(0)}% • 
-                    Pattern: {(insight.meta.debugInfo.patternScore * 100).toFixed(0)}% • 
+                    Trend: {(insight.meta.debugInfo.patternScore * 100).toFixed(0)}% • 
                     Consistency: {(insight.meta.debugInfo.consistencyScore * 100).toFixed(0)}%
                   </Text>
                 </View>
@@ -332,9 +330,9 @@ export const PatternInsightCard: React.FC<Props> = ({
           {/* Strength Badge */}
           <View style={styles.strengthBadge}>
             <Text style={styles.strengthText}>
-              {insight.strengthLevel === 'VERY_STRONG' ? 'Very Strong Pattern' :
-               insight.strengthLevel === 'STRONG' ? 'Strong Pattern' :
-               'Moderate Pattern'}
+              {insight.strengthLevel === 'VERY_STRONG' ? 'Very Strong Trend' :
+               insight.strengthLevel === 'STRONG' ? 'Strong Trend' :
+               'Moderate Trend'}
             </Text>
           </View>
         </View>

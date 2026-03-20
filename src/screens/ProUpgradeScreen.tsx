@@ -26,11 +26,11 @@ interface ProUpgradeScreenProps {
 
 const FEATURES = [
   'Fairway and green tracking with miss direction',
-  'Driving and approach pattern analysis',
-  'Club-by-club performance insights',
-  'Scrambling and short game analysis',
-  'Targeted coaching from your stats',
-  'Penalty tracking and cost analysis',
+  'Driving and approach misses by club',
+  'Club-by-club performance',
+  'Scrambling and short game stats',
+  'Round tips from your stats',
+  'Penalty strokes and where they cost you',
 ];
 
 export const ProUpgradeScreen: React.FC<ProUpgradeScreenProps> = ({
@@ -62,11 +62,11 @@ export const ProUpgradeScreen: React.FC<ProUpgradeScreenProps> = ({
       }
 
       if (!offerings.monthly && !offerings.annual) {
-        setError('No plans are available yet. Check RevenueCat offering packages.');
+        setError('No plans available right now.');
       }
     } catch (e: any) {
       const message = String(e?.message || '');
-      setError(message || 'Unable to load pricing');
+      setError(message || 'Could not load pricing.');
     } finally {
       setLoading(false);
     }
@@ -96,7 +96,7 @@ export const ProUpgradeScreen: React.FC<ProUpgradeScreenProps> = ({
       const result = await purchasePackage(selectedPackage);
       if (result.success) {
         logEvent('purchase_completed', { source, plan: selectedPlan });
-        Alert.alert('GolfSum Pro Active', 'Your subscription is active.');
+        Alert.alert('Pro is active', 'Your subscription is active.');
         onPurchased?.();
         onBack();
         return;
@@ -111,7 +111,7 @@ export const ProUpgradeScreen: React.FC<ProUpgradeScreenProps> = ({
       if (/network|fetch|internet|offline/i.test(message)) {
         Alert.alert('No internet connection', 'Try again when you have signal.');
       } else {
-        Alert.alert('Purchase could not be completed', 'Please check your payment method in Settings.');
+        Alert.alert('Purchase did not go through', 'Check your payment method in Settings.');
       }
     } finally {
       setPurchasing(false);
@@ -125,14 +125,14 @@ export const ProUpgradeScreen: React.FC<ProUpgradeScreenProps> = ({
       const result = await restorePurchases();
       logEvent('restore_result', { found: result.success });
       if (result.success) {
-        Alert.alert('Purchase Restored', 'Your Pro subscription is active.');
+        Alert.alert('Purchase restored', 'Your subscription is active.');
         onPurchased?.();
         onBack();
       } else {
-        Alert.alert('No previous purchase found', 'Make sure you are signed in with the correct Apple ID.');
+        Alert.alert('No purchase found', 'Make sure you are signed in with the right Apple ID.');
       }
     } catch {
-      Alert.alert('Restore failed', 'Please try again.');
+      Alert.alert('Restore did not work', 'Try again.');
     } finally {
       setRestoring(false);
     }
@@ -151,7 +151,7 @@ export const ProUpgradeScreen: React.FC<ProUpgradeScreenProps> = ({
 
       <ScrollView contentContainerStyle={styles.content}>
         <GolfSumLogo variant="header" />
-        <Text style={styles.heading}>Know Your Game Inside Out</Text>
+        <Text style={styles.heading}>See More Of Your Game</Text>
 
         <View style={styles.featureCard}>
           {FEATURES.map((feature) => (
@@ -162,19 +162,19 @@ export const ProUpgradeScreen: React.FC<ProUpgradeScreenProps> = ({
           ))}
         </View>
 
-        <Text style={styles.sectionLabel}>Choose your plan</Text>
+        <Text style={styles.sectionLabel}>CHOOSE PLAN</Text>
 
         {loading ? (
           <View style={styles.loadingWrap}>
             <ActivityIndicator color="#10B981" />
-            <Text style={styles.loadingText}>Loading pricing...</Text>
+            <Text style={styles.loadingText}>Loading pricing</Text>
           </View>
         ) : error ? (
           <View style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Unable to load pricing</Text>
+            <Text style={styles.errorTitle}>Could not load pricing</Text>
             <Text style={styles.errorBody}>{error}</Text>
             <TouchableOpacity style={styles.retryButton} onPress={loadOfferings}>
-              <Text style={styles.retryButtonText}>Try Again</Text>
+              <Text style={styles.retryButtonText}>Try again</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -185,7 +185,7 @@ export const ProUpgradeScreen: React.FC<ProUpgradeScreenProps> = ({
                 price={annualPackage.product.priceString}
                 period="/year"
                 subtitle={annualMonthlyEquivalent ?? undefined}
-                badge="BEST VALUE"
+                badge="BEST PRICE"
                 selected={selectedPlan === 'annual'}
                 onPress={() => {
                   setSelectedPlan('annual');
@@ -217,7 +217,7 @@ export const ProUpgradeScreen: React.FC<ProUpgradeScreenProps> = ({
             <ActivityIndicator color="#0f1419" />
           ) : (
             <Text style={styles.ctaButtonText}>
-              {selectedPlan === 'annual' ? 'Continue with Yearly Plan' : 'Continue with Monthly Plan'}
+              {selectedPlan === 'annual' ? 'Choose Yearly Plan' : 'Choose Monthly Plan'}
             </Text>
           )}
         </TouchableOpacity>
@@ -227,7 +227,7 @@ export const ProUpgradeScreen: React.FC<ProUpgradeScreenProps> = ({
         </Text>
 
         <TouchableOpacity style={styles.linkButton} onPress={handleRestore} disabled={restoring || purchasing}>
-          <Text style={styles.linkText}>{restoring ? 'Restoring...' : 'Restore Purchase'}</Text>
+          <Text style={styles.linkText}>{restoring ? 'Restoring' : 'Restore Purchase'}</Text>
         </TouchableOpacity>
 
         <View style={styles.legalRow}>

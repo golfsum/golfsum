@@ -331,8 +331,8 @@ export function generateCoachingInsights(
       insights.push(
         buildInsight({
           id: `${key}-overcorrection-pattern`,
-          title: `${label === 'tee shots' ? 'Tee Shot' : 'Approach'} Overcorrection Pattern`,
-          description: `Your ${label} miss direction is flipping round-to-round (${prev} to ${last}). That usually means you are chasing the last miss instead of letting one pattern stabilize.`,
+          title: `${label === 'tee shots' ? 'Tee Shot' : 'Approach'} Overcorrection`,
+          description: `Your ${label} miss direction is flipping round-to-round (${prev} to ${last}). That usually means you are chasing the last miss instead of letting one trend settle in.`,
           actionable: 'Hold setup and alignment constant for your next 3 rounds; avoid between-round swing fixes.',
           minimumRounds: 3,
           roundsUsed,
@@ -372,8 +372,8 @@ export function generateCoachingInsights(
       insights.push(
         buildInsight({
           id: 'miss-direction-volatility-high',
-          title: 'Miss Pattern Volatility Is High',
-          description: `Your left/right miss direction changes a lot across rounds (volatility ${highVol.toFixed(2)}). A stable miss is easier to manage than a shifting miss.`,
+          title: 'Miss Direction Changes Too Much',
+          description: 'Your left-right miss keeps changing across rounds. A steady miss is easier to play for than one that keeps moving.',
           actionable: 'Use the same pre-round setup routine (alignment, ball position, grip) every round.',
           minimumRounds: 10,
           roundsUsed,
@@ -385,7 +385,7 @@ export function generateCoachingInsights(
       insights.push(
         buildInsight({
           id: 'miss-direction-volatility-low',
-          title: 'Your Miss Pattern Is Consistent',
+          title: 'Your Miss Direction Is Steady',
           description: 'Your miss direction is stable round-to-round. That is a good thing because it is predictable and easier to plan around.',
           actionable: 'Aim to account for your common miss instead of trying to eliminate it mid-round.',
           minimumRounds: 10,
@@ -476,16 +476,16 @@ export function generateCoachingInsights(
   const milestoneRoundCounts = [5, 10, 25, 50, 100] as const;
   if (milestoneRoundCounts.includes(roundsUsed as (typeof milestoneRoundCounts)[number])) {
     const milestoneCopy: Record<number, string> = {
-      5: 'You unlocked your first stable baseline.',
+      5: '5 rounds gives you your first steady baseline.',
       10: 'Trends are now reliable enough for first-vs-last comparisons.',
       25: 'Your profile now reflects true strengths and weak spots.',
-      50: 'You now have deep pattern history for strategy decisions.',
-      100: 'You now have a full long-term performance trajectory.',
+      50: '50 rounds gives you a long view of how you play this course.',
+      100: '100 rounds gives you the full long view of your game.',
     };
     insights.push(
       buildInsight({
         id: `round-count-milestone-${roundsUsed}`,
-        title: `Milestone: ${roundsUsed} Rounds Logged`,
+        title: `${roundsUsed} Rounds Here`,
         description: milestoneCopy[roundsUsed] ?? 'Milestone reached.',
         actionable: 'Use this checkpoint to reset one focus area for the next 5 rounds.',
         minimumRounds: roundsUsed,
@@ -660,7 +660,7 @@ export function generateCoachingInsights(
         insights.push(
           buildInsight({
             id: 'first-hole-opportunity',
-            title: 'First Hole: Setting the Tone for Better Rounds',
+            title: 'First Hole Sets the Tone',
             description:
               'A strong first hole creates momentum. A small routine tweak and conservative target often saves early strokes.',
             actionable: 'First hole is about rhythm, not birdies.',
@@ -815,7 +815,7 @@ export function generateCoachingInsights(
             insights.push(
               buildInsight({
                 id: 'bounce-back-strength',
-                title: 'Strong Bounce-Back Pattern',
+                title: 'Strong Bounce-Back',
                 description: `You rebound well after tough rounds (${Math.round(rate * 100)}% bounce-back rate).`,
                 actionable: 'Use the same recovery routine after a poor round and trust your baseline.',
                 minimumRounds: 8,
@@ -827,8 +827,8 @@ export function generateCoachingInsights(
             insights.push(
               buildInsight({
                 id: 'bounce-back-opportunity',
-                title: 'Post-Bad-Round Reset Opportunity',
-                description: 'Tough rounds tend to carry into the next one. A reset plan can prevent second-day drift.',
+            title: 'Reset After a Bad Round',
+                description: 'Tough rounds tend to carry into the next one. A reset plan can keep the next day cleaner.',
                 actionable: 'After a poor round, set one process goal (not score) for the next round.',
                 minimumRounds: 8,
                 roundsUsed,
@@ -906,7 +906,7 @@ export function generateCoachingInsights(
         insights.push(
           buildInsight({
             id: 'tee-club-confidence-drop',
-            title: `${recentPrimary.club} Confidence Shift`,
+            title: `${recentPrimary.club} Is Slipping`,
             description: `${recentPrimary.club} fairway rate dropped from ${Math.round(priorPrimary.fwPct)}% to ${Math.round(recentPrimary.fwPct)}% in recent rounds.`,
             actionable: `Rebuild trust with a simple target plan and one setup checkpoint before each ${recentPrimary.club} tee shot.`,
             minimumRounds: 6,
@@ -919,8 +919,8 @@ export function generateCoachingInsights(
         insights.push(
           buildInsight({
             id: 'tee-club-strategy-shift',
-            title: 'Tee Club Strategy Shift Detected',
-            description: `You shifted away from ${priorPrimary.club} recently. That often signals confidence drift, not just strategy.`,
+            title: 'Tee Club Strategy Shift',
+            description: `You have moved away from ${priorPrimary.club} lately. That usually means trust has slipped, not just strategy.`,
             actionable: 'On one suitable hole next round, reintroduce your stronger club with a conservative line.',
             minimumRounds: 6,
             roundsUsed,
@@ -964,8 +964,8 @@ export function generateCoachingInsights(
         insights.push(
           buildInsight({
             id: 'post-practice-overload-effect',
-            title: 'Post-Practice Score Drift',
-            description: 'Rounds immediately after practice are trending worse than your baseline, likely from overload.',
+            title: 'Post-Practice Scores Slip',
+            description: 'Rounds right after practice are coming in worse than your baseline, likely from overload.',
             actionable: 'Before rounds, use one swing cue only; avoid technical changes on course days.',
             minimumRounds: 6,
             roundsUsed,
@@ -1228,7 +1228,7 @@ export function generateCoachingInsights(
           title: 'Approaches Long: Better Target Control',
           description:
             'Long misses often come from adrenaline or over-clubbing. Favor center or front-center targets and use your normal swing.',
-          actionable: 'Center green is your safety target when long is your pattern.',
+          actionable: 'Center green is your safety target when long is your usual miss.',
           minimumRounds: 3,
           roundsUsed,
           priorityWeight: 'APPROACHES_FINISHING_LONG',
@@ -1449,8 +1449,8 @@ export function generateCoachingInsights(
         insights.push(
           buildInsight({
             id: 'putting-under-pressure',
-            title: 'Putting Under Pressure Pattern',
-            description: 'Three-putts are higher on holes after birdies than after bogeys, which suggests tempo drift when momentum is positive.',
+            title: 'Putting Under Pressure',
+            description: 'Three-putts show up more often on holes after birdies than after bogeys. That points to pace getting quick when momentum is good.',
             actionable: 'After a birdie, commit to a slower first-putt rhythm on the next green.',
             minimumRounds: 5,
             roundsUsed,
@@ -1524,7 +1524,7 @@ export function generateCoachingInsights(
         insights.push(
           buildInsight({
             id: 'score-after-bogey-vs-birdie',
-            title: 'Response-Hole Pattern',
+            title: 'Response Hole Trend',
             description: 'Your hole after a bogey trends worse than your hole after a birdie. The response hole is a key scoring swing point.',
             actionable: 'Adopt a “neutral reset” routine after bogeys: fairway-first then center-green.',
             minimumRounds: 4,
@@ -1569,7 +1569,7 @@ export function generateCoachingInsights(
       insights.push(
         buildInsight({
           id: 'course-learning-curve-positive',
-          title: `Course Mastery Building: ${bestCourseTrend.course}`,
+          title: `Course Learnings Are Showing: ${bestCourseTrend.course}`,
           description: `Your scoring at ${bestCourseTrend.course} improved from ${bestCourseTrend.firstAvg >= 0 ? '+' : ''}${bestCourseTrend.firstAvg.toFixed(1)} to ${bestCourseTrend.lastAvg >= 0 ? '+' : ''}${bestCourseTrend.lastAvg.toFixed(1)} vs par across repeat rounds.`,
           actionable: 'Carry forward your successful strategy notes for this course.',
           minimumRounds: MIN_SAMPLES.repeatedCourseRounds,
@@ -1581,7 +1581,7 @@ export function generateCoachingInsights(
       insights.push(
         buildInsight({
           id: 'course-learning-curve-opportunity',
-          title: `Course Pattern Drift: ${bestCourseTrend.course}`,
+          title: `Course Is Slipping: ${bestCourseTrend.course}`,
           description: `Recent scores at ${bestCourseTrend.course} are trending higher than your early rounds.`,
           actionable: 'Review your tee-club and target choices on this course before your next round there.',
           minimumRounds: MIN_SAMPLES.repeatedCourseRounds,
@@ -1743,7 +1743,7 @@ export function generateCoachingInsights(
             id: `wind-sensitive-distance-${windWindow.distance}`,
             title: `Wind-Sensitive Approach Window: ${windWindow.distance}`,
             description: `From ${windWindow.distance}, GIR drops from ${Math.round(windWindow.calmRate * 100)}% to ${Math.round(windWindow.windyRate * 100)}% in wind.`,
-            actionable: 'In this distance window, prioritize center-green and commit to a stock trajectory.',
+            actionable: 'In this distance window, prioritize center-green and commit to your stock ball flight.',
             minimumRounds: 6,
             roundsUsed,
             priorityWeight: 'APPROACH_CONDITION_PATTERN',
@@ -1826,19 +1826,19 @@ export function generateCoachingInsights(
   if (roundsUsed === 3 || roundsUsed === 8 || roundsUsed === 20) {
     const unlockText: Record<number, { title: string; description: string; actionable: string }> = {
       3: {
-        title: 'Insights Unlocked: Early Patterns',
-        description: 'You now have enough rounds for early trend detection.',
-        actionable: 'Reach 8 rounds to unlock high-confidence pattern insights.',
+        title: 'Early Trends Are Showing',
+        description: '3 rounds is enough to start showing early trends.',
+        actionable: 'Get to 8 rounds here and the reads get steadier.',
       },
       8: {
-        title: 'Insights Unlocked: High Confidence',
-        description: 'Your patterns are now stable enough for stronger coaching confidence.',
-        actionable: 'Keep tracking to 20 rounds for long-horizon consistency and volatility reads.',
+        title: 'Your Trends Are Getting Clearer',
+        description: '8 rounds here gives you steadier reads.',
+        actionable: 'Keep going to 20 rounds here for the long view.',
       },
       20: {
-        title: 'Insights Unlocked: Long-Horizon Patterns',
-        description: 'You now have enough data for deep consistency and behavioral trend analysis.',
-        actionable: 'Use this checkpoint to reset one long-term priority for the next 10 rounds.',
+        title: 'Long-Term Trends Are In',
+        description: '20 rounds here shows your long-term habits.',
+        actionable: 'Pick one long-term priority for the next 10 rounds.',
       },
     };
     const u = unlockText[roundsUsed];
@@ -1895,7 +1895,7 @@ export function generateCoachingInsights(
         insights.push(
           buildInsight({
             id: 'club-yardage-underclubbing',
-            title: 'Consistent Underclubbing Detected',
+            title: 'Consistent Underclubbing',
             description: finding.message,
             actionable: finding.actionMessage,
             minimumRounds: 5,
@@ -1991,7 +1991,7 @@ export function generateCoachingInsights(
         buildInsight({
           id: 'scoring-archetype-consistent',
           title: 'Steady and Reliable',
-          description: 'Volatility is low and scorecard stability is a strength.',
+          description: 'Your scoring swings stay small, and that is a strength.',
           actionable: 'Keep your current process; gains now come from small, targeted adjustments.',
           minimumRounds: 5,
           roundsUsed,
@@ -2017,7 +2017,7 @@ export function generateCoachingInsights(
     insights.push(
       buildInsight({
         id: `momentum-transition-${pattern.type.toLowerCase()}`,
-        title: 'Hole-to-Hole Momentum Pattern',
+        title: 'Hole-to-Hole Momentum',
         description: pattern.description,
         actionable: pattern.actionable,
         minimumRounds: 5,
@@ -2035,7 +2035,7 @@ export function generateCoachingInsights(
     insights.push(
       buildInsight({
         id: `wedge-zone-${wedge.primaryFinding.type.toLowerCase()}`,
-        title: 'Wedge Zone Performance Pattern',
+        title: 'Wedge Zone Trend',
         description: wedge.primaryFinding.message,
         actionable: wedge.primaryFinding.actionable,
         minimumRounds: 5,
@@ -2127,7 +2127,7 @@ export function generateCoachingInsights(
     insights.push(
       buildInsight({
         id: `bunker-intel-${bunker.primaryFinding.type.toLowerCase()}`,
-        title: 'Bunker Performance Pattern',
+        title: 'Bunker Trend',
         description: bunker.primaryFinding.message,
         actionable: bunker.primaryFinding.actionable,
         minimumRounds: 5,
@@ -2144,7 +2144,7 @@ export function generateCoachingInsights(
     insights.push(
       buildInsight({
         id: `stats-efficiency-${efficiency.category.toLowerCase()}`,
-        title: 'Score vs Stats Efficiency',
+        title: 'Score vs Stat Profile',
         description: efficiency.primaryFinding.message,
         actionable: efficiency.primaryFinding.actionable,
         minimumRounds: 5,
@@ -2161,7 +2161,7 @@ export function generateCoachingInsights(
     insights.push(
       buildInsight({
         id: `handicap-trajectory-${trajectory.primaryFinding.type.toLowerCase()}`,
-        title: 'Handicap Trajectory Attribution',
+        title: 'What Is Moving Your Handicap',
         description: trajectory.primaryFinding.message,
         actionable: trajectory.primaryFinding.actionable,
         minimumRounds: 8,
@@ -2199,7 +2199,7 @@ export function generateCoachingInsights(
     insights.push(
       buildInsight({
         id: `round-fatigue-${fatigue.primaryFinding.type.toLowerCase()}`,
-        title: 'Round Fatigue Pattern',
+        title: 'Round Fatigue',
         description: fatigue.primaryFinding.message,
         actionable: fatigue.primaryFinding.actionable,
         minimumRounds: 8,

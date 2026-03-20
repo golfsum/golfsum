@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { BottomNavigation } from './src/components/BottomNavigation';
 import { HistoryTab } from './src/components/HistoryTab';
 import { AveragesTab } from './src/components/AveragesTab';
@@ -22,12 +23,11 @@ import { CourseSearchScreen } from './src/components/CourseSearchScreen';
 import { CourseAnalyticsScreen } from './src/components/CourseAnalyticsScreen';
 import { ManualScoreEntry } from './src/components/ManualScoreEntry';
 import { ScorecardImportScreen } from './src/components/ScorecardImportScreen';
-import { getRounds, calculateHandicapIndex, resetFirestoreConnection, syncLocalDataToFirestore, loadSampleRounds, getSampleRound, clearLocalRounds } from './src/services/roundsService';
+import { getRounds, calculateHandicapIndex, resetFirestoreConnection, syncLocalDataToFirestore, loadSampleRounds, getSampleRound, clearLocalRounds, seedPebbleHistoryRounds } from './src/services/roundsService';
 import { getCurrentUser, onAuthChange } from './src/services/firebaseAuthService';
 import { RoundDetailView } from './src/components/RoundDetailView';
 import { ScorecardViewer } from './src/components/ScorecardViewer';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
-import { setApiKey, getApiKey } from './src/services/golfCourseApiService';
 import { TabName, SavedRound, ScorecardResult, PendingGpsRoundData } from './src/types';
 import { OSMGolfCourse } from './src/services/openStreetMapService';
 import { CourseDetails } from './src/services/golfCourseApiService';
@@ -57,6 +57,7 @@ import { ProUpgradeScreen } from './src/screens/ProUpgradeScreen';
 import { appStyles as styles } from './src/app/appStyles';
 import { AppScreen } from './src/app/appTypes';
 import { AppMainContent } from './src/app/AppMainContent';
+import SaveConfirmationOverlay from './src/components/SaveConfirmationOverlay';
 import { detectMilestone, MilestoneEvent } from './src/services/milestoneDetector';
 import { consumeWatchEndRoundFlag, initializeWatchReceiver, type WatchBridgeEvent } from './src/services/watchBridgeService';
 import {
@@ -150,6 +151,10 @@ export default function App() {
   
   // Data state
   const [selectedRound, setSelectedRound] = useState<SavedRound | null>(null);
+  const [isNewRound, setIsNewRound] = useState(false);
+  const [showSaveConfirmation, setShowSaveConfirmation] = useState(false);
+  const [saveConfirmationRound, setSaveConfirmationRound] = useState<SavedRound | null>(null);
+  const [saveRatingDelta, setSaveRatingDelta] = useState<{ newRating: number; oldRating: number } | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [selectedCourseData, setSelectedCourseData] = useState<CourseDetails | null>(null);
   const [gpsRoundCourse, setGpsRoundCourse] = useState<{
@@ -157,12 +162,21 @@ export default function App() {
     courseName?: string;
     teeColor?: string;
     startingHole?: number;
+    endingHole?: number;
+    roundLength?: '18' | 'front9' | 'back9';
+    routeHoleNumbers?: number[];
+    routeLabel?: string;
     tournamentMode?: boolean;
+  } | null>(null);
+  const [planningCourse, setPlanningCourse] = useState<{
+    courseId: string;
+    courseName?: string;
+    teeColor?: string;
   } | null>(null);
   const [selectedScorecard, setSelectedScorecard] = useState<ScorecardResult | null>(null);
   const [scorecardCourseSeed, setScorecardCourseSeed] = useState<OSMGolfCourse | null>(null);
   const [scorecardImportMode, setScorecardImportMode] = useState<'course' | 'completed'>('course');
-  const [quickStartSettings, setQuickStartSettings] = useState<{ teeName?: string; startingHole?: number }>({});
+  const [quickStartSettings, setQuickStartSettings] = useState<{ teeName?: string; startingHole?: number; endingHole?: number; roundLength?: '18' | 'front9' | 'back9'; routeHoleNumbers?: number[]; routeLabel?: string }>({});
   const [inProgressRound, setInProgressRound] = useState<InProgressRoundDraft | null>(null);
   const [resumeDraft, setResumeDraft] = useState<InProgressRoundDraft | null>(null);
   const [pendingGpsRoundData, setPendingGpsRoundData] = useState<PendingGpsRoundData | null>(null);
@@ -272,12 +286,30 @@ export default function App() {
         logger.debug('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         setRefreshTrigger(prev => prev + 1); // Refresh the UI
       };
+      (window as any).seedPebbleHistory = async () => {
+        const user = getCurrentUser();
+        if (!user) {
+          logger.debug('❌ Not signed in. Run window.checkAuth() first.');
+          return;
+        }
+        logger.debug('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        logger.debug('🏌️  SEEDING PEBBLE BEACH HISTORY');
+        logger.debug('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        const rounds = await seedPebbleHistoryRounds();
+        logger.debug(`✅ Added ${rounds.length} Pebble rounds`);
+        rounds.forEach((round, index) => {
+          logger.debug(`   ${index + 1}. ${round.courseName} ${round.score}`);
+        });
+        logger.debug('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        setRefreshTrigger(prev => prev + 1);
+      };
       logger.debug('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       logger.debug('💡 CONSOLE COMMANDS:');
       logger.debug('   window.checkAuth()    - Check authentication status');
       logger.debug('   window.syncToCloud()  - Upload local rounds to Firestore');
       logger.debug('   window.testFirestore() - Test Firestore connection');
       logger.debug('   window.resetFirestore() - Reset Firestore after rule changes');
+      logger.debug('   window.seedPebbleHistory() - Add 3 Pebble Beach test rounds');
       logger.debug('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     }
   }, []);
@@ -335,18 +367,6 @@ export default function App() {
 
   useEffect(() => initializePushNotifications(handleNotificationOpen), [handleNotificationOpen]);
 
-  useEffect(() => {
-    const golfApiIoToken = process.env.EXPO_PUBLIC_GOLFAPI_IO_TOKEN;
-    const legacyKey = process.env.EXPO_PUBLIC_GOLF_COURSE_API_KEY;
-
-    if (golfApiIoToken && golfApiIoToken !== 'your-golfapi-io-token-here') {
-      setApiKey(golfApiIoToken, 'Bearer');
-      logger.debug('✅ golfapi.io bearer token loaded from environment');
-    } else if (legacyKey && legacyKey !== 'your-rapidapi-key-here') {
-      setApiKey(legacyKey, 'Key');
-      logger.debug('✅ Legacy golf course API key loaded from environment');
-    }
-  }, []);
 
   useEffect(() => {
     const loadOnboarding = async () => {
@@ -430,13 +450,6 @@ export default function App() {
 
   // Start new round flow
   const handleStartNewRound = () => {
-    if (!getApiKey()) {
-      Alert.alert(
-        'API Key Required',
-        'Set EXPO_PUBLIC_GOLFAPI_IO_TOKEN or EXPO_PUBLIC_GOLF_COURSE_API_KEY to enable course search and round setup.'
-      );
-      return;
-    }
     if (inProgressRound) {
       Alert.alert(
         'Resume Round?',
@@ -486,16 +499,25 @@ export default function App() {
   const handleStartGpsRound = (
     courseId: string,
     courseName?: string,
-    settings?: { teeName?: string; startingHole?: number; tournamentMode?: boolean }
+    settings?: { teeName?: string; startingHole?: number; endingHole?: number; roundLength?: '18' | 'front9' | 'back9'; tournamentMode?: boolean; routeHoleNumbers?: number[]; routeLabel?: string }
   ) => {
     setGpsRoundCourse({
       courseId,
       courseName,
       teeColor: settings?.teeName || 'Blue',
       startingHole: settings?.startingHole || 1,
+      endingHole: settings?.endingHole || 18,
+      roundLength: settings?.roundLength || '18',
+      routeHoleNumbers: settings?.routeHoleNumbers,
+      routeLabel: settings?.routeLabel,
       tournamentMode: settings?.tournamentMode ?? false,
     });
     setCurrentScreen('gps-round');
+  };
+
+  const handleStartPlanning = (courseId: string, courseName?: string, teeColor?: string) => {
+    setPlanningCourse({ courseId, courseName, teeColor });
+    setCurrentScreen('course-planning');
   };
 
   const handleQuickStart = (courseId: string, teeName?: string) => {
@@ -523,6 +545,10 @@ export default function App() {
     setQuickStartSettings({
       teeName: data.teeName,
       startingHole: data.startingHole || 1,
+      endingHole: data.endingHole || 18,
+      roundLength: data.roundLength || '18',
+      routeHoleNumbers: data.routeHoleNumbers,
+      routeLabel: data.routeLabel,
     });
     setResumeDraft(null);
     setGpsRoundCourse(null);
@@ -547,18 +573,17 @@ export default function App() {
     setCurrentScreen('pro-upgrade');
   };
 
-  // Round saved, show post-save summary in round detail
+  // Round saved — show confirmation overlay then navigate to detail
   const handleRoundSaved = (round: SavedRound) => {
+    // Clear entry state
     setSelectedCourseId(null);
     setSelectedCourseData(null);
     setQuickStartSettings({});
     setResumeDraft(null);
     setPendingGpsRoundData(null);
     setSelectedScorecard(null);
-    setSelectedRound(round);
-    setCurrentScreen('round-detail');
-    setActiveTab('history');
-    setRefreshTrigger(prev => prev + 1);
+
+    // Detect milestones and personal bests in background
     const milestone = detectMilestone(round, [...rounds, round], handicapIndex);
     setActiveMilestone(milestone);
     const bests = detectPersonalBests(round, rounds);
@@ -573,7 +598,43 @@ export default function App() {
     } else {
       setPersonalBests([]);
     }
+
+    // Compute Player Rating delta and persist to profile
+    const oldRating = handicapIndex;
+    calculateHandicapIndex().then(async (newRating) => {
+      if (oldRating != null && newRating != null) {
+        setSaveRatingDelta({ oldRating, newRating });
+      } else {
+        setSaveRatingDelta(null);
+      }
+      // Persist playerRating to profile for web dashboard / cross-device
+      if (newRating != null) {
+        try {
+          const profile = await getUserProfile();
+          await saveUserProfile({ ...profile, playerRating: newRating });
+        } catch { /* non-critical */ }
+      }
+    }).catch(() => setSaveRatingDelta(null));
+
+    // Show save confirmation overlay
+    setSaveConfirmationRound(round);
+    setShowSaveConfirmation(true);
   };
+
+  // Called after 2.5s confirmation auto-advance
+  const handleSaveConfirmationComplete = useCallback(() => {
+    setShowSaveConfirmation(false);
+    const round = saveConfirmationRound;
+    setSaveConfirmationRound(null);
+    setSaveRatingDelta(null);
+    if (round) {
+      setSelectedRound(round);
+      setIsNewRound(true);
+      setCurrentScreen('round-detail');
+      setActiveTab('history');
+      setRefreshTrigger(prev => prev + 1);
+    }
+  }, [saveConfirmationRound]);
 
   const handlePlayAgain = (round: SavedRound) => {
     const courseId = round.courseId || round.courseSnapshot?.courseId;
@@ -653,6 +714,11 @@ export default function App() {
     } else if (currentScreen === 'gps-round') {
       setGpsRoundCourse(null);
       setCurrentScreen('course-search');
+    } else if (currentScreen === 'course-planning') {
+      setPlanningCourse(null);
+      setCurrentScreen('course-search');
+    } else if (currentScreen === 'gps-round-review') {
+      setCurrentScreen('round-detail');
     } else {
       setCurrentScreen('tabs');
     }
@@ -667,6 +733,7 @@ export default function App() {
     setSelectedScorecard(null);
     setSelectedCourseName(null);
     setGpsRoundCourse(null);
+    setPlanningCourse(null);
     setPendingGpsRoundData(null);
   };
 
@@ -736,6 +803,8 @@ export default function App() {
       onCommunityCourseSelected={handleCommunityCourseSelected}
       onQuickStart={handleQuickStart}
       onResumeRound={handleResumeRound}
+      isNewRound={isNewRound}
+      onClearNewRound={() => setIsNewRound(false)}
       onRoundSaved={handleRoundSaved}
       onCourseStatsPress={handleCourseStatsPress}
       onRoundPress={handleRoundPress}
@@ -745,6 +814,8 @@ export default function App() {
       onUpgrade={handleUpgrade}
       onSyncSubscriptionEntitlement={syncSubscriptionEntitlement}
       gpsRoundCourse={gpsRoundCourse}
+      planningCourse={planningCourse}
+      onStartPlanning={handleStartPlanning}
     />
   );
 
@@ -754,6 +825,7 @@ export default function App() {
   const currentOnboarding = onboardingStep; // 0 = welcome, 1 = choose path
 
   return (
+    <SafeAreaProvider>
     <GestureHandlerRootView style={styles.container}>
       <ErrorBoundary>
         <SafeAreaView style={styles.container}>
@@ -943,8 +1015,21 @@ export default function App() {
         <BottomNavigation activeTab={activeTab} onTabPress={handleTabPress} />
       )}
 
+      {showSaveConfirmation && saveConfirmationRound && (
+        <SaveConfirmationOverlay
+          visible={showSaveConfirmation}
+          courseName={saveConfirmationRound.courseName}
+          score={saveConfirmationRound.score}
+          scoreToPar={saveConfirmationRound.score - (saveConfirmationRound.holes || []).reduce((s, h) => s + h.par, 0)}
+          teeName={saveConfirmationRound.teeName || 'Standard'}
+          ratingDelta={saveRatingDelta}
+          onComplete={handleSaveConfirmationComplete}
+        />
+      )}
+
         </SafeAreaView>
       </ErrorBoundary>
     </GestureHandlerRootView>
+    </SafeAreaProvider>
   );
 }

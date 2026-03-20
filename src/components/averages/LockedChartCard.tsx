@@ -32,11 +32,11 @@ export const LockedChartCard: React.FC<LockedChartCardProps> = ({
   const remainingText = remaining === 0
     ? ''
     : remaining === 1
-    ? '1 more round to unlock!'
-    : `${remaining} more rounds to unlock`;
+    ? '1 more round here'
+    : `${remaining} more rounds here`;
 
   const helperText = roundsCompleted === 0
-    ? emptyText ?? `Track ${roundsRequired} rounds to unlock this chart`
+    ? emptyText ?? `${roundsRequired} rounds here shows this chart`
     : unlockText ?? remainingText;
 
   return (

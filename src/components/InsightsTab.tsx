@@ -385,7 +385,7 @@ export const InsightsTab: React.FC<Props> = ({
     return (
       <View style={styles.emptyContainer}>
         <Ionicons name="hourglass-outline" size={48} color="#6B7280" />
-        <Text style={styles.emptyText}>Analyzing your game...</Text>
+        <Text style={styles.emptyText}>Loading your stats</Text>
       </View>
     );
   }
@@ -395,9 +395,9 @@ export const InsightsTab: React.FC<Props> = ({
     const progress = 0;
     const sampleInsights = [
       {
-        type: 'Pattern',
+        type: 'Trend',
         icon: 'analytics-outline' as keyof typeof Ionicons.glyphMap,
-        title: 'Fairway Miss Pattern',
+        title: 'Fairway Miss Trend',
         text: 'You miss 65% of fairways left with Driver on holes under 380 yards. Your 3-wood FIR is 83% on those holes. Consider the 3-wood on shorter par 4s.',
       },
       {
@@ -420,15 +420,15 @@ export const InsightsTab: React.FC<Props> = ({
         <Ionicons name="bulb-outline" size={64} color="#10B981" />
         <Text style={styles.emptyTitle}>{EMPTY_STATE_COPY.titles.yourInsightsAreBuilding}</Text>
         <Text style={styles.emptyTextCentered}>
-          GolfSum starts learning your game from round one. Coaching gets sharper as your sample grows.
+          Play or import a few rounds and your stats will start to show here.
         </Text>
         <View style={styles.progressSection}>
           <Text style={styles.progressText}>
-            {progress} of {requiredRounds} rounds complete
+            {progress} of {requiredRounds} rounds here
           </Text>
           <View style={styles.progressBarTrack} />
           <Text style={styles.progressSubtext}>
-            {requiredRounds} more rounds until your first coaching insights
+            {requiredRounds} rounds here shows your first tips
           </Text>
         </View>
         {onNavigateToPlay && (
@@ -442,7 +442,7 @@ export const InsightsTab: React.FC<Props> = ({
           </TouchableOpacity>
         )}
         <View style={styles.featurePreview}>
-          <Text style={styles.previewTitle}>What You'll See</Text>
+          <Text style={styles.previewTitle}>WHAT SHOWS HERE</Text>
           <TouchableOpacity
             style={styles.previewInsightCard}
             onPress={() => setSampleInsightIndex(prev => (prev + 1) % sampleInsights.length)}
@@ -471,11 +471,11 @@ export const InsightsTab: React.FC<Props> = ({
           </TouchableOpacity>
           <View style={styles.featureRow}>
             <Ionicons name="analytics-outline" size={16} color="#10B981" />
-            <Text style={styles.featureText}>Pattern analysis across courses</Text>
+            <Text style={styles.featureText}>What shows up across your rounds</Text>
           </View>
           <View style={styles.featureRow}>
             <Ionicons name="trending-up" size={16} color="#10B981" />
-            <Text style={styles.featureText}>What to focus on next</Text>
+            <Text style={styles.featureText}>What to work on next</Text>
           </View>
           <View style={styles.featureRow}>
             <Ionicons name="pulse" size={16} color="#10B981" />
@@ -499,7 +499,7 @@ export const InsightsTab: React.FC<Props> = ({
         <Ionicons name="analytics-outline" size={64} color="#10B981" />
         <Text style={styles.emptyTitle}>{EMPTY_STATE_COPY.titles.oneMoreRound}</Text>
         <Text style={styles.emptyTextCentered}>
-          One more round and your first insights will generate. Patterns need at least 2 data points.
+          One more round and your first tips will show here.
         </Text>
         <View style={styles.firstRoundCard}>
           <Text style={styles.firstRoundLabel}>Your last round</Text>
@@ -524,9 +524,9 @@ export const InsightsTab: React.FC<Props> = ({
 
     const sampleInsights = [
       {
-        type: 'Pattern',
+        type: 'Trend',
         icon: 'analytics-outline' as keyof typeof Ionicons.glyphMap,
-        title: 'Fairway Miss Pattern',
+        title: 'Fairway Miss Trend',
         text: 'You miss 65% of fairways left with Driver on holes under 380 yards. Your 3-wood FIR is 83% on those holes. Consider the 3-wood on shorter par 4s.',
       },
       {
@@ -551,7 +551,7 @@ export const InsightsTab: React.FC<Props> = ({
         <Text style={styles.emptyTitle}>{EMPTY_STATE_COPY.titles.yourInsightsAreBuilding}</Text>
         <View style={styles.progressSection}>
           <Text style={styles.progressText}>
-            You're {rounds.length} of {requiredRounds} rounds complete
+            {rounds.length} of {requiredRounds} rounds here
           </Text>
           <View style={styles.progressBarTrack}>
             {progress > 0 && (
@@ -559,7 +559,7 @@ export const InsightsTab: React.FC<Props> = ({
             )}
           </View>
           <Text style={styles.progressSubtext}>
-            {remainingRounds} more round{remainingRounds !== 1 ? 's' : ''} until your first coaching insights
+            {remainingRounds} more round{remainingRounds !== 1 ? 's' : ''} for your first tips here
           </Text>
         </View>
         {onNavigateToPlay && (
@@ -568,7 +568,7 @@ export const InsightsTab: React.FC<Props> = ({
           </TouchableOpacity>
         )}
         <View style={styles.featurePreview}>
-          <Text style={styles.previewTitle}>What You'll See</Text>
+          <Text style={styles.previewTitle}>WHAT SHOWS HERE</Text>
           <TouchableOpacity
             style={styles.previewInsightCard}
             onPress={() => setSampleInsightIndex(prev => (prev + 1) % sampleInsights.length)}
@@ -597,11 +597,11 @@ export const InsightsTab: React.FC<Props> = ({
           </TouchableOpacity>
           <View style={styles.featureRow}>
             <Ionicons name="analytics-outline" size={16} color="#10B981" />
-            <Text style={styles.featureText}>Pattern analysis across courses</Text>
+            <Text style={styles.featureText}>Trends across your rounds</Text>
           </View>
           <View style={styles.featureRow}>
             <Ionicons name="trending-up" size={16} color="#10B981" />
-            <Text style={styles.featureText}>What to focus on next</Text>
+            <Text style={styles.featureText}>What to work on next</Text>
           </View>
           <View style={styles.featureRow}>
             <Ionicons name="pulse" size={16} color="#10B981" />
@@ -631,7 +631,7 @@ export const InsightsTab: React.FC<Props> = ({
           <View style={styles.sampleBannerText}>
             <Text style={styles.sampleBannerTitle}>Sample data</Text>
             <Text style={styles.sampleBannerSubtitle}>
-              This is demo content. Play your first round to see your own insights.
+              This is demo content. Play your first round to see your own stats.
             </Text>
           </View>
           <TouchableOpacity
@@ -659,10 +659,10 @@ export const InsightsTab: React.FC<Props> = ({
           style={[styles.subTabButton, activeTab === 'patterns' && styles.subTabButtonActive]}
           onPress={() => setActiveTab('patterns')}
           accessibilityRole="tab"
-          accessibilityLabel="Patterns tab"
+          accessibilityLabel="Trends tab"
           accessibilityState={{ selected: activeTab === 'patterns' }}
         >
-          <Text style={[styles.subTabButtonText, activeTab === 'patterns' && styles.subTabButtonTextActive]}>Patterns</Text>
+          <Text style={[styles.subTabButtonText, activeTab === 'patterns' && styles.subTabButtonTextActive]}>Trends</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.subTabButton, activeTab === 'trends' && styles.subTabButtonActive]}
@@ -692,9 +692,9 @@ export const InsightsTab: React.FC<Props> = ({
                 <View>
                   <Text style={styles.weeklyFocusLabel}>WEEKLY FOCUS</Text>
                   <Text style={styles.weeklyFocusConfidence}>
-                    {weeklyFocus.confidence === InsightConfidence.HIGH ? 'High confidence' :
-                     weeklyFocus.confidence === InsightConfidence.MEDIUM ? 'Based on recent rounds' :
-                     'Early signal'}
+                    {weeklyFocus.confidence === InsightConfidence.HIGH ? 'Strong read' :
+                     weeklyFocus.confidence === InsightConfidence.MEDIUM ? 'Recent rounds' :
+                     'Early read'}
                   </Text>
                 </View>
               </View>
@@ -726,7 +726,7 @@ export const InsightsTab: React.FC<Props> = ({
               <Ionicons name="checkmark-circle" size={48} color="#10B981" />
               <Text style={styles.noInsightsTitle}>Looking Good!</Text>
               <Text style={styles.noInsightsText}>
-                Keep playing to build more data for personalized insights
+                Keep playing and more will show here
               </Text>
             </View>
           )}
@@ -735,16 +735,16 @@ export const InsightsTab: React.FC<Props> = ({
             <View style={styles.noInsightsCard}>
               <Ionicons name="golf-outline" size={48} color="#6B7280" />
               <Text style={styles.noInsightsTitle}>
-                {anyTrackedStatsEnabled ? 'No Insights Yet' : 'No Stats Enabled'}
+                {anyTrackedStatsEnabled ? 'No Trends Yet' : 'No Stats Enabled'}
               </Text>
               <Text style={styles.noInsightsText}>
                 {anyTrackedStatsEnabled
-                  ? 'Keep tracking your stats to generate more personalized insights.'
-                  : 'Enable the stats you want to track in Profile - Stat Tracking.'}
+                  ? 'Keep logging your stats and this will fill in.'
+                  : 'Turn on the stats you want to log in Profile.'}
               </Text>
               {!anyTrackedStatsEnabled && (
                 <Text style={styles.noInsightsSubtext}>
-                  GolfSum only analyzes stats you choose to track.
+                  Only tracked stats show here.
                 </Text>
               )}
             </View>
@@ -777,7 +777,7 @@ export const InsightsTab: React.FC<Props> = ({
           )}
           {patternInsights.length > 0 && (
             <Text style={styles.coachToggleHint}>
-              Player view = simplified guidance - Coach view = deeper explanation
+              Player view shows the simple read. Coach view shows more detail.
             </Text>
           )}
 
@@ -785,10 +785,10 @@ export const InsightsTab: React.FC<Props> = ({
             <View style={styles.section}>
               <View style={styles.patternHeader}>
                 <Ionicons name="analytics" size={24} color="#10B981" />
-                <Text style={styles.patternTitle}>Pattern Analysis</Text>
+                <Text style={styles.patternTitle}>Shot Trends</Text>
               </View>
               <Text style={styles.patternSubtitle}>
-                Detailed insights based on tracked shot data
+                Shot-by-shot trends from tracked rounds
               </Text>
               {patternInsights.map((insight, i) => (
                 <PatternInsightCard
@@ -810,9 +810,9 @@ export const InsightsTab: React.FC<Props> = ({
             <View style={styles.section}>
               <Ionicons name="analytics-outline" size={48} color="#6B7280" />
               <Text style={styles.noInsightsTitle}>{EMPTY_STATE_COPY.titles.noPatternInsightsYet}</Text>
-              <Text style={styles.noInsightsText}>
-                {EMPTY_STATE_COPY.noPatternDataTrackMore}
-              </Text>
+            <Text style={styles.noInsightsText}>
+              {EMPTY_STATE_COPY.noPatternDataTrackMore}
+            </Text>
               <View style={styles.patternProgressCard}>
                 {patternStatProgress.map((item) => {
                   const progress = Math.min(100, Math.round((item.tracked / item.required) * 100));
@@ -830,7 +830,7 @@ export const InsightsTab: React.FC<Props> = ({
                       </View>
                       <Text style={styles.patternProgressHint}>
                         {remaining > 0
-                          ? `Need ${remaining} more round${remaining !== 1 ? 's' : ''}.`
+                          ? `${remaining} more round${remaining !== 1 ? 's' : ''} here`
                           : 'Ready'}
                       </Text>
                     </View>
@@ -894,9 +894,9 @@ export const InsightsTab: React.FC<Props> = ({
           ) : (
             <View style={styles.section}>
               <Ionicons name="trending-up" size={48} color="#6B7280" />
-              <Text style={styles.noInsightsTitle}>Not enough data yet</Text>
+              <Text style={styles.noInsightsTitle}>No Trends Yet</Text>
               <Text style={styles.noInsightsText}>
-                Track at least 5 rounds to see how your scores, putting, and ball-striking trend over time.
+                Add 5 rounds to see scoring, putting, and ball-striking trends.
               </Text>
             </View>
           )}
@@ -917,18 +917,18 @@ export const InsightsTab: React.FC<Props> = ({
       ) : (
         <>
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Your Insights</Text>
+            <Text style={styles.sectionTitle}>Your Stats</Text>
             <Text style={styles.noInsightsText}>
-              You can still view insights from your trial rounds.
+              You can still view stats from your trial rounds.
             </Text>
           </View>
           <View style={[styles.section, styles.deeperAnalysisCard]}>
-            <Text style={styles.deeperAnalysisTitle}>Deeper analysis available</Text>
+            <Text style={styles.deeperAnalysisTitle}>More Stats Available</Text>
             <Text style={styles.deeperAnalysisText}>
-              Track detailed stats to analyze driving patterns, approach accuracy, and where strokes are leaking.
+              Log detailed stats to see driving misses, approach accuracy, and where shots are getting away from you.
             </Text>
             <TouchableOpacity onPress={() => onNavigateToProfile?.('insights_card')} accessibilityRole="button">
-              <Text style={styles.deeperAnalysisLink}>Learn more</Text>
+              <Text style={styles.deeperAnalysisLink}>See full stat tracking</Text>
             </TouchableOpacity>
           </View>
         </>
@@ -936,11 +936,11 @@ export const InsightsTab: React.FC<Props> = ({
 
       <View style={styles.footer}>
         <Text style={styles.footerText}>
-          Based on {rounds.length} round{rounds.length !== 1 ? 's' : ''}
+          {rounds.length} round{rounds.length !== 1 ? 's' : ''} here
         </Text>
         {rounds.length < INSIGHT_THRESHOLDS.BENCHMARKS && (
           <Text style={styles.footerSubtext}>
-            {INSIGHT_THRESHOLDS.BENCHMARKS - rounds.length} more rounds to see benchmark comparisons
+            {INSIGHT_THRESHOLDS.BENCHMARKS - rounds.length} more rounds for benchmark comparisons
           </Text>
         )}
       </View>
@@ -991,11 +991,11 @@ const InsightCard: React.FC<{
       </View>
       <Text style={styles.insightCardDesc}>{insight.description}</Text>
       {insight.actionable && (
-        <Text style={styles.insightCardAction}>- {insight.actionable}</Text>
+        <Text style={styles.insightCardAction}>{insight.actionable}</Text>
       )}
       {onFeedback && (
         <View style={styles.insightFeedbackRow}>
-          <Text style={styles.insightFeedbackLabel}>Was this helpful?</Text>
+          <Text style={styles.insightFeedbackLabel}>Helpful?</Text>
           <View style={styles.insightFeedbackButtons}>
             <TouchableOpacity
               style={[styles.feedbackButton, feedback === 'up' && styles.feedbackButtonActive]}
@@ -1082,7 +1082,7 @@ const BenchmarkDeltaCard: React.FC<{
         </Text>
       </View>
       <Text style={styles.strokesDisclaimer}>
-        Vs. handicap benchmark, using available round stats. Directional guidance only.
+        Vs. handicap benchmark. Directional only.
       </Text>
     </View>
   );

@@ -70,6 +70,8 @@ export interface GpsShotLog {
     humidity?: number | null;
   } | null;
   loggedAt?: string;
+  playerConfirmedDistance?: boolean;
+  addedRetrospectively?: boolean;
 }
 
 export interface GpsHoleSummary {
@@ -79,15 +81,30 @@ export interface GpsHoleSummary {
   putts?: number | null;
 }
 
+export interface GpsHoleDataQuality {
+  holeNumber: number;
+  dataComplete: boolean;
+  flags?: {
+    shotCountFlagged?: boolean;
+    distanceJumpFlagged?: boolean;
+    playerConfirmed?: boolean;
+  };
+}
+
 export interface PendingGpsRoundData {
   courseId: string;
   courseName: string;
   teeName?: string;
   startingHole?: number;
+  endingHole?: number;
+  roundLength?: '18' | 'front9' | 'back9';
+  routeHoleNumbers?: number[];
+  routeLabel?: string;
   startedAt: number;
   endedAt: number;
   gpsShots: GpsShotLog[];
   gpsHoleSummaries?: GpsHoleSummary[];
+  gpsHoleFlags?: GpsHoleDataQuality[];
 }
 
 // History Stat State - Critical for WHS Compliance
@@ -197,6 +214,7 @@ export interface SavedRound {
   notes?: string;
   tee?: string;
   teeName?: string;
+  roundLength?: '18' | 'front9' | 'back9';
   penalties?: number; // Penalty strokes for the round
   roundSource?: 'manual' | 'import';
   entryMode?: 'basic' | 'advanced';
@@ -206,12 +224,14 @@ export interface SavedRound {
   gpsShots?: GpsShotLog[];
   gpsShotCount?: number;
   gpsHoleSummaries?: GpsHoleSummary[];
+  gpsHoleFlags?: GpsHoleDataQuality[];
 
   // Round holes (for NDB calculation)
   holes?: RoundHole[];
 
   // Demo/Sample Data
   isSample?: boolean;
+  isSeededTestRound?: boolean;
 }
 
 // Hole-by-hole data for WHS Net Double Bogey
@@ -248,6 +268,12 @@ export interface RoundHole {
   greenSideBunker?: boolean;
   /** True when the golfer explicitly tapped "Save Hole". The definitive signal for played vs unplayed. */
   isSaved?: boolean;
+  dataComplete?: boolean;
+  flags?: {
+    shotCountFlagged?: boolean;
+    distanceJumpFlagged?: boolean;
+    playerConfirmed?: boolean;
+  };
 }
 
 // Course Source - Critical for WHS Credibility
@@ -281,6 +307,7 @@ export interface UserDefinedCourse {
 
 // User Profile for improved OCR and personalization
 export interface UserProfile {
+  playerRating?: number | null;
   // Personal Info (helps OCR recognize their name on scorecard)
   personalInfo: {
     name: string;              // "John Doe"
@@ -374,6 +401,7 @@ export interface UserProfile {
 
 // Default profile for new users
 export const getDefaultProfile = (): UserProfile => ({
+  playerRating: null,
   personalInfo: {
     name: '',
     nickname: '',

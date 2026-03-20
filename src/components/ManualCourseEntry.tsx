@@ -241,7 +241,7 @@ export const ManualCourseEntry: React.FC<Props> = ({ onBack, onCourseCreated }) 
           </View>
         </View>
         
-        {/* Continue Button */}
+        {/* Next Button */}
         <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>
           <Text style={styles.continueButtonText}>{UI_COPY.manualCourseEntry.continue}</Text>
           <Ionicons name="arrow-forward" size={20} color="#fff" />
@@ -334,7 +334,7 @@ export const ManualCourseEntry: React.FC<Props> = ({ onBack, onCourseCreated }) 
                     style={[styles.modalButton, styles.modalButtonPrimary]}
                     onPress={handleSaveWithRating}
                   >
-                    <Text style={styles.modalButtonTextPrimary}>{FEEDBACK_COPY.actions.saveAndContinue}</Text>
+                    <Text style={styles.modalButtonTextPrimary}>Save Course</Text>
                   </TouchableOpacity>
                 </View>
               </>

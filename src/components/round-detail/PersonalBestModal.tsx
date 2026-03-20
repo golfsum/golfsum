@@ -23,7 +23,7 @@ export const PersonalBestModal: React.FC<PersonalBestModalProps> = ({
     <Modal visible transparent animationType="fade">
       <View style={styles.personalBestOverlay}>
         <View style={styles.personalBestCard}>
-          <Text style={styles.personalBestTitle}>New Personal Best!</Text>
+          <Text style={styles.personalBestTitle}>New Personal Best</Text>
           <View style={styles.personalBestList}>
             {personalBests.map(record => (
               <View key={record.id} style={styles.personalBestRow}>
@@ -48,9 +48,9 @@ export const PersonalBestModal: React.FC<PersonalBestModalProps> = ({
               style={styles.personalBestContinue}
               onPress={onContinue}
               accessibilityRole="button"
-              accessibilityLabel="Continue"
+              accessibilityLabel="Resume"
             >
-              <Text style={styles.personalBestContinueText}>Continue</Text>
+              <Text style={styles.personalBestContinueText}>Done</Text>
             </TouchableOpacity>
           </View>
         </View>

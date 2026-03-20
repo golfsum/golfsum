@@ -67,6 +67,18 @@ export function useRoundSave({
   firstSaveTimestampRef,
   lastSaveTimestampRef,
 }: UseRoundSaveParams) {
+  const resolvedRoundLength = gpsRoundData?.roundLength || '18';
+  const roundRange = resolvedRoundLength === 'front9'
+    ? { start: 1, end: 9, total: 9 }
+    : resolvedRoundLength === 'back9'
+      ? { start: 10, end: 18, total: 9 }
+      : { start: 1, end: 18, total: 18 };
+  const filterRoundLengthHoles = useCallback((holesOverride: HoleScore[]) => (
+    roundRange.total === 18
+      ? holesOverride
+      : holesOverride.filter((hole) => hole.hole >= roundRange.start && hole.hole <= roundRange.end)
+  ), [roundRange.end, roundRange.start, roundRange.total]);
+
   const resolveRoundWeather = useCallback(async (): Promise<LocalWeatherData | null> => {
     if (currentWeather) return currentWeather;
 
@@ -130,6 +142,7 @@ export function useRoundSave({
 
   const toRoundHoles = useCallback((holesOverride: HoleScore[]): RoundHole[] => {
     return holesOverride.map(h => ({
+      ...(gpsRoundData?.gpsHoleFlags?.find((entry) => entry.holeNumber === h.hole) || {}),
       number: h.hole,
       par: h.par,
       score: (h.isSaved || (h.score !== null && h.score > 0)) ? (h.score ?? h.par) : 0,
@@ -146,7 +159,7 @@ export function useRoundSave({
       greenSideBunker: statPreferences.bunkers ? h.greenSideBunker : undefined,
       isSaved: h.isSaved || undefined,
     }));
-  }, [statPreferences, userProfile]);
+  }, [gpsRoundData?.gpsHoleFlags, statPreferences, userProfile]);
 
   const saveIncompleteRound = useCallback(async (
     reason: 'finished-early' | 'nine-holes' | 'weather' | 'practice' | 'other'
@@ -155,9 +168,10 @@ export function useRoundSave({
 
     setIsSaving(true);
     try {
-      const stats = calculateStats();
+      const scopedHoles = filterRoundLengthHoles(holes);
+      const stats = calculateStats(scopedHoles);
 
-      const holesPlayedNumbers = holes
+      const holesPlayedNumbers = scopedHoles
         .filter(h => h.isSaved || (h.score !== null && h.score > 0))
         .map(h => h.hole);
       const holesCompletedCount = holesPlayedNumbers.length;
@@ -174,11 +188,11 @@ export function useRoundSave({
         : usesWrappedOrder
           ? holesCompletedCount
           : currentHole + 1;
-      const plannedHoles = 18;
+      const plannedHoles = roundRange.total;
 
       const courseHandicap = 0;
 
-      let roundHoles = toRoundHoles(holes);
+      let roundHoles = toRoundHoles(scopedHoles);
 
       let isNineHoleRound = false;
       let needsPairing = false;
@@ -239,6 +253,7 @@ export function useRoundSave({
         imageUri: '',
         tee: selectedTeeBox.name,
         teeName: selectedTeeBox.name,
+        roundLength: resolvedRoundLength,
         holes: roundHoles,
         isIncomplete,
         isNineHoleRound,
@@ -261,7 +276,7 @@ export function useRoundSave({
       onRoundSaved(savedRound);
     } catch (error) {
       logger.error('Error saving incomplete round:', error);
-      Alert.alert('Error', 'Failed to save round. Please try again.');
+      Alert.alert('Round did not save', 'Tap to try again.');
     } finally {
       setIsSaving(false);
     }
@@ -269,7 +284,7 @@ export function useRoundSave({
     course, selectedTeeBox, holes, currentHole, startType, startingHole, eventTag,
     statPreferences, hasStatAccess, entryMode, courseElevationFt,
     weatherFront9, weatherBack9, windDirection, gpsRoundData, onRoundSaved,
-    setIsSaving, calculateStats, resolveRoundWeather, toRoundHoles,
+    setIsSaving, calculateStats, filterRoundLengthHoles, resolveRoundWeather, resolvedRoundLength, roundRange.total, toRoundHoles,
   ]);
 
   const generateScorecardHTML = useCallback((holesOverride = holes): string => {
@@ -359,7 +374,7 @@ ${renderRow('GIR', [...back9.map(girLabel), '-', `${holesOverride.filter(h => h.
 
     setIsSaving(true);
     try {
-      const holesToUse = holesOverride ?? holes;
+      const holesToUse = filterRoundLengthHoles(holesOverride ?? holes);
       const stats = calculateStats(holesToUse);
       const html = generateScorecardHTML(holesToUse);
 
@@ -407,8 +422,16 @@ ${renderRow('GIR', [...back9.map(girLabel), '-', `${holesOverride.filter(h => h.
         imageUri: '',
         tee: selectedTeeBox.name,
         teeName: selectedTeeBox.name,
+        roundLength: resolvedRoundLength,
         holes: roundHoles,
         isAcceptableForHandicap: false,
+        ...(roundRange.total === 9 && {
+          isNineHoleRound: true,
+          holeCount: savedHoles.length,
+          plannedHoles: 9,
+          needsPairing: true,
+          endRoundReason: 'nine-holes' as const,
+        }),
         ...(isIncomplete && {
           isIncomplete: true,
           holeCount: savedHoles.length,
@@ -427,14 +450,14 @@ ${renderRow('GIR', [...back9.map(girLabel), '-', `${holesOverride.filter(h => h.
       onRoundSaved(savedRound);
     } catch (error) {
       logger.error('Error saving round:', error);
-      Alert.alert('Error', 'Failed to save round. Please try again.');
+      Alert.alert('Round did not save', 'Tap to try again.');
     } finally {
       setIsSaving(false);
     }
   }, [
     course, selectedTeeBox, holes, statPreferences, hasStatAccess, entryMode,
     courseElevationFt, weatherFront9, weatherBack9, windDirection, gpsRoundData, onRoundSaved,
-    setIsSaving, calculateStats, resolveRoundWeather, toRoundHoles, generateScorecardHTML,
+    setIsSaving, calculateStats, filterRoundLengthHoles, resolveRoundWeather, resolvedRoundLength, roundRange.total, toRoundHoles, generateScorecardHTML,
   ]);
 
   const handleSaveRound = useCallback(async (holesOverride?: HoleScore[]) => {

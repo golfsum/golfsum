@@ -99,11 +99,11 @@ export const BallStrikingSubTab: React.FC<BallStrikingSubTabProps> = ({
               : EMPTY_STATE_COPY.noGreenDataTrackMore
           }
           insight="More greens means more birdie chances and fewer scramble situations."
-          infoText="Reaching more greens lowers scoring volatility and saves strokes."
+          infoText="More greens steady your scoring and save strokes."
           onInfoPress={() =>
             showTooltip(
               'Greens in Regulation',
-              'Reaching more greens lowers scoring volatility and saves strokes.'
+              'More greens steady your scoring and save strokes.'
             )
           }
         />
