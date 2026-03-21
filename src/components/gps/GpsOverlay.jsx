@@ -19,6 +19,7 @@ import * as Crypto from 'expo-crypto';
 import { haversineYards } from '../../services/haversine';
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout';
 import { colors, radius } from '../../theme/tokens';
+import { GPS_MAP_OVERLAY } from '../../constants/gpsLayout';
 
 let MapboxGL = null;
 try {
@@ -465,14 +466,16 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
 
   // Report overlay state to parent (single effect with all computed values)
   useEffect(() => {
+    // While adding a shot, mapMode is the source of truth: placing vs confirming.
+    // Do not collapse confirming into placing — parent HUD uses this for copy + chrome.
     const shotFlow =
-      mapModeRef.current !== 'gps'
-        ? 'placing'
-        : selectedClub
+      mapModeRef.current === 'gps'
+        ? selectedClub
           ? 'mark'
           : clubPickerOpen
             ? 'club'
-            : 'idle';
+            : 'idle'
+        : mapModeRef.current;
     onOverlayStateChange?.({
       anySheet: clubPickerOpen,
       shotFlow,
@@ -622,9 +625,9 @@ const styles = StyleSheet.create({
   },
   targetCard: {
     position: 'absolute',
-    left: 10,
-    right: 10,
-    bottom: 76,
+    left: GPS_MAP_OVERLAY.SHOT_ROW_LEFT,
+    right: GPS_MAP_OVERLAY.SHOT_ROW_LEFT,
+    bottom: GPS_MAP_OVERLAY.FLOATING_PANEL_BOTTOM_OFFSET,
     maxHeight: 200,
     backgroundColor: 'rgba(10, 10, 10, 0.98)',
     borderWidth: 1,

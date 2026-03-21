@@ -31,7 +31,18 @@ import CoachingInsightCard from '../components/gps/CoachingInsightCard';
 import ScoreEntrySheet from '../components/gps/ScoreEntrySheet';
 import { isGpsDistanceSuspect, isTeeMarkerSuspect } from '../services/reportDetection';
 import { colors, radius, spacing, typography } from '../theme/tokens';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  GPS_ABOVE_BAR,
+  GPS_BAR,
+  GPS_COACHING,
+  GPS_MAPBOX,
+  GPS_MAP_OVERLAY,
+  GPS_RIGHT_STACK,
+  GPS_VIEWPORT,
+  GPS_Z,
+  getGpsCompactToastBottom,
+} from '../constants/gpsLayout';
 import { loadPlan } from '../services/CoursePlanningService';
 import { getCurrentUser } from '../services/firebaseAuthService';
 
@@ -42,12 +53,6 @@ try {
 } catch {
   MapboxGL = null;
 }
-
-const NAV_BAR_HEIGHT = 44;
-const HOLE_META_HEIGHT = 28;
-const HOLE_SELECTOR_HEIGHT = 44;
-const BOTTOM_ACTION_BAR_HEIGHT = 48;
-const YARDAGE_BAR_HEIGHT = 0;
 
 function findPoi(hole, poi, location) {
   return (hole?.pois || []).find((p) => p?.POI === poi && (!location || p?.Location === location));
@@ -542,11 +547,8 @@ export function GpsRoundScreen({
   const [liveActivityEnabled, setLiveActivityEnabled] = useState(false);
   const [coachingEnabled, setCoachingEnabled] = useState(true);
   const effectiveViewportHeight = Math.max(0, windowHeight - insets.top - insets.bottom);
-  const compactLayout = effectiveViewportHeight <= 860;
-  const overlayBottom = compactLayout ? 10 : 12;
-  const raisedBottom = compactLayout ? 12 : 14;
-  const midBottom = compactLayout ? 12 : 14;
-  const toastBottom = compactLayout ? 14 : 16;
+  const compactLayout = effectiveViewportHeight <= GPS_VIEWPORT.COMPACT_MAX_HEIGHT;
+  const toastBottom = getGpsCompactToastBottom(effectiveViewportHeight);
   const [showGreenSheet, setShowGreenSheet] = useState(false);
   const [recentRounds, setRecentRounds] = useState([]);
   const [greenMapOnly, setGreenMapOnly] = useState(false);
@@ -987,7 +989,9 @@ export function GpsRoundScreen({
     if (inlineCoachingCard && activeNudge.title === 'Course note') return null;
     return activeNudge;
   }, [activeNudge, inlineCoachingCard]);
-  const coachingOverlayBottom = insets.bottom + BOTTOM_ACTION_BAR_HEIGHT + YARDAGE_BAR_HEIGHT + 14;
+  // HUD sits inside a bottom-padded overlay; nudge offset is relative to that inset region.
+  const coachingOverlayBottom =
+    GPS_BAR.BOTTOM_ACTION + GPS_BAR.YARDAGE + GPS_COACHING.NUDGE_GAP_ABOVE_BAR;
   const detectLieAtCoordinate = useCallback((coord) => (
     detectLiveLie(coord, currentHole, teeBack, greenCenter)
   ), [currentHole, greenCenter, teeBack]);
@@ -1015,7 +1019,7 @@ export function GpsRoundScreen({
   }, [currentHoleShots, userPos]);
   const currentShotDisplay = useMemo(() => {
     const lastShot = currentHoleShots[currentHoleShots.length - 1] || null;
-    if (overlayState.shotFlow === 'placing') {
+    if (overlayState.shotFlow === 'placing' || overlayState.shotFlow === 'confirming') {
       return {
         label: overlayState.selectedClub || effectiveSuggestedClub?.club || `Shot ${currentHoleShots.length + 1}`,
         yards: tournamentMode ? centerYards : playingDistance?.adjustedYards ?? centerYards,
@@ -1768,51 +1772,55 @@ export function GpsRoundScreen({
 
   if (!MapboxGL) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.fallbackCenter}>
+      <View style={styles.container}>
+        <View style={[styles.fallbackCenter, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           <Text style={styles.errorText}>@rnmapbox/maps is not installed yet.</Text>
           <TouchableOpacity style={styles.backBtn} onPress={onBack}>
             <Text style={styles.backBtnText}>Back</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.fallbackCenter}>
+      <View style={styles.container}>
+        <View style={[styles.fallbackCenter, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           <ActivityIndicator size="large" color="#10B981" />
           <Text style={styles.loadingText}>Downloading course…</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (error) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.fallbackCenter}>
+      <View style={styles.container}>
+        <View style={[styles.fallbackCenter, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           <Text style={styles.errorText}>{error || 'Course data unavailable'}</Text>
           <TouchableOpacity style={styles.backBtn} onPress={onBack}>
             <Text style={styles.backBtnText}>Back</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+    <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <View style={styles.screenShell}>
-      <GpsGlassChrome
+      <View
+        style={[styles.gpsTopChromeWrap, { paddingTop: insets.top }]}
+        pointerEvents="box-none"
+      >
+        <GpsGlassChrome
         courseName={courseName || course.courseName || 'GPS Round'}
         cachedLabel={cached ? 'Cached on device' : course?.source === 'LOCAL_SAMPLE' ? 'Local sample data' : 'Downloaded now'}
         selectedTeeName={selectedTee?.name || teeColor}
         selectedTeeYardage={selectedTeeYardage}
-        topInset={insets.top}
+        topInset={0}
         routeLabel={routeLabel}
         hole={currentHole}
         currentHoleIndex={currentHoleIndex}
@@ -1839,7 +1847,8 @@ export function GpsRoundScreen({
         isOffCourse={isOffCourse}
         showOffCourse={isOffCourse}
         teeYardage={selectedTeeYardage}
-      />
+        />
+      </View>
 
       <MissedShotNudge
         nudgeHole={nudgeHole}
@@ -1861,8 +1870,8 @@ export function GpsRoundScreen({
           attributionEnabled={false}
           scaleBarEnabled={false}
           compassEnabled={false}
-          logoPosition={{ bottom: 8, left: 8 }}
-          attributionPosition={{ bottom: 8, right: 8 }}
+          logoPosition={{ bottom: GPS_MAPBOX.LOGO_ATTRIBUTION_EDGE, left: GPS_MAPBOX.LOGO_ATTRIBUTION_EDGE }}
+          attributionPosition={{ bottom: GPS_MAPBOX.LOGO_ATTRIBUTION_EDGE, right: GPS_MAPBOX.LOGO_ATTRIBUTION_EDGE }}
         >
           <MapboxGL.Camera ref={cameraRef} zoomLevel={16.2} />
           {geo && (
@@ -2243,7 +2252,7 @@ export function GpsRoundScreen({
             <Text style={styles.lieToastSubtext}>Current lie</Text>
           </View>
         ) : null}
-        {overlayState.shotFlow === 'placing' && !overlayState.anySheet ? (
+        {(overlayState.shotFlow === 'placing' || overlayState.shotFlow === 'confirming') && !overlayState.anySheet ? (
           <View pointerEvents="none" style={styles.placementMarkerWrap}>
             <View style={[
               styles.placementClubCircle,
@@ -2278,11 +2287,21 @@ export function GpsRoundScreen({
             </Text>
           </View>
         ) : null}
-        <View pointerEvents="none" style={[styles.mapboxWordmark, { bottom: insets.bottom + BOTTOM_ACTION_BAR_HEIGHT + 8 }]}>
+        <View
+          pointerEvents="none"
+          style={[
+            styles.mapboxWordmark,
+            { bottom: insets.bottom + GPS_BAR.BOTTOM_ACTION + GPS_ABOVE_BAR.WORDMARK },
+          ]}
+        >
           <Text style={styles.mapboxWordmarkText}>mapbox</Text>
         </View>
       </View>
 
+      <View
+        style={[styles.gpsHudWrap, { paddingBottom: insets.bottom }]}
+        pointerEvents="box-none"
+      >
       <GpsRoundHud
         suggestion={holeSuggestion}
         holeNumber={currentHole?.hole || currentHoleIndex + 1}
@@ -2296,8 +2315,8 @@ export function GpsRoundScreen({
           }
           overlayRef.current?.openClubPicker?.();
         }}
-        bottomBarHeight={BOTTOM_ACTION_BAR_HEIGHT}
-        yardageBarHeight={YARDAGE_BAR_HEIGHT}
+        bottomBarHeight={GPS_BAR.BOTTOM_ACTION}
+        yardageBarHeight={GPS_BAR.YARDAGE}
         currentPutts={currentPutts}
         onDecrementPutts={() => setHoleSummariesByHole((prev) => ({
           ...prev,
@@ -2322,7 +2341,7 @@ export function GpsRoundScreen({
         addShotActive={false}
         yardages={yardages}
         compactYardage={compactLayout}
-        bottomInset={insets.bottom}
+        bottomInset={0}
         quietLinks={[]}
         gpsQuality={gpsQuality}
         gpsAccuracyMeters={gpsAccuracyMeters}
@@ -2357,7 +2376,7 @@ export function GpsRoundScreen({
         holeScore={holeScoresByHole[currentHoleIndex] ?? ((currentHoleShots.length + currentPutts > 0) ? currentHoleShots.length + currentPutts : null)}
         holePar={currentHole?.par || 4}
         onScorePress={() => setShowScoreSheet(true)}
-        isPlacing={overlayState.shotFlow === 'placing'}
+        isPlacing={overlayState.shotFlow === 'placing' || overlayState.shotFlow === 'confirming'}
         showPlacementInstruction={!overlayState.anySheet && overlayState.shotFlow === 'placing'}
         placementClub={overlayState.activeClub}
         placementLie={overlayState.activeLie}
@@ -2374,8 +2393,15 @@ export function GpsRoundScreen({
         onOpenClubPicker={() => overlayRef.current?.openClubPicker?.()}
       />
       </View>
+      </View>
 
-      <View style={[styles.rightMapStack, { bottom: insets.bottom + BOTTOM_ACTION_BAR_HEIGHT + 12 }]} pointerEvents="box-none">
+      <View
+        style={[
+          styles.rightMapStack,
+          { bottom: insets.bottom + GPS_BAR.BOTTOM_ACTION + GPS_ABOVE_BAR.RIGHT_MAP_STACK },
+        ]}
+        pointerEvents="box-none"
+      >
         <TouchableOpacity style={[styles.greenPill, greenMapOnly && styles.greenPillActive]} onPress={handleGreenMapToggle}>
           <Ionicons name="golf-outline" size={14} color={greenMapOnly ? '#fff' : colors.brand.primary} />
           <Text style={[styles.greenPillText, greenMapOnly && styles.greenPillTextActive]}>
@@ -2721,7 +2747,7 @@ export function GpsRoundScreen({
           if (pendingRoundPayload) onFinishRound?.(pendingRoundPayload);
         }}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -2759,6 +2785,23 @@ const stylesMap = {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'transparent' },
   screenShell: { flex: 1, backgroundColor: 'transparent' },
+  /** Top chrome: safe-area top inset applied here (not SafeAreaView). */
+  gpsTopChromeWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    zIndex: GPS_Z.TOP_CHROME,
+  },
+  /** HUD fills the screen; bottom safe area via paddingBottom on this wrapper. */
+  gpsHudWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    zIndex: GPS_Z.HUD_WRAP,
+  },
   topBarFrame: {
     justifyContent: 'center',
     backgroundColor: 'transparent',
@@ -2864,7 +2907,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    zIndex: 10,
+    zIndex: GPS_Z.MAP_WEATHER_STRIP,
   },
   weatherText: {
     color: '#F3F4F6',
@@ -2887,7 +2930,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 14,
     padding: 12,
-    zIndex: 11,
+    zIndex: GPS_Z.MISSED_SHOT_BANNER,
   },
   missedShotBannerTitle: {
     color: colors.text.primary,
@@ -2970,7 +3013,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     width: 132,
     alignItems: 'center',
-    zIndex: 10,
+    zIndex: GPS_Z.MAP_DISTANCE_BADGE,
   },
   distanceBadgeLabel: {
     color: colors.text.tertiary,
@@ -3013,15 +3056,15 @@ const styles = StyleSheet.create({
   },
   playingDetailsCard: {
     position: 'absolute',
-    right: 10,
-    top: 112,
+    right: GPS_MAP_OVERLAY.PLAYING_DETAILS_RIGHT,
+    top: GPS_MAP_OVERLAY.PLAYING_DETAILS_TOP,
     backgroundColor: 'rgba(0,0,0,0.82)',
     borderRadius: radius.md + 1,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.18)',
     paddingVertical: 4,
     paddingHorizontal: 8,
-    zIndex: 10,
+    zIndex: GPS_Z.TOP_CHROME,
   },
   playingDetailRow: {
     alignItems: 'center',
@@ -3048,13 +3091,13 @@ const styles = StyleSheet.create({
   },
   shotRow: {
     position: 'absolute',
-    bottom: 44,
-    left: 10,
-    right: 84,
+    bottom: GPS_BAR.BOTTOM_ACTION - GPS_MAP_OVERLAY.SHOT_ROW_GAP_ABOVE_BAR,
+    left: GPS_MAP_OVERLAY.SHOT_ROW_LEFT,
+    right: GPS_MAP_OVERLAY.SHOT_ROW_RIGHT_CLEAR,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    zIndex: 10,
+    zIndex: GPS_Z.MAP_WEATHER_STRIP,
   },
   shotPill: {
     flexDirection: 'row',
@@ -3107,7 +3150,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 50,
     right: 50,
-    bottom: 84,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -3117,7 +3159,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    zIndex: 25,
+    zIndex: GPS_Z.LIE_TOAST,
   },
   lieToastDot: {
     width: 8,
@@ -3139,7 +3181,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 20,
+    zIndex: GPS_Z.PLACEMENT_MARKER,
   },
   placementClubCircle: {
     width: 52,
@@ -3174,9 +3216,9 @@ const styles = StyleSheet.create({
   },
   nudgeCard: {
     position: 'absolute',
-    left: 102,
-    right: 102,
-    bottom: 76,
+    left: GPS_MAP_OVERLAY.LEGACY_NUDGE_INSET,
+    right: GPS_MAP_OVERLAY.LEGACY_NUDGE_INSET,
+    bottom: GPS_MAP_OVERLAY.FLOATING_PANEL_BOTTOM_OFFSET,
     flexDirection: 'row',
     alignItems: 'flex-start',
     backgroundColor: colors.bg.secondary,
@@ -3185,7 +3227,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border.subtle,
     paddingVertical: 10,
     paddingRight: 12,
-    zIndex: 10,
+    zIndex: GPS_Z.MAP_LEGACY_NUDGE,
   },
   nudgeCardGreen: {
     borderColor: colors.brand.primaryBorder,
@@ -3233,10 +3275,10 @@ const styles = StyleSheet.create({
   },
   rightMapStack: {
     position: 'absolute',
-    right: 12,
+    right: GPS_RIGHT_STACK.EDGE,
     alignItems: 'flex-end',
-    gap: 8,
-    zIndex: 25,
+    gap: GPS_RIGHT_STACK.GAP,
+    zIndex: GPS_Z.RIGHT_MAP_STACK,
   },
   greenPill: {
     flexDirection: 'row',
@@ -3428,7 +3470,7 @@ const styles = StyleSheet.create({
   planNoteChip: {
     position: 'absolute',
     left: 10,
-    bottom: 60,
+    bottom: GPS_MAP_OVERLAY.PLAN_NOTE_CHIP_BOTTOM,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
@@ -3439,7 +3481,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 5,
     maxWidth: 200,
-    zIndex: 10,
+    zIndex: GPS_Z.TOP_CHROME,
   },
   planNoteText: {
     color: '#D1D5DB',
@@ -3449,7 +3491,7 @@ const styles = StyleSheet.create({
   planCompareChip: {
     position: 'absolute',
     left: 10,
-    bottom: 100,
+    bottom: GPS_MAP_OVERLAY.PLAN_COMPARE_CHIP_BOTTOM,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -3459,7 +3501,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(96,165,250,0.3)',
     paddingHorizontal: 8,
     paddingVertical: 5,
-    zIndex: 10,
+    zIndex: GPS_Z.TOP_CHROME,
   },
   planCompareLabel: {
     color: '#9CA3AF',
@@ -3552,8 +3594,8 @@ const styles = StyleSheet.create({
   },
   mapboxWordmark: {
     position: 'absolute',
-    left: 8,
-    bottom: BOTTOM_ACTION_BAR_HEIGHT + 6,
+    left: GPS_MAPBOX.LOGO_ATTRIBUTION_EDGE,
+    bottom: GPS_BAR.BOTTOM_ACTION + GPS_ABOVE_BAR.WORDMARK_STATIC,
     paddingHorizontal: 2,
     paddingVertical: 1,
   },

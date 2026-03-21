@@ -32,12 +32,8 @@ import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { elevationDiffToYardageAdjustment, getElevationDifferenceFeet } from '../services/weatherService';
 import { getSelectedTeeCoordinates } from '../utils/holeUtils';
 import { colors, radius, spacing } from '../theme/tokens';
+import { GPS_ABOVE_BAR, GPS_COACHING, GPS_WEB_PREVIEW } from '../constants/gpsLayout';
 
-const WEB_NAV_BAR_HEIGHT = 52;
-const WEB_HOLE_META_HEIGHT = 32;
-const WEB_HOLE_SELECTOR_HEIGHT = 52;
-const WEB_BOTTOM_BAR_HEIGHT = 48;
-const WEB_YARDAGE_BAR_HEIGHT = 0;
 const MAPBOX_STATIC_MAX_DIMENSION = 1280;
 
 function getStaticImageSize(imageWidth, imageHeight) {
@@ -842,7 +838,8 @@ export function WebGpsRoundPreview({
     if (activeNudge.type === 'tee-club') return null;
     return activeNudge;
   }, [activeNudge]);
-  const coachingOverlayBottom = WEB_BOTTOM_BAR_HEIGHT + WEB_YARDAGE_BAR_HEIGHT + insets.bottom + 14;
+  const coachingOverlayBottom =
+    GPS_WEB_PREVIEW.BOTTOM_BAR + GPS_WEB_PREVIEW.YARDAGE + insets.bottom + GPS_COACHING.NUDGE_GAP_ABOVE_BAR;
   const isCompact = width < 700;
   const mapWidth = Math.max(320, Math.round(width));
   const mapHeight = Math.max(220, height + insets.top + insets.bottom);
@@ -1398,7 +1395,13 @@ export function WebGpsRoundPreview({
             showOffCourse={isOffCourse}
             teeYardage={selectedTeeYardage}
           />
-          <View pointerEvents="none" style={[styles.mapboxWordmark, { bottom: insets.bottom + WEB_BOTTOM_BAR_HEIGHT + 22 }]}>
+          <View
+            pointerEvents="none"
+            style={[
+              styles.mapboxWordmark,
+              { bottom: insets.bottom + GPS_WEB_PREVIEW.BOTTOM_BAR + GPS_WEB_PREVIEW.WORDMARK_ABOVE_BAR },
+            ]}
+          >
             <Text style={styles.mapboxWordmarkText}>mapbox</Text>
           </View>
             </Pressable>
@@ -1451,8 +1454,8 @@ export function WebGpsRoundPreview({
           nudgeOverlayBottom={coachingOverlayBottom}
           onPressSuggestion={() => setShowNudge((v) => !v)}
           suggestionActive={showNudge}
-          bottomBarHeight={WEB_BOTTOM_BAR_HEIGHT}
-          yardageBarHeight={WEB_YARDAGE_BAR_HEIGHT}
+          bottomBarHeight={GPS_WEB_PREVIEW.BOTTOM_BAR}
+          yardageBarHeight={GPS_WEB_PREVIEW.YARDAGE}
           currentPutts={currentPutts}
           onDecrementPutts={() => setHolePutts((prev) => ({ ...prev, [currentHoleIndex]: Math.max(0, currentPutts - 1) }))}
           onIncrementPutts={() => setHolePutts((prev) => ({ ...prev, [currentHoleIndex]: currentPutts + 1 }))}
@@ -2117,7 +2120,7 @@ const styles = StyleSheet.create({
   mapboxWordmark: {
     position: 'absolute',
     left: 8,
-    bottom: WEB_BOTTOM_BAR_HEIGHT + 6,
+    bottom: GPS_WEB_PREVIEW.BOTTOM_BAR + GPS_ABOVE_BAR.WORDMARK_STATIC,
     paddingHorizontal: 2,
     paddingVertical: 1,
     zIndex: 10,
@@ -2212,7 +2215,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   bottomMapBar: {
-    height: WEB_BOTTOM_BAR_HEIGHT,
+    height: GPS_WEB_PREVIEW.BOTTOM_BAR,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,

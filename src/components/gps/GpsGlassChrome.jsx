@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { HoleSelectorBar } from './HoleSelectorBar';
 import { colors, radius, spacing } from '../../theme/tokens';
 import { rs } from '../../utils/responsive';
+import { GPS_CHROME, GPS_Z } from '../../constants/gpsLayout';
 
 export function GpsGlassChrome({
   courseName,
@@ -53,7 +54,7 @@ export function GpsGlassChrome({
   const displayPlaying = isOffCourse ? (teeYardage || '--') : (Number.isFinite(playingValue) ? playingValue : '--');
 
   return (
-    <View style={[styles.chrome, { paddingTop: Math.max(0, topInset - 4) }]} pointerEvents="box-none">
+    <View style={[styles.chrome, topInset > 0 ? { paddingTop: topInset } : null]} pointerEvents="box-none">
       <View style={styles.headerBar}>
         <View style={styles.headerTopRow}>
           <TouchableOpacity onPress={onBack} style={styles.backBtn} activeOpacity={0.78}>
@@ -120,7 +121,7 @@ export function GpsGlassChrome({
       {measured && (
         <>
           {weatherText ? (
-            <View style={[styles.weatherWrap, { marginTop: 4 }]}>
+            <View style={[styles.weatherWrap, { marginTop: GPS_CHROME.WEATHER_BELOW_HEADER_GAP }]}>
               <View style={styles.weatherPill}>
                 {weatherIcon ? weatherIcon : <Ionicons name="navigate" size={12} color="#fff" />}
                 <Text style={styles.weatherText}>{weatherText}</Text>
@@ -128,7 +129,7 @@ export function GpsGlassChrome({
             </View>
           ) : null}
 
-          <View style={[styles.rightColumn, { top: chromeBottom + 4 }]}>
+          <View style={[styles.rightColumn, { top: chromeBottom + GPS_CHROME.RIGHT_COLUMN_BELOW_CHROME_GAP }]}>
             <View style={styles.yardageCard}>
               <Text style={styles.playingLabel}>PLAYING</Text>
               <Text style={styles.playingValue}>{displayPlaying}</Text>
@@ -167,7 +168,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    zIndex: 10,
+    zIndex: GPS_Z.TOP_CHROME,
   },
   headerBar: {
     flexDirection: 'column',
@@ -322,8 +323,8 @@ const styles = StyleSheet.create({
   },
   rightColumn: {
     position: 'absolute',
-    right: 10,
-    zIndex: 10,
+    right: GPS_CHROME.RIGHT_COLUMN_EDGE,
+    zIndex: GPS_Z.CHROME_COLUMN,
   },
   yardageCard: {
     backgroundColor: 'rgba(0,0,0,0.82)',

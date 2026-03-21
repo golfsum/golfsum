@@ -6,6 +6,7 @@ import { YardagePanel } from './YardagePanel';
 import { colors, radius } from '../../theme/tokens';
 import { getScoreColor } from '../../utils/scoreColors';
 import { rs } from '../../utils/responsive';
+import { GPS_HUD, GPS_Z } from '../../constants/gpsLayout';
 
 export function GpsRoundHud({
   suggestion,
@@ -50,7 +51,7 @@ export function GpsRoundHud({
   onCycleLie,
   onOpenClubPicker,
 }) {
-  const effectiveBottomInset = Math.max(0, bottomInset - 8);
+  const effectiveBottomInset = Math.max(0, bottomInset - GPS_HUD.BOTTOM_INSET_TRIM);
 
   return (
     <View style={styles.overlay} pointerEvents="box-none">
@@ -87,7 +88,7 @@ export function GpsRoundHud({
       ) : null}
 
       {quietLinks.length ? (
-        <View style={[styles.linkStack, { bottom: bottomBarHeight + yardageBarHeight + 8 }]}>
+        <View style={[styles.linkStack, { bottom: bottomBarHeight + yardageBarHeight + GPS_HUD.FLOAT_GAP }]}>
           {quietLinks.map((link) => (
             <TouchableOpacity key={link.id} onPress={link.onPress} style={styles.linkButton}>
               <Text style={styles.linkText}>{link.text}</Text>
@@ -99,7 +100,7 @@ export function GpsRoundHud({
       {isPlacing && (
         // NOTE: instructionBanner is shown only while we're waiting for the tap-to-place tap.
         showPlacementInstruction && (
-          <View style={[styles.instructionBanner, { bottom: bottomBarHeight + effectiveBottomInset + 8 }]}>
+          <View style={[styles.instructionBanner, { bottom: bottomBarHeight + effectiveBottomInset + GPS_HUD.FLOAT_GAP }]}>
             <Text style={styles.instructionText}>Pan map to position shot</Text>
             <TouchableOpacity onPress={onCancelPlacement}>
               <Text style={styles.cancelText}>Cancel</Text>
@@ -233,12 +234,12 @@ export function GpsRoundHud({
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 20,
+    zIndex: GPS_Z.HUD_WRAP,
   },
   nudgeCard: {
     position: 'absolute',
-    left: 14,
-    right: 14,
+    left: GPS_HUD.NUDGE_HORIZONTAL_INSET,
+    right: GPS_HUD.NUDGE_HORIZONTAL_INSET,
     flexDirection: 'row',
     alignItems: 'flex-start',
     backgroundColor: colors.bg.secondary,
@@ -247,7 +248,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border.subtle,
     paddingVertical: 10,
     paddingRight: 12,
-    zIndex: 12,
+    zIndex: GPS_Z.HUD_NUDGE_CARD,
   },
   nudgeCardGreen: {
     borderColor: colors.brand.primaryBorder,
@@ -295,10 +296,10 @@ const styles = StyleSheet.create({
   },
   linkStack: {
     position: 'absolute',
-    left: 14,
-    right: 14,
+    left: GPS_HUD.NUDGE_HORIZONTAL_INSET,
+    right: GPS_HUD.NUDGE_HORIZONTAL_INSET,
     alignItems: 'flex-start',
-    zIndex: 11,
+    zIndex: GPS_Z.HUD_LINK_STACK,
     gap: 4,
   },
   linkButton: {
@@ -506,8 +507,8 @@ const styles = StyleSheet.create({
   },
   instructionBanner: {
     position: 'absolute',
-    left: 12,
-    right: 12,
+    left: GPS_HUD.INSTRUCTION_BANNER_INSET,
+    right: GPS_HUD.INSTRUCTION_BANNER_INSET,
     backgroundColor: 'rgba(0,0,0,0.82)',
     borderRadius: 10,
     borderWidth: 1,
@@ -517,7 +518,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    zIndex: 20,
+    zIndex: GPS_Z.HUD_OVERLAY,
   },
   instructionText: {
     fontSize: 13,
