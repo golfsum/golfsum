@@ -2756,8 +2756,8 @@ const stylesMap = {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'transparent' },
-  screenShell: { flex: 1, backgroundColor: 'transparent' },
+  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  screenShell: { flex: 1, backgroundColor: '#0a0a0a' },
   /** Top chrome: safe-area top inset applied here (not SafeAreaView). */
   gpsTopChromeWrap: {
     position: 'absolute',
