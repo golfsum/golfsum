@@ -6,11 +6,11 @@
     "owner": "golf-sum",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#000000"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -19,6 +19,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.golfsum.app",
       "buildNumber": "1",
+      "backgroundColor": "#000000",
+      "userInterfaceStyle": "dark",
       "infoPlist": {
         "NSCameraUsageDescription": "GolfSum needs camera access to photograph scorecards",
         "NSPhotoLibraryUsageDescription": "GolfSum needs photo library access to upload scorecard images",
@@ -27,9 +29,16 @@
       }
     },
     "android": {
+      "softwareKeyboardLayoutMode": "pan",
+      "backgroundColor": "#1C1C1E",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#0f1419"
+      },
+      "navigationBar": {
+        "visible": "sticky-immersive",
+        "transparent": true,
+        "backgroundColor": "#00000000"
       },
       "package": "com.golfsum.app",
       "permissions": [

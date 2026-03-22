@@ -3,7 +3,7 @@ import { StyleSheet } from 'react-native';
 export const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f1419',
+    backgroundColor: '#1C1C1E',
   },
   centerContent: {
     justifyContent: 'center',
@@ -326,7 +326,7 @@ export const styles = StyleSheet.create({
   scrollContent: {
     padding: 12,
     paddingTop: 8,
-    paddingBottom: 180, // Space for stats summary + save button
+    // paddingBottom: base + safe-area — set in ManualScoreEntry (footer + home indicator)
   },
   holeCard: {
     backgroundColor: '#1a2028',
@@ -555,12 +555,14 @@ export const styles = StyleSheet.create({
     fontWeight: '400',
     color: '#9CA3AF',
   },
+  /** Bottom bar: pair with `paddingBottom: insets.bottom` so bg reaches screen edge; buttons sit above home indicator. */
   footer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    padding: 16,
+    paddingTop: 16,
+    paddingHorizontal: 16,
     backgroundColor: '#1a2028',
     borderTopWidth: 1,
     borderTopColor: '#2a3038',

@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import SuggestedClubChip from './SuggestedClubChip';
 import { YardagePanel } from './YardagePanel';
@@ -51,7 +51,22 @@ export function GpsRoundHud({
   onCycleLie,
   onOpenClubPicker,
 }) {
-  const effectiveBottomInset = Math.max(0, bottomInset - GPS_HUD.BOTTOM_INSET_TRIM);
+  /** Use full device inset — parent uses absolute fill; trimming caused overlap with home indicator. */
+  const effectiveBottomInset = Math.max(
+    0,
+    bottomInset,
+    /** Android edge-to-edge: gesture nav sometimes reports 0 — keep controls above system bar. */
+    Platform.OS === 'android' ? 12 : 0,
+  );
+
+  const barDockBottom = bottomBarHeight + effectiveBottomInset;
+  /** Extra band above the dock (placement distance / manual entry); native `yardageBarHeight` is often 0 in layout constants. */
+  const yardageBandH = isPlacing
+    ? Math.max(yardageBarHeight, 38)
+    : manualMode
+      ? Math.max(yardageBarHeight, 52)
+      : 0;
+  const warningBottomOffset = barDockBottom + yardageBandH + (yardageBandH > 0 ? 6 : 4);
 
   return (
     <View style={styles.overlay} pointerEvents="box-none">
@@ -88,7 +103,7 @@ export function GpsRoundHud({
       ) : null}
 
       {quietLinks.length ? (
-        <View style={[styles.linkStack, { bottom: bottomBarHeight + yardageBarHeight + GPS_HUD.FLOAT_GAP }]}>
+        <View style={[styles.linkStack, { bottom: barDockBottom + yardageBarHeight + GPS_HUD.FLOAT_GAP }]}>
           {quietLinks.map((link) => (
             <TouchableOpacity key={link.id} onPress={link.onPress} style={styles.linkButton}>
               <Text style={styles.linkText}>{link.text}</Text>
@@ -100,7 +115,12 @@ export function GpsRoundHud({
       {isPlacing && (
         // NOTE: instructionBanner is shown only while we're waiting for the tap-to-place tap.
         showPlacementInstruction && (
-          <View style={[styles.instructionBanner, { bottom: bottomBarHeight + effectiveBottomInset + GPS_HUD.FLOAT_GAP }]}>
+          <View
+            style={[
+              styles.instructionBanner,
+              { bottom: barDockBottom + (isPlacing ? yardageBandH : 0) + GPS_HUD.FLOAT_GAP },
+            ]}
+          >
             <Text style={styles.instructionText}>Pan map to position shot</Text>
             <TouchableOpacity onPress={onCancelPlacement}>
               <Text style={styles.cancelText}>Cancel</Text>
@@ -109,7 +129,7 @@ export function GpsRoundHud({
         )
       )}
 
-      <View style={[styles.bottomBarWrap, { paddingBottom: effectiveBottomInset }]}>
+      <View style={[styles.bottomBarWrap, { paddingBottom: effectiveBottomInset, zIndex: GPS_Z.HUD_OVERLAY }]}>
         {isPlacing ? (
           <View style={[styles.bottomActionBar, { height: bottomBarHeight }]}>
             <TouchableOpacity style={styles.placementCancelBtn} onPress={onCancelPlacement}>
@@ -192,7 +212,13 @@ export function GpsRoundHud({
       </View>
 
       {isPlacing ? (
-        <View style={[styles.yardageBarFrame, { height: yardageBarHeight }]}>
+        <View
+          style={[
+            styles.yardageBarFrame,
+            styles.hudBandAboveDock,
+            { bottom: barDockBottom, height: yardageBandH },
+          ]}
+        >
           <View style={styles.placementDistRow}>
             <Text style={styles.placementDistLabel}>TO GREEN</Text>
             <Text style={styles.placementDistValue}>{placementDistance != null ? Math.round(placementDistance) : '--'}</Text>
@@ -202,7 +228,13 @@ export function GpsRoundHud({
       ) : (
         <>
           {manualMode ? (
-            <View style={[styles.yardageBarFrame, { height: yardageBarHeight }]}>
+            <View
+              style={[
+                styles.yardageBarFrame,
+                styles.hudBandAboveDock,
+                { bottom: barDockBottom, height: yardageBandH },
+              ]}
+            >
               <View style={styles.manualInputRow}>
                 <Text style={styles.manualLabel}>DISTANCE (yds)</Text>
                 <TextInput
@@ -219,11 +251,17 @@ export function GpsRoundHud({
             </View>
           ) : null}
           {gpsQuality === 'moderate' && gpsAccuracyMeters != null ? (
-            <Text style={styles.gpsWarning}>GPS accuracy {Math.round(gpsAccuracyMeters)}m</Text>
+            <View style={[styles.gpsWarningBand, { bottom: warningBottomOffset }]}>
+              <Text style={styles.gpsWarning}>GPS accuracy {Math.round(gpsAccuracyMeters)}m</Text>
+            </View>
           ) : gpsQuality === 'poor' ? (
-            <Text style={styles.gpsWarning}>GPS accuracy low. Distance may be off.</Text>
+            <View style={[styles.gpsWarningBand, { bottom: warningBottomOffset }]}>
+              <Text style={styles.gpsWarning}>GPS accuracy low. Distance may be off.</Text>
+            </View>
           ) : gpsQuality === 'none' ? (
-            <Text style={styles.gpsWarning}>No GPS signal. Tap for manual mode.</Text>
+            <View style={[styles.gpsWarningBand, { bottom: warningBottomOffset }]}>
+              <Text style={styles.gpsWarning}>No GPS signal. Tap for manual mode.</Text>
+            </View>
           ) : null}
         </>
       )}
@@ -457,6 +495,21 @@ const styles = StyleSheet.create({
   yardageBarFrame: {
     justifyContent: 'center',
     backgroundColor: 'transparent',
+  },
+  /** Pinned above the bottom action bar (which is `position: 'absolute'`). In-flow siblings were laying out at the top of the HUD. */
+  hudBandAboveDock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: GPS_Z.HUD_OVERLAY - 1,
+    paddingHorizontal: 10,
+  },
+  gpsWarningBand: {
+    position: 'absolute',
+    left: GPS_HUD.INSTRUCTION_BANNER_INSET,
+    right: GPS_HUD.INSTRUCTION_BANNER_INSET,
+    zIndex: GPS_Z.HUD_OVERLAY - 1,
+    alignItems: 'center',
   },
   yardageDetailsWrap: {
     flex: 1,

@@ -47,11 +47,11 @@ export function GpsGlassChrome({
   const elevAdj = playingDistance?.elevAdj ?? 0;
   const playingDetailText = `GPS ${Number.isFinite(playingGpsYards) ? playingGpsYards : '--'} yds`;
 
-  // When off course, show tee yardage or dashes instead of haversine garbage
-  const displayFront = isOffCourse ? '--' : (Number.isFinite(yardages.front) ? yardages.front : '--');
-  const displayCenter = isOffCourse ? (teeYardage || '--') : (Number.isFinite(yardages.center) ? yardages.center : '--');
-  const displayBack = isOffCourse ? '--' : (Number.isFinite(yardages.back) ? yardages.back : '--');
-  const displayPlaying = isOffCourse ? (teeYardage || '--') : (Number.isFinite(playingValue) ? playingValue : '--');
+  // Off course: still show F/B/C from GPS to green POIs when we have them; center/playing can fall back to tee card yardage.
+  const displayFront = Number.isFinite(yardages.front) ? yardages.front : '--';
+  const displayCenter = isOffCourse ? (teeYardage || (Number.isFinite(yardages.center) ? yardages.center : '--')) : (Number.isFinite(yardages.center) ? yardages.center : '--');
+  const displayBack = Number.isFinite(yardages.back) ? yardages.back : '--';
+  const displayPlaying = isOffCourse ? (teeYardage || (Number.isFinite(playingValue) ? playingValue : '--')) : (Number.isFinite(playingValue) ? playingValue : '--');
 
   return (
     <View style={[styles.chrome, topInset > 0 ? { paddingTop: topInset } : null]} pointerEvents="box-none">

@@ -1,12 +1,17 @@
 import React from 'react';
-import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { Platform, View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { TabName } from '../types';
 import { colors, spacing, typography } from '../theme/tokens';
 
+/** Tab row + labels (excludes `bottomInset` padding). Keep in sync with styles below. */
+export const BOTTOM_NAV_CONTENT_HEIGHT = 72;
+
 interface Props {
   activeTab: TabName;
   onTabPress: (tab: TabName) => void;
+  /** `useSafeAreaInsets().bottom` — bar draws edge-to-edge; buttons sit above home indicator */
+  bottomInset: number;
 }
 
 interface TabConfig {
@@ -24,9 +29,10 @@ const tabs: TabConfig[] = [
   { name: 'profile', label: 'Profile', icon: 'person-outline', iconActive: 'person' },
 ];
 
-export const BottomNavigation: React.FC<Props> = ({ activeTab, onTabPress }) => {
+export const BottomNavigation: React.FC<Props> = ({ activeTab, onTabPress, bottomInset }) => {
+  const safeBottom = Math.max(bottomInset, Platform.OS === 'android' ? 12 : 0);
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingBottom: safeBottom }]}>
       {tabs.map((tab) => {
         const isActive = activeTab === tab.name;
         const isUpload = tab.name === 'upload';
@@ -63,11 +69,14 @@ export const BottomNavigation: React.FC<Props> = ({ activeTab, onTabPress }) => 
 
 const styles = StyleSheet.create({
   container: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     backgroundColor: colors.bg.secondary,
     borderTopWidth: 1,
     borderTopColor: colors.bg.tertiary,
-    paddingBottom: spacing.md,
     paddingTop: spacing.sm,
     paddingHorizontal: spacing.sm,
   },

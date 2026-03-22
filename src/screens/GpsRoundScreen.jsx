@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, AppState, Modal, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, Animated, AppState, Modal, Platform, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getCourse, saveCourse } from '../services/courseCache';
 import { fetchCourseHolesFromBackend } from '../services/golfApi';
@@ -31,7 +31,7 @@ import CoachingInsightCard from '../components/gps/CoachingInsightCard';
 import ScoreEntrySheet from '../components/gps/ScoreEntrySheet';
 import { isGpsDistanceSuspect, isTeeMarkerSuspect } from '../services/reportDetection';
 import { colors, radius, spacing, typography } from '../theme/tokens';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   GPS_ABOVE_BAR,
   GPS_BAR,
@@ -993,9 +993,12 @@ export function GpsRoundScreen({
     if (inlineCoachingCard && activeNudge.title === 'Course note') return null;
     return activeNudge;
   }, [activeNudge, inlineCoachingCard]);
-  // HUD sits inside a bottom-padded overlay; nudge offset is relative to that inset region.
+  // Stack height above home indicator: yardage strip + main bar + device inset.
   const coachingOverlayBottom =
-    GPS_BAR.BOTTOM_ACTION + GPS_BAR.YARDAGE + GPS_COACHING.NUDGE_GAP_ABOVE_BAR;
+    insets.bottom +
+    GPS_BAR.BOTTOM_ACTION +
+    GPS_BAR.YARDAGE +
+    GPS_COACHING.NUDGE_GAP_ABOVE_BAR;
   const detectLieAtCoordinate = useCallback((coord) => (
     detectLiveLie(coord, currentHole, teeBack, greenCenter)
   ), [currentHole, greenCenter, teeBack]);
@@ -1314,16 +1317,21 @@ export function GpsRoundScreen({
   }, [gpsQuality, manualMode]);
 
   useEffect(() => {
-    if (!userPos || !greenFront || !greenCenter || !greenBack) {
+    if (!userPos) {
       setYardages({ front: '--', center: '--', back: '--' });
-      if (!userPos) setLiveLie(LIVE_LIE_DEFAULT);
+      setLiveLie(LIVE_LIE_DEFAULT);
       return;
     }
 
+    const yd = (poi) =>
+      poi
+        ? haversineYards(userPos.lat, userPos.lng, poi.Latitude, poi.Longitude) ?? '--'
+        : '--';
+
     setYardages({
-      front: haversineYards(userPos.lat, userPos.lng, greenFront.Latitude, greenFront.Longitude) ?? '--',
-      center: haversineYards(userPos.lat, userPos.lng, greenCenter.Latitude, greenCenter.Longitude) ?? '--',
-      back: haversineYards(userPos.lat, userPos.lng, greenBack.Latitude, greenBack.Longitude) ?? '--',
+      front: yd(greenFront),
+      center: yd(greenCenter),
+      back: yd(greenBack),
     });
     setLiveLie(detectLiveLie(userPos, currentHole, teeBack, greenCenter));
   }, [currentHole, greenBack, greenCenter, greenFront, teeBack, userPos]);
@@ -1346,31 +1354,6 @@ export function GpsRoundScreen({
     if (!MapboxGL || !MAPBOX_PUBLIC_TOKEN) return;
     MapboxGL.setAccessToken(MAPBOX_PUBLIC_TOKEN);
   }, []);
-
-  const geo = useMemo(() => {
-    if (!currentHole) return null;
-    const tee = teeBack;
-    const green = greenCenter;
-    if (!tee || !green) return null;
-
-    const features = [
-      {
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [green.Longitude, green.Latitude] },
-        properties: { kind: 'green' },
-      },
-    ];
-
-    if (userPos && userNearHole) {
-      features.push({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [userPos.lng, userPos.lat] },
-        properties: { kind: 'user' },
-      });
-    }
-
-    return { type: 'FeatureCollection', features };
-  }, [currentHole, routePoints, userNearHole, userPos]);
 
   const strategyGeo = useMemo(() => {
     if (!strategyModel.strategyLinePoints?.length || strategyModel.strategyLinePoints.length < 2) return null;
@@ -1661,9 +1644,9 @@ export function GpsRoundScreen({
     markHoleFlag(currentHoleIndex, {
       flags: { distanceJumpFlagged: true, playerConfirmed: true },
     });
-    commitShotToHole(currentHoleIndex, missedShotBanner.shot);
+    // Shot was already committed in onShotLogged; only dismiss + confirm flags above.
     setMissedShotBanner(null);
-  }, [commitShotToHole, currentHoleIndex, markHoleFlag, missedShotBanner]);
+  }, [currentHoleIndex, markHoleFlag, missedShotBanner]);
 
   const handleOpenMissedShotForm = useCallback(() => {
     if (!missedShotBanner?.shot || !missedShotBanner?.prevShot?.from || !missedShotBanner?.shot?.from) return;
@@ -1675,6 +1658,8 @@ export function GpsRoundScreen({
       lie: 'Fairway',
       from: midpoint,
       queuedShot: missedShotBanner.shot,
+      /** Queued shot is already on the hole from onShotLogged — only insert the missed swing. */
+      skipQueuedCommit: true,
     });
   }, [activeBagClubs, currentHoleIndex, missedShotBanner]);
 
@@ -1690,7 +1675,9 @@ export function GpsRoundScreen({
       actualYards: null,
       playingYards: null,
     });
-    commitShotToHole(missedShotForm.holeIndex, missedShotForm.queuedShot);
+    if (!missedShotForm.skipQueuedCommit && missedShotForm.queuedShot) {
+      commitShotToHole(missedShotForm.holeIndex, missedShotForm.queuedShot);
+    }
     setMissedShotForm(null);
     setMissedShotBanner(null);
   }, [commitShotToHole, detectLieAtCoordinate, insertRetrospectiveShot, missedShotForm]);
@@ -1817,8 +1804,9 @@ export function GpsRoundScreen({
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <View style={styles.screenShell}>
-      <View
-        style={[styles.gpsTopChromeWrap, { paddingTop: insets.top }]}
+      <SafeAreaView
+        style={[styles.gpsTopChromeWrap, { backgroundColor: 'transparent' }]}
+        edges={['top']}
         pointerEvents="box-none"
       >
         <GpsGlassChrome
@@ -1854,7 +1842,7 @@ export function GpsRoundScreen({
         showOffCourse={isOffCourse}
         teeYardage={selectedTeeYardage}
         />
-      </View>
+      </SafeAreaView>
 
       <MissedShotNudge
         nudgeHole={nudgeHole}
@@ -1880,11 +1868,13 @@ export function GpsRoundScreen({
           attributionPosition={{ bottom: GPS_MAPBOX.LOGO_ATTRIBUTION_EDGE, right: GPS_MAPBOX.LOGO_ATTRIBUTION_EDGE }}
         >
           <MapboxGL.Camera ref={cameraRef} zoomLevel={16.2} />
-          {geo && (
-            <MapboxGL.ShapeSource id="hole-shapes" shape={geo}>
-              <MapboxGL.CircleLayer id="green" filter={['==', ['get', 'kind'], 'green']} style={stylesMap.green} />
-            </MapboxGL.ShapeSource>
-          )}
+          {greenCenter ? (
+            <MapboxGL.MarkerView id="green-flag-marker" coordinate={[greenCenter.Longitude, greenCenter.Latitude]}>
+              <View style={styles.greenFlagMarker} pointerEvents="none">
+                <Ionicons name="flag" size={26} color="#10B981" style={styles.greenFlagIcon} />
+              </View>
+            </MapboxGL.MarkerView>
+          ) : null}
           {userPos && (
             <MapboxGL.MarkerView id="user-pulse-marker" coordinate={[userPos.lng, userPos.lat]}>
               <View style={styles.playerDotWrap}>
@@ -2153,7 +2143,6 @@ export function GpsRoundScreen({
                         ? `That is ${distanceJump.gpsDistance}y from your last shot, further than your driver avg. Did you miss one?`
                         : `That is ${distanceJump.gpsDistance}y from your last shot. Did you forget one?`,
                 });
-                return;
               }
 
               // Capture hole entry conditions on first shot
@@ -2304,10 +2293,7 @@ export function GpsRoundScreen({
         </View>
       </View>
 
-      <View
-        style={[styles.gpsHudWrap, { paddingBottom: insets.bottom }]}
-        pointerEvents="box-none"
-      >
+      <View style={styles.gpsHudWrap} pointerEvents="box-none">
       <GpsRoundHud
         suggestion={holeSuggestion}
         holeNumber={currentHole?.hole || currentHoleIndex + 1}
@@ -2341,6 +2327,7 @@ export function GpsRoundScreen({
         addShotLabel="ADD SHOT"
         onPressAddShot={() => {
           if (overlayState.anySheet) return;
+          if (overlayState.shotFlow !== 'idle') return;
           setMeasurePin(null);
           overlayRef.current?.startShotEntry?.();
         }}
@@ -2768,24 +2755,6 @@ const stylesMap = {
     lineWidth: 2.6,
     lineDasharray: [1.6, 1.1],
   },
-  tee: {
-    circleRadius: 6,
-    circleColor: '#FFFFFF',
-    circleStrokeWidth: 2,
-    circleStrokeColor: '#111827',
-  },
-  green: {
-    circleRadius: ['interpolate', ['linear'], ['zoom'], 14, 3, 16, 5, 18, 8],
-    circleColor: 'rgba(16,185,129,0.0)',
-    circleStrokeWidth: 2,
-    circleStrokeColor: '#10B981',
-  },
-  user: {
-    circleRadius: 8,
-    circleColor: '#1ac855',
-    circleStrokeWidth: 2.5,
-    circleStrokeColor: '#FFFFFF',
-  },
 };
 
 const styles = StyleSheet.create({
@@ -2799,7 +2768,7 @@ const styles = StyleSheet.create({
     top: 0,
     zIndex: GPS_Z.TOP_CHROME,
   },
-  /** HUD fills the screen; bottom safe area via paddingBottom on this wrapper. */
+  /** HUD fills the screen; bottom safe area is applied inside GpsRoundHud (absolute bottom bar). */
   gpsHudWrap: {
     position: 'absolute',
     left: 0,
@@ -3581,6 +3550,19 @@ const styles = StyleSheet.create({
     height: 28,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  /** Pin the flag base near the green center (MarkerView anchors center of view). */
+  greenFlagMarker: {
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    width: 32,
+    height: 34,
+    marginBottom: 2,
+  },
+  greenFlagIcon: {
+    textShadowColor: 'rgba(0,0,0,0.65)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   playerPulseRing: {
     position: 'absolute',

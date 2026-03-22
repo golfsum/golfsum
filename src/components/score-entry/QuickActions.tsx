@@ -8,6 +8,8 @@ interface QuickActionsProps {
   isLastHole: boolean;
   onOpenScorecard: () => void;
   onSave: () => void;
+  /** From `useSafeAreaInsets().bottom` — keeps save control above the home indicator. */
+  bottomInset: number;
   styles: Record<string, any>;
 }
 
@@ -17,6 +19,7 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
   isLastHole,
   onOpenScorecard,
   onSave,
+  bottomInset,
   styles,
 }) => (
   <>
@@ -33,7 +36,7 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
     )}
 
     {showSave && (
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: bottomInset }]}>
         <TouchableOpacity
           style={styles.saveButton}
           onPress={onSave}

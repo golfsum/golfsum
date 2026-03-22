@@ -63,11 +63,18 @@ module.exports = function(env) {
       },
     },
     android: {
+      softwareKeyboardLayoutMode: 'pan',
+      // Window background when system draws behind status/nav (edge-to-edge)
+      backgroundColor: '#1C1C1E',
       adaptiveIcon: {
         foregroundImage: './assets/icon.png',
         backgroundColor: '#0f1419',
       },
       package: 'com.golfsum.app',
+      navigationBar: {
+        visible: 'sticky-immersive',
+        backgroundColor: '#00000000',
+      },
       permissions: [
         'android.permission.CAMERA',
         'android.permission.READ_EXTERNAL_STORAGE',

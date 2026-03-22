@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
-  SafeAreaView,
   StatusBar,
   Platform,
   TouchableOpacity,
@@ -12,8 +11,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { BottomNavigation } from './src/components/BottomNavigation';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BottomNavigation, BOTTOM_NAV_CONTENT_HEIGHT } from './src/components/BottomNavigation';
 import { HistoryTab } from './src/components/HistoryTab';
 import { AveragesTab } from './src/components/AveragesTab';
 import { InsightsTab } from './src/components/InsightsTab';
@@ -89,6 +88,10 @@ const mapOnboardingHandicapToTypical = (
 };
 
 export default function App() {
+  const insets = useSafeAreaInsets();
+  /** Match `BottomNavigation` Android minimum — keeps scroll content clear of the tab bar. */
+  const tabBottomInset = Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 0);
+
   // Navigation state — default tab determined after rounds load
   const [activeTab, setActiveTab] = useState<TabName>('upload');
   const [initialTabSet, setInitialTabSet] = useState(false);
@@ -825,11 +828,14 @@ export default function App() {
   const currentOnboarding = onboardingStep; // 0 = welcome, 1 = choose path
 
   return (
-    <SafeAreaProvider>
     <GestureHandlerRootView style={styles.container}>
       <ErrorBoundary>
-        <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#0f1419" />
+        <View style={[styles.container, { backgroundColor: '#1C1C1E' }]}>
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor="transparent"
+          translucent={Platform.OS === 'android'}
+        />
       {showOnboarding && (
         <View style={styles.onboardingOverlay}>
           {currentOnboarding === 0 ? (
@@ -995,7 +1001,7 @@ export default function App() {
       
       {/* Header - only show on tabs */}
       {showHeaderAndNav && (
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 8, paddingBottom: 12 }]}>
           <GolfSumLogo variant="header" />
           {isOffline && (
             <View style={styles.offlineBadge}>
@@ -1005,14 +1011,19 @@ export default function App() {
         </View>
       )}
 
-      {/* Main Content */}
-      <View style={styles.mainContent}>
+      {/* Main Content — pad for absolute bottom tab bar + home indicator */}
+      <View
+        style={[
+          styles.mainContent,
+          showHeaderAndNav && { paddingBottom: BOTTOM_NAV_CONTENT_HEIGHT + tabBottomInset },
+        ]}
+      >
         {content}
       </View>
 
       {/* Bottom Navigation */}
       {showHeaderAndNav && (
-        <BottomNavigation activeTab={activeTab} onTabPress={handleTabPress} />
+        <BottomNavigation activeTab={activeTab} onTabPress={handleTabPress} bottomInset={insets.bottom} />
       )}
 
       {showSaveConfirmation && saveConfirmationRound && (
@@ -1027,9 +1038,8 @@ export default function App() {
         />
       )}
 
-        </SafeAreaView>
+        </View>
       </ErrorBoundary>
     </GestureHandlerRootView>
-    </SafeAreaProvider>
   );
 }

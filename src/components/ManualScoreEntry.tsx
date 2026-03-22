@@ -60,6 +60,7 @@ import { useHoleNotes } from './score-entry/hooks/useHoleNotes';
 import { useRoundContext } from './score-entry/hooks/useRoundContext';
 import { useRoundSave } from './score-entry/hooks/useRoundSave';
 import { logger } from '../utils/logger';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { styles } from './score-entry/ManualScoreEntry.styles';
 import { formatYardage, getYardageUnitLabel, type DistanceUnit } from '../utils/distance';
 import { FEEDBACK_COPY } from '../constants/feedbackCopy';
@@ -134,6 +135,7 @@ export const ManualScoreEntry: React.FC<ManualScoreEntryProps> = ({
   resumeDraft,
   gpsRoundData,
 }) => {
+  const insets = useSafeAreaInsets();
   const ACTION_ICON_SIZE = 18;
   const [isSaving, setIsSaving] = useState(false);
   const [showTeeSelection, setShowTeeSelection] = useState(true);
@@ -1208,7 +1210,7 @@ export const ManualScoreEntry: React.FC<ManualScoreEntryProps> = ({
 
       {selectedTeeBox && holes.length > 0 && hole && <ScrollView 
         style={styles.content}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 180 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Trial status indicator */}
@@ -1428,6 +1430,7 @@ export const ManualScoreEntry: React.FC<ManualScoreEntryProps> = ({
         isLastHole={currentHole === lastHoleIndex}
         onOpenScorecard={() => setShowFullScorecard(true)}
         onSave={handleSaveHole}
+        bottomInset={insets.bottom}
         styles={styles}
       />
 

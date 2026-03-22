@@ -10,7 +10,7 @@ export const appStyles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    // Vertical padding + status-bar inset applied in AppRoot when tabs are shown
     backgroundColor: '#1a2028',
     borderBottomWidth: 1,
     borderBottomColor: '#2a3038',
