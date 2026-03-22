@@ -1804,9 +1804,8 @@ export function GpsRoundScreen({
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <View style={styles.screenShell}>
-      <SafeAreaView
-        style={[styles.gpsTopChromeWrap, { backgroundColor: 'transparent' }]}
-        edges={['top']}
+      <View
+        style={styles.gpsTopChromeWrap}
         pointerEvents="box-none"
       >
         <GpsGlassChrome
@@ -1814,7 +1813,7 @@ export function GpsRoundScreen({
         cachedLabel={cached ? 'Cached on device' : course?.source === 'LOCAL_SAMPLE' ? 'Local sample data' : 'Downloaded now'}
         selectedTeeName={selectedTee?.name || teeColor}
         selectedTeeYardage={selectedTeeYardage}
-        topInset={0}
+        topInset={insets.top}
         routeLabel={routeLabel}
         hole={currentHole}
         currentHoleIndex={currentHoleIndex}
@@ -1842,7 +1841,7 @@ export function GpsRoundScreen({
         showOffCourse={isOffCourse}
         teeYardage={selectedTeeYardage}
         />
-      </SafeAreaView>
+      </View>
 
       <MissedShotNudge
         nudgeHole={nudgeHole}
@@ -2327,7 +2326,6 @@ export function GpsRoundScreen({
         addShotLabel="ADD SHOT"
         onPressAddShot={() => {
           if (overlayState.anySheet) return;
-          if (overlayState.shotFlow !== 'idle') return;
           setMeasurePin(null);
           overlayRef.current?.startShotEntry?.();
         }}
