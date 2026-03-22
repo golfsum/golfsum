@@ -533,6 +533,10 @@ export function GpsRoundScreen({
   const [overlayState, setOverlayState] = useState({ anySheet: false, shotFlow: 'idle', selectedClub: null });
   const [weather, setWeather] = useState(null);
   const [loggedShotsByHole, setLoggedShotsByHole] = useState({});
+  const loggedShotsByHoleRef = useRef(loggedShotsByHole);
+  useEffect(() => {
+    loggedShotsByHoleRef.current = loggedShotsByHole;
+  }, [loggedShotsByHole]);
   const [holeSummariesByHole, setHoleSummariesByHole] = useState({});
   const [lieToast, setLieToast] = useState(null);
   const [holeScoresByHole, setHoleScoresByHole] = useState({});
@@ -1528,7 +1532,9 @@ export function GpsRoundScreen({
         [holeIndex]: [
           ...existing,
           {
-            id: shotInput.id || shotInput.loggedAt || `${Date.now()}`,
+            id: shotInput.id
+              ? String(shotInput.id)
+              : `gps-shot-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`,
             num: existing.length + 1,
             club: clubLabel,
             abbr,
@@ -2110,7 +2116,7 @@ export function GpsRoundScreen({
             previousLie={currentHoleShots.length > 0 ? currentHoleShots[currentHoleShots.length - 1]?.lie : null}
             onOverlayStateChange={setOverlayState}
             onShotLogged={(shot) => {
-              const existing = loggedShotsByHole[currentHoleIndex] || [];
+              const existing = loggedShotsByHoleRef.current[currentHoleIndex] || [];
               const prevShot = existing.length > 0 ? existing[existing.length - 1] : null;
               const distanceJump = prevShot && !shot.penalty && !prevShot.penalty
                 ? checkDistanceJump(
@@ -2334,14 +2340,14 @@ export function GpsRoundScreen({
         }))}
         addShotLabel="ADD SHOT"
         onPressAddShot={() => {
-          if (overlayState.anySheet || overlayState.shotFlow !== 'idle') return;
+          if (overlayState.anySheet) return;
           setMeasurePin(null);
           overlayRef.current?.startShotEntry?.();
         }}
         addShotActive={false}
         yardages={yardages}
         compactYardage={compactLayout}
-        bottomInset={0}
+        bottomInset={insets.bottom}
         quietLinks={[]}
         gpsQuality={gpsQuality}
         gpsAccuracyMeters={gpsAccuracyMeters}

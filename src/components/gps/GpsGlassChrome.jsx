@@ -133,7 +133,7 @@ export function GpsGlassChrome({
             <View style={styles.yardageCard}>
               <Text style={styles.playingLabel}>PLAYING</Text>
               <Text style={styles.playingValue}>{displayPlaying}</Text>
-              <Text style={styles.playingSub}>From tee</Text>
+              <Text style={styles.playingSub}>To green</Text>
               <Text style={styles.playingSub}>{playingDetailText}</Text>
               <Text style={styles.playingAdjust}>
                 W {windAdj >= 0 ? '+' : ''}{windAdj} • T {tempAdj >= 0 ? '+' : ''}{tempAdj} • E {elevAdj >= 0 ? '+' : ''}{elevAdj}

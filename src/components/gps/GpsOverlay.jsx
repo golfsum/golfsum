@@ -15,7 +15,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Crypto from 'expo-crypto';
+import { randomUUID } from 'expo-crypto';
 import { haversineYards } from '../../services/haversine';
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout';
 import { colors, radius } from '../../theme/tokens';
@@ -235,22 +235,27 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
     },
     startShotEntry() {
       // IDLE → PLACING (fresh shot object + fresh ID)
-      if (mapModeRef.current !== 'gps') return;
+      // No mode guard — allow starting a new shot from any state by resetting first
+      if (mapModeRef.current !== 'gps') {
+        // Reset any in-progress shot before starting fresh
+        mapModeRef.current = 'gps';
+        setMapMode('gps');
+        shotInProgressRef.current = null;
+        setShotInProgress(null);
+        setTargetPoint(null);
+      }
 
-      const shotId =
-        typeof Crypto.randomUUID === 'function'
-          ? Crypto.randomUUID()
-          : `shot-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      let shotId;
+      try {
+        shotId = randomUUID();
+      } catch {
+        shotId = `shot-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+      }
 
-      const origin =
-        Number.isFinite(startPoint?.lat) && Number.isFinite(startPoint?.lng)
-          ? startPoint
-          : null;
-      const initialCoords = origin ? { latitude: origin.lat, longitude: origin.lng } : null;
-
+      // Start with no coords — user pans the map crosshair to place the shot anywhere
       const nextShot = {
         id: shotId,
-        coords: initialCoords,
+        coords: null,
         club: null,
       };
 
@@ -263,7 +268,7 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
       setSelectedClub(null);
       setClubPickerOpen(false);
       setPenalty(null);
-      setTargetPoint(initialCoords ? { lng: initialCoords.longitude, lat: initialCoords.latitude } : null);
+      setTargetPoint(null);
 
       // Smart lie defaults: shot 1 = Tee, shot 2 = Fairway, shot 3+ = inherit previous
       if (shotNumber <= 1) {
@@ -290,7 +295,9 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
       const nextCoords = { latitude: nextTargetPoint.lat, longitude: nextTargetPoint.lng };
 
       setTargetPoint(nextTargetPoint);
-      shotInProgressRef.current = { ...currentShot, coords: nextCoords };
+      const moved = { ...currentShot, coords: nextCoords };
+      shotInProgressRef.current = moved;
+      setShotInProgress(moved);
     },
     resetOverlay() {
       mapModeRef.current = 'gps';
@@ -491,19 +498,22 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
   return (
     <>
       {targetGeo && MapboxGL && (
-        <MapboxGL.ShapeSource id="gps-overlay-target" shape={targetGeo}>
+        <MapboxGL.ShapeSource
+          id={shotInProgress?.id ? `gps-target-${shotInProgress.id}` : 'gps-overlay-target'}
+          shape={targetGeo}
+        >
           <MapboxGL.LineLayer
-            id="gps-overlay-target-line"
+            id={shotInProgress?.id ? `gps-target-line-${shotInProgress.id}` : 'gps-overlay-target-line'}
             filter={['==', ['get', 'kind'], 'target-line']}
             style={mapStyles.targetLine}
           />
           <MapboxGL.CircleLayer
-            id="gps-overlay-target-point"
+            id={shotInProgress?.id ? `gps-target-pt-${shotInProgress.id}` : 'gps-overlay-target-point'}
             filter={['==', ['get', 'kind'], 'target-point']}
             style={mapStyles.targetPoint}
           />
           <MapboxGL.CircleLayer
-            id="gps-overlay-target-point-core"
+            id={shotInProgress?.id ? `gps-target-ptc-${shotInProgress.id}` : 'gps-overlay-target-point-core'}
             filter={['==', ['get', 'kind'], 'target-point']}
             style={mapStyles.targetPointCore}
           />
