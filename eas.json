@@ -9,14 +9,18 @@
       "distribution": "store",
       "environment": "development",
       "ios": {
-        "image": "latest"
+        "image": "latest",
+        "buildConfiguration": "Debug",
+        "prebuildCommand": "npx expo prebuild --platform ios --clean && ruby scripts/add_watch_target.rb"
       }
     },
     "preview": {
       "distribution": "store",
       "environment": "preview",
       "ios": {
-        "image": "latest"
+        "image": "latest",
+        "buildConfiguration": "Release",
+        "prebuildCommand": "npx expo prebuild --platform ios --clean && ruby scripts/add_watch_target.rb"
       }
     },
     "production": {
@@ -24,7 +28,9 @@
       "distribution": "store",
       "environment": "production",
       "ios": {
-        "image": "latest"
+        "image": "latest",
+        "buildConfiguration": "Release",
+        "prebuildCommand": "npx expo prebuild --platform ios --clean && ruby scripts/add_watch_target.rb"
       }
     }
   },

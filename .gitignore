@@ -65,7 +65,9 @@ backend/scorecard_ocr/__pycache__/
 *.dll
 
 # iOS local build artifacts
+/ios
 
+# android local build artifacts
 android/
 
 # Local packaged app artifacts
