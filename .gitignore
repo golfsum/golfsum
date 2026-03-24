@@ -45,7 +45,7 @@ website/.env.*.local
 *.tsbuildinfo
 
 # generated native folders
-/ios
+
 /android
 
 
@@ -65,11 +65,7 @@ backend/scorecard_ocr/__pycache__/
 *.dll
 
 # iOS local build artifacts
-ios/Pods/
-ios/build/
-ios/DerivedData/
 
-ios/
 android/
 
 # Local packaged app artifacts

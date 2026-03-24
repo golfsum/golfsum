@@ -11,6 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatCourseName } from '../utils/courseName';
 import * as Location from 'expo-location';
 import {
@@ -62,6 +63,8 @@ type ResolvedBackendCourse = {
   state?: string;
   holes?: number;
   distance?: number;
+  latitude?: number;
+  longitude?: number;
 };
 
 type SavedGpsSetup = {
@@ -77,7 +80,13 @@ interface CourseSearchScreenProps {
     courseName?: string,
     settings?: { teeName?: string; startingHole?: number; endingHole?: number; roundLength?: GpsRoundLength; tournamentMode?: boolean; routeHoleNumbers?: number[]; routeLabel?: string }
   ) => void;
-  onPlanCourse?: (courseId: string, courseName?: string, teeColor?: string) => void;
+  onPlanCourse?: (
+    courseId: string,
+    courseName?: string,
+    teeColor?: string,
+    latitude?: number,
+    longitude?: number
+  ) => void;
   onBack: () => void;
   onManualCourseEntry?: () => void; // Trigger manual course entry fallback
   onUploadScorecard?: (courseSeed?: OSMGolfCourse) => void;
@@ -136,6 +145,7 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
   const [searchAllAvailable, setSearchAllAvailable] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [reportContext, setReportContext] = useState<any | null>(null);
+  const insets = useSafeAreaInsets();
   const selectedGpsRoute = useMemo(
     () => gpsRouteOptions.find((route) => route.id === selectedGpsRouteId) || null,
     [gpsRouteOptions, selectedGpsRouteId]
@@ -1357,10 +1367,10 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
               style={styles.gpsStartButton}
               onPress={() => {
                 resolveOsmToGolfApi(course).then((resolved) => {
-                  if (resolved?.selected) onPlanCourse(resolved.selected.id, resolved.selected.name);
-                  else onPlanCourse(course.id, course.name);
+                  if (resolved?.selected) onPlanCourse(resolved.selected.id, resolved.selected.name, undefined, resolved.selected.latitude, resolved.selected.longitude);
+                  else onPlanCourse(course.id, course.name, undefined, course.latitude, course.longitude);
                 }).catch(() => {
-                  onPlanCourse(course.id, course.name);
+                  onPlanCourse(course.id, course.name, undefined, course.latitude, course.longitude);
                 });
               }}
             >
@@ -1557,7 +1567,7 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
               {onPlanCourse && (
                 <TouchableOpacity
                   style={styles.gpsStartButton}
-                  onPress={() => onPlanCourse(course.id, course.name)}
+                  onPress={() => onPlanCourse(course.id, course.name, undefined, course.latitude, course.longitude)}
                 >
                   <Ionicons name="clipboard-outline" size={20} color="#60A5FA" />
                   <Text style={[styles.gpsStartText, { color: '#60A5FA' }]}>Plan</Text>
@@ -1597,7 +1607,7 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#E5E7EB" />
         </TouchableOpacity>
@@ -1707,7 +1717,7 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
         onPlanCourse={onPlanCourse ? () => {
           handleCloseGpsSetup();
           const cId = selectedGpsCourseId || gpsSetupCourse?.courseId;
-          if (cId) onPlanCourse(cId, gpsSetupCourse?.courseName, selectedGpsTee || undefined);
+          if (cId) onPlanCourse(cId, gpsSetupCourse?.courseName, selectedGpsTee || undefined, selectedResolvedCourse?.latitude, selectedResolvedCourse?.longitude);
         } : undefined}
       />
 
@@ -1906,13 +1916,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingBottom: 12,
     backgroundColor: '#1a2028',
     borderBottomWidth: 1,
     borderBottomColor: '#2a3038',
   },
   backButton: {
-    padding: 4,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 18,
@@ -2122,7 +2135,7 @@ const styles = StyleSheet.create({
   },
   courseItem: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     backgroundColor: '#1a2028',
     borderRadius: 8,
     padding: 16,
@@ -2162,19 +2175,18 @@ const styles = StyleSheet.create({
   },
   courseBody: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
+    flexDirection: 'column',
+    minWidth: 0,
   },
   courseInfo: {
-    flex: 1,
+    flex: 0,
     minWidth: 0,
   },
   courseActions: {
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
-    marginLeft: 6,
+    marginTop: 8,
   },
   courseActionIcons: {
     flexDirection: 'row',
@@ -2186,19 +2198,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: 6,
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
   },
   courseHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     marginBottom: 4,
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
   },
   courseName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#E5E7EB',
+    flexShrink: 1,
   },
   distanceBadge: {
     flexDirection: 'row',
@@ -2219,8 +2232,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 8,
   },
   gpsStartButton: {
@@ -2230,7 +2243,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(16, 185, 129, 0.1)',
     borderWidth: 1,
     borderColor: 'rgba(16, 185, 129, 0.35)',
-    paddingHorizontal: 9,
+    paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: 8,
   },
@@ -2258,7 +2271,7 @@ const styles = StyleSheet.create({
     color: '#10B981',
   },
   quickStartText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: '#10B981',
   },

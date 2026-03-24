@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import { getCourse, saveCourse, getCourseFromFirestore, saveCourseToFirestore } from './courseCache';
 import { fetchCourseHolesFromBackend } from './golfApi';
 import { getCourseDetail } from './golfApiIoService';
+import { getCourseDetails } from './golfCourseApiService';
 import { buildRoutingOptionsFromHoles } from '../utils/courseRouting';
 
 function normalizeTeeName(name) {
@@ -38,6 +39,41 @@ export function getGpsTeeOptions(course) {
   return [...teeMap.values()].sort((a, b) => b.totalYards - a.totalYards);
 }
 
+/**
+ * Try to enrich GPS tee options with the full tee list from the Golf Course API.
+ * The GPS data source often only has 2-3 tees, while the course API has all of them.
+ */
+async function enrichTeeOptions(courseId, gpsTeeOptions) {
+  try {
+    const details = await getCourseDetails(courseId);
+    if (!details?.teeBoxes?.length) return gpsTeeOptions;
+
+    const gpsMap = new Map(
+      gpsTeeOptions.map((t) => [normalizeTeeName(t.name), t])
+    );
+
+    const merged = details.teeBoxes.map((tb) => {
+      const gpsMatch = gpsMap.get(normalizeTeeName(tb.name));
+      return {
+        name: tb.name,
+        color: tb.color || gpsMatch?.color || '#10B981',
+        totalYards: gpsMatch?.totalYards || tb.yardage || 0,
+      };
+    });
+
+    // Add any GPS tees not in the API (unlikely but safe)
+    for (const [key, gpsTee] of gpsMap) {
+      if (!merged.some((t) => normalizeTeeName(t.name) === key)) {
+        merged.push(gpsTee);
+      }
+    }
+
+    return merged.sort((a, b) => b.totalYards - a.totalYards);
+  } catch {
+    return gpsTeeOptions;
+  }
+}
+
 function buildSetupPayload(course, cached) {
   return {
     course,
@@ -53,31 +89,37 @@ export async function loadGpsRoundSetup(courseId, courseName, latitude, longitud
     throw new Error('Missing course ID');
   }
 
+  let payload;
+
   // 1. Local device cache
   const local = await getCourse(courseId);
   if (local && hasGpsHoleData(local)) {
-    return buildSetupPayload(local, true);
+    payload = buildSetupPayload(local, true);
   }
 
   // 2. Firestore community cache
-  const firestored = await getCourseFromFirestore(courseId);
-  if (firestored && hasGpsHoleData(firestored)) {
-    await saveCourse(courseId, firestored); // backfill local cache
-    return buildSetupPayload(firestored, true);
+  if (!payload) {
+    const firestored = await getCourseFromFirestore(courseId);
+    if (firestored && hasGpsHoleData(firestored)) {
+      await saveCourse(courseId, firestored); // backfill local cache
+      payload = buildSetupPayload(firestored, true);
+    }
   }
 
   // 3. Firebase Function → golfapi.io (server-side, works on all platforms including web)
-  try {
-    const remote = await fetchCourseHolesFromBackend(courseId, courseName, latitude, longitude);
-    await saveCourse(courseId, remote);
-    saveCourseToFirestore(courseId, remote).catch(() => {}); // fire-and-forget
-    return buildSetupPayload(remote, false);
-  } catch (_) {
-    // fall through to golfapi.io direct (native only — blocked by CORS on web)
+  if (!payload) {
+    try {
+      const remote = await fetchCourseHolesFromBackend(courseId, courseName, latitude, longitude);
+      await saveCourse(courseId, remote);
+      saveCourseToFirestore(courseId, remote).catch(() => {}); // fire-and-forget
+      payload = buildSetupPayload(remote, false);
+    } catch (_) {
+      // fall through to golfapi.io direct (native only — blocked by CORS on web)
+    }
   }
 
   // 4. golfapi.io direct (native fallback only — CORS blocked on web)
-  if (Platform.OS !== 'web') {
+  if (!payload && Platform.OS !== 'web') {
     const apiId = courseId.startsWith('golfapiio_') ? courseId.slice('golfapiio_'.length) : courseId;
     try {
       const detail = await getCourseDetail(apiId);
@@ -85,27 +127,34 @@ export async function loadGpsRoundSetup(courseId, courseName, latitude, longitud
         const course = { ...detail, holes: detail.holesData };
         await saveCourse(courseId, course);
         saveCourseToFirestore(courseId, course).catch(() => {});
-        return buildSetupPayload(course, false);
+        payload = buildSetupPayload(course, false);
       }
     } catch (_) {
-      // fall through to mock
+      // fall through to fallback
     }
   }
 
   // Course not found in any source — return a shell with standard tee options
   // so the GPS round can still start. Hole GPS data (distances to green) won't
   // be available, but the map and scoring will work normally.
-  return {
-    course: null,
-    cached: false,
-    teeOptions: [
-      { name: 'Black', color: '#1F2937', totalYards: 0 },
-      { name: 'Blue', color: '#3B82F6', totalYards: 0 },
-      { name: 'White', color: '#F9FAFB', totalYards: 0 },
-      { name: 'Yellow', color: '#F59E0B', totalYards: 0 },
-      { name: 'Red', color: '#EF4444', totalYards: 0 },
-    ],
-    holeCount: 18,
-    routeOptions: [],
-  };
+  if (!payload) {
+    payload = {
+      course: null,
+      cached: false,
+      teeOptions: [
+        { name: 'Black', color: '#1F2937', totalYards: 0 },
+        { name: 'Blue', color: '#3B82F6', totalYards: 0 },
+        { name: 'White', color: '#F9FAFB', totalYards: 0 },
+        { name: 'Yellow', color: '#F59E0B', totalYards: 0 },
+        { name: 'Red', color: '#EF4444', totalYards: 0 },
+      ],
+      holeCount: 18,
+      routeOptions: [],
+    };
+  }
+
+  // Enrich tee options with full tee list from Golf Course API (has all tees with ratings/slopes)
+  payload.teeOptions = await enrichTeeOptions(courseId, payload.teeOptions);
+
+  return payload;
 }

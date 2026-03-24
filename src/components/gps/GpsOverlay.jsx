@@ -149,7 +149,7 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
   const [targetPoint, setTargetPoint] = useState(null); // { lng, lat } derived from shotInProgress.coords
   const [shotInProgress, setShotInProgress] = useState(null); // { id, coords:{latitude,longitude}|null, club:string|null }
   const shotInProgressRef = useRef(null);
-  const [mapMode, setMapMode] = useState('gps'); // 'gps' | 'placing' | 'confirming'
+  const [mapMode, setMapMode] = useState('gps'); // 'gps' | 'mark' | 'edit'
   const mapModeRef = useRef('gps');
   const [clubPickerOpen, setClubPickerOpen] = useState(false);
   const [selectedClub, setSelectedClub] = useState(null);
@@ -192,8 +192,8 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
     },
     handleShotMapTap(tapCoords) {
       // Move the shot marker using tap coordinates.
-      // In `placing`, we transition to `confirming` and open the club picker.
-      if (mapModeRef.current !== 'placing' && mapModeRef.current !== 'confirming') return false;
+      // `mark` is for new shots; `edit` is for moving an existing shot.
+      if (mapModeRef.current !== 'mark' && mapModeRef.current !== 'edit') return false;
       if (!tapCoords || !Number.isFinite(tapCoords.latitude) || !Number.isFinite(tapCoords.longitude)) return false;
       const currentShot = shotInProgressRef.current;
       if (!currentShot?.id) return false;
@@ -203,38 +203,26 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
         longitude: tapCoords.longitude,
       };
 
-      // Keep existing overlay logic working by deriving targetPoint for distance/lie suggestions.
       const nextTargetPoint = { lng: nextCoords.longitude, lat: nextCoords.latitude };
       setTargetPoint(nextTargetPoint);
 
-      if (mapModeRef.current === 'placing') {
-        mapModeRef.current = 'confirming';
-        setMapMode('confirming');
-
-        const nextShot = currentShot ? ({
-          ...currentShot,
-          coords: nextCoords,
-          club: null,
-        }) : currentShot;
-
-        shotInProgressRef.current = nextShot;
-        setShotInProgress(nextShot);
-
-        setSelectedClub(null);
+      const nextShot = currentShot ? ({
+        ...currentShot,
+        coords: nextCoords,
+        club: currentShot.club || null,
+      }) : currentShot;
+      shotInProgressRef.current = nextShot;
+      setShotInProgress(nextShot);
+      setSelectedClub(nextShot?.club || null);
+      if (mapModeRef.current === 'mark') {
         setClubPickerOpen(true);
       } else {
-        // confirming: just move the marker; keep club selection
-        const nextShot = currentShot ? ({
-          ...currentShot,
-          coords: nextCoords,
-        }) : currentShot;
-        shotInProgressRef.current = nextShot;
-        setShotInProgress(nextShot);
+        setClubPickerOpen(false);
       }
       return true;
     },
     startShotEntry() {
-      // IDLE → PLACING (fresh shot object + fresh ID)
+      // IDLE → MARK (fresh shot object + fresh ID)
       // No mode guard — allow starting a new shot from any state by resetting first
       if (mapModeRef.current !== 'gps') {
         // Reset any in-progress shot before starting fresh
@@ -261,8 +249,8 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
 
       shotInProgressRef.current = nextShot;
       setShotInProgress(nextShot);
-      mapModeRef.current = 'placing';
-      setMapMode('placing');
+      mapModeRef.current = 'mark';
+      setMapMode('mark');
 
       // Clear previous shot state so each shot starts completely fresh
       setSelectedClub(null);
@@ -282,22 +270,39 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
       }
     },
     handleCameraChanged(event) {
-      // Pan-to-place: while placing/confirming, keep marker aligned to camera center.
-      if (mapModeRef.current === 'gps') return;
+      // Only used to reset green zoom state — shot placement is tap-only now
+      // Do not update shotInProgress here
+    },
+    startShotMoveEntry(shotToMove) {
+      // Enter edit mode to move an existing shot's marker
+      if (mapModeRef.current !== 'gps') {
+        mapModeRef.current = 'gps';
+        setMapMode('gps');
+        shotInProgressRef.current = null;
+        setShotInProgress(null);
+        setTargetPoint(null);
+      }
 
-      const center = event?.properties?.center ?? event?.properties?.centerCoordinate ?? event?.geometry?.coordinates;
-      if (!Array.isArray(center) || center.length < 2) return;
+      const nextShot = {
+        id: shotToMove.id,
+        coords: shotToMove.from
+          ? { latitude: shotToMove.from.lat, longitude: shotToMove.from.lng }
+          : null,
+        club: shotToMove.club,
+        isMoveEdit: true,
+      };
 
-      const currentShot = shotInProgressRef.current;
-      if (!currentShot?.id) return;
-
-      const nextTargetPoint = { lng: center[0], lat: center[1] };
-      const nextCoords = { latitude: nextTargetPoint.lat, longitude: nextTargetPoint.lng };
-
-      setTargetPoint(nextTargetPoint);
-      const moved = { ...currentShot, coords: nextCoords };
-      shotInProgressRef.current = moved;
-      setShotInProgress(moved);
+      shotInProgressRef.current = nextShot;
+      setShotInProgress(nextShot);
+      mapModeRef.current = 'edit';
+      setMapMode('edit');
+      setSelectedClub(shotToMove.club);
+      setClubPickerOpen(false);
+      setPenalty(null);
+      setTargetPoint(shotToMove.from || null);
+      if (shotToMove.lie) {
+        setManualLie({ lie: shotToMove.lie, color: lieChoicesMap[shotToMove.lie] || '#9CA3AF' });
+      }
     },
     resetOverlay() {
       mapModeRef.current = 'gps';
@@ -416,43 +421,81 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
     };
   }, [targetPoint, userPos]);
 
-  const logShot = () => {
-    // CONFIRMING → IDLE
+  const cancelShotEntry = () => {
+    setClubPickerOpen(false);
+    shotInProgressRef.current = null;
+    setShotInProgress(null);
+    setTargetPoint(null);
+    mapModeRef.current = 'gps';
+    setMapMode('gps');
+    setSelectedClub(null);
+    setManualLie(null);
+    setPenalty(null);
+  };
+
+  const finalizeShot = (club) => {
     const currentShot = shotInProgressRef.current;
-    // Use ref coords (synchronously updated by handleCameraChanged) as authoritative position,
-    // falling back to targetPoint React state
     const shotCoords = currentShot?.coords
       ? { lat: currentShot.coords.latitude, lng: currentShot.coords.longitude }
       : targetPoint;
-    if (!shotCoords || !activeClub || !currentShot?.id) return;
-    onShotLogged?.({
-      id: currentShot.id,
-      club: activeClub,
-      holePar,
-      from: { ...shotCoords },
-      to: greenCenter ? { lat: greenCenter.Latitude, lng: greenCenter.Longitude } : null,
-      actualYards: null,              // calculated post-round from consecutive shot.from coords
-      playingYards: tournamentMode ? targetDistance : targetPlaying?.adjustedYards ?? targetDistance,
-      weather: tournamentMode ? null : weather,
-      lie: activeLie?.lie || null,
-      lieColor: activeLie?.color || null,
-      tee: teePoi
-        ? { lat: teePoi.Latitude, lng: teePoi.Longitude }
-        : null,
-      targetKind: 'map',
-      penalty: penalty || null,
-      penaltyStrokes: penalty ? 1 : 0,
-      loggedAt: new Date().toISOString(),
-    });
-    setTargetPoint(null);
-    setManualLie(null);
-    setPenalty(null);
-    setShotInProgress(null);
-    shotInProgressRef.current = null;
-    mapModeRef.current = 'gps';
-    setMapMode('gps');
+
+    if (!shotCoords || !currentShot?.id) {
+      cancelShotEntry();
+      return;
+    }
+
+    let committed = false;
+    try {
+      onShotLogged?.({
+        id: currentShot.id,
+        club,
+        holePar,
+        from: { ...shotCoords },
+        to: greenCenter ? { lat: greenCenter.Latitude, lng: greenCenter.Longitude } : null,
+        actualYards: null,
+        playingYards: tournamentMode ? targetDistance : targetPlaying?.adjustedYards ?? targetDistance,
+        weather: tournamentMode ? null : weather,
+        lie: activeLie?.lie || null,
+        lieColor: activeLie?.color || null,
+        tee: teePoi ? { lat: teePoi.Latitude, lng: teePoi.Longitude } : null,
+        targetKind: 'tap',
+        penalty: penalty || null,
+        penaltyStrokes: penalty ? 1 : 0,
+        loggedAt: new Date().toISOString(),
+        isMoveEdit: currentShot.isMoveEdit || false,
+      });
+      committed = true;
+    } catch (error) {
+      console.error('[GpsOverlay] Failed to log shot', error);
+    }
+
+    if (!committed) return;
+
+    cancelShotEntry();
+  };
+
+  const selectClubForShot = (club) => {
+    setSelectedClub(club);
     setClubPickerOpen(false);
-    setSelectedClub(null);
+    if (mapModeRef.current !== 'edit') {
+      mapModeRef.current = 'mark';
+      setMapMode('mark');
+    }
+  };
+
+  const logShot = () => {
+    // CONFIRMING → IDLE (fallback for Done button)
+    const currentShot = shotInProgressRef.current;
+    const shotCoords = currentShot?.coords || targetPoint;
+    if (!activeClub) {
+      setClubPickerOpen(true);
+      return;
+    }
+    if (!shotCoords || !currentShot?.id) {
+      setClubPickerOpen(true);
+      return;
+    }
+    finalizeShot(activeClub);
   };
 
   // Keep refs in sync for imperative access
@@ -473,8 +516,7 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
 
   // Report overlay state to parent (single effect with all computed values)
   useEffect(() => {
-    // While adding a shot, mapMode is the source of truth: placing vs confirming.
-    // Do not collapse confirming into placing — parent HUD uses this for copy + chrome.
+    // While adding a shot, mapMode is the source of truth: gps vs mark.
     const shotFlow =
       mapModeRef.current === 'gps'
         ? selectedClub
@@ -520,9 +562,9 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
         </MapboxGL.ShapeSource>
       )}
 
-      <Modal visible={clubPickerOpen} transparent animationType="fade" onRequestClose={() => setClubPickerOpen(false)}>
+      <Modal visible={clubPickerOpen} transparent animationType="fade" onRequestClose={cancelShotEntry}>
         <View style={styles.modalBackdrop}>
-          <TouchableOpacity style={styles.modalScrim} activeOpacity={1} onPress={() => setClubPickerOpen(false)} />
+          <TouchableOpacity style={styles.modalScrim} activeOpacity={1} onPress={cancelShotEntry} />
           <View style={styles.modalSheet}>
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
@@ -534,7 +576,7 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
                     : `Playing ${targetPlaying?.adjustedYards ?? targetDistance ?? '--'} yds`}
                 </Text>
               </View>
-              <TouchableOpacity style={styles.sheetClose} onPress={() => setClubPickerOpen(false)}>
+              <TouchableOpacity style={styles.sheetClose} onPress={cancelShotEntry}>
                 <Text style={styles.sheetCloseText}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -550,10 +592,7 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
                     <TouchableOpacity
                       key={entry.club}
                       style={[styles.clubCard, active && styles.clubCardActive]}
-                      onPress={() => {
-                        setSelectedClub(entry.club);
-                        setClubPickerOpen(false);
-                      }}
+                      onPress={() => selectClubForShot(entry.club)}
                     >
                       {clubSuggestion.best?.club === entry.club && (
                         <Text style={styles.clubBestLabel}>BEST</Text>
@@ -585,10 +624,7 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
                     <TouchableOpacity
                       key={club}
                       style={[styles.clubCard, active && styles.clubCardActive]}
-                      onPress={() => {
-                        setSelectedClub(club);
-                        setClubPickerOpen(false);
-                      }}
+                      onPress={() => selectClubForShot(club)}
                     >
                       <View style={[styles.clubCardAccent, active && styles.clubCardAccentActive]} />
                       <Text style={[styles.clubCardName, active && styles.clubCardNameActive]}>{club}</Text>
@@ -599,7 +635,7 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
             ) : (
               <Text style={styles.emptyText}>No club distances saved yet.</Text>
             )}
-            <TouchableOpacity style={styles.modalClose} onPress={() => setClubPickerOpen(false)}>
+            <TouchableOpacity style={styles.modalClose} onPress={cancelShotEntry}>
               <Text style={styles.modalCloseText}>Close</Text>
             </TouchableOpacity>
           </View>

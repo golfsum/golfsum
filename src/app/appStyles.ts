@@ -409,4 +409,19 @@ export const appStyles = StyleSheet.create({
     fontSize: 14,
     color: '#9CA3AF',
   },
+  roundsAlreadyCard: {
+    alignSelf: 'center',
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(17,24,39,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  roundsAlreadyText: {
+    fontSize: 13,
+    color: '#D1D5DB',
+    textAlign: 'center',
+  },
 });

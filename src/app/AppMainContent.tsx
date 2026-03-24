@@ -16,7 +16,7 @@ import RoundDetailScreen from '../components/RoundDetailScreen';
 import { ScorecardImportScreen } from '../components/ScorecardImportScreen';
 import { ScorecardViewer } from '../components/ScorecardViewer';
 import { ProUpgradeScreen } from '../screens/ProUpgradeScreen';
-import { WebGpsRoundPreview } from '../screens/WebGpsRoundPreview';
+
 import { clearInProgressRound, InProgressRoundDraft } from '../services/inProgressRoundService';
 import { OSMGolfCourse } from '../services/openStreetMapService';
 import { CourseDetails } from '../services/golfCourseApiService';
@@ -29,7 +29,7 @@ import { UpgradeTrigger } from '../components/UpgradeSheet';
 import { logger } from '../utils/logger';
 import { MilestoneEvent } from '../services/milestoneDetector';
 import { getCurrentUser } from '../services/firebaseAuthService';
-import { NativeGpsRoundScreen, NativeCoursePlanningScreen, NativeGpsRoundReviewScreen } from './nativeScreens';
+import { NativeCoursePlanningScreen, NativeGpsRoundReviewScreen } from './nativeScreens';
 
 type AppMainContentProps = {
   currentScreen: AppScreen;
@@ -95,8 +95,8 @@ type AppMainContentProps = {
     settings?: { teeName?: string; startingHole?: number; endingHole?: number; roundLength?: '18' | 'front9' | 'back9'; tournamentMode?: boolean; routeHoleNumbers?: number[]; routeLabel?: string }
   ) => void;
   onFinishGpsRound: (data: PendingGpsRoundData) => void;
-  planningCourse: { courseId: string; courseName?: string; teeColor?: string } | null;
-  onStartPlanning: (courseId: string, courseName?: string, teeColor?: string) => void;
+  planningCourse: { courseId: string; courseName?: string; teeColor?: string; latitude?: number; longitude?: number } | null;
+  onStartPlanning: (courseId: string, courseName?: string, teeColor?: string, latitude?: number, longitude?: number) => void;
 };
 
 export function AppMainContent(props: AppMainContentProps): React.ReactNode {
@@ -129,7 +129,7 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
           <View style={{ flex: 1 }}>
             <ManualScoreEntry
               courseId={props.selectedCourseId}
-              courseOverride={props.selectedCourseData || undefined}
+              courseOverride={props.selectedCourseData || props.pendingGpsRoundData?.courseOverride || undefined}
               onBack={props.onBack}
               onRoundSaved={props.onRoundSaved}
               quickStart={props.quickStartSettings}
@@ -244,6 +244,8 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
         courseName={props.planningCourse.courseName}
         teeColor={props.planningCourse.teeColor}
         uid={uid}
+        latitude={props.planningCourse.latitude}
+        longitude={props.planningCourse.longitude}
         onBack={props.onBack}
         onStartGpsRound={(cId, cName, tee) => {
           props.onStartGpsRound(cId, cName, { teeName: tee });
@@ -252,40 +254,7 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
     );
   }
 
-  if (props.currentScreen === 'gps-round' && props.gpsRoundCourse) {
-    if (Platform.OS === 'web' || !NativeGpsRoundScreen) {
-      return (
-        <WebGpsRoundPreview
-          courseId={props.gpsRoundCourse.courseId}
-          courseName={props.gpsRoundCourse.courseName}
-          teeColor={props.gpsRoundCourse.teeColor}
-          startingHole={props.gpsRoundCourse.startingHole}
-          endingHole={props.gpsRoundCourse.endingHole}
-          roundLength={props.gpsRoundCourse.roundLength}
-          routeHoleNumbers={props.gpsRoundCourse.routeHoleNumbers as any}
-          routeLabel={props.gpsRoundCourse.routeLabel}
-          tournamentMode={props.gpsRoundCourse.tournamentMode}
-          onBack={props.onBack}
-          onSwitchToManual={props.onBack}
-        />
-      );
-    }
-    return (
-      <NativeGpsRoundScreen
-        courseId={props.gpsRoundCourse.courseId}
-        courseName={props.gpsRoundCourse.courseName}
-        teeColor={props.gpsRoundCourse.teeColor}
-        startingHole={props.gpsRoundCourse.startingHole}
-        endingHole={props.gpsRoundCourse.endingHole}
-        roundLength={props.gpsRoundCourse.roundLength}
-        routeHoleNumbers={props.gpsRoundCourse.routeHoleNumbers}
-        routeLabel={props.gpsRoundCourse.routeLabel}
-        tournamentMode={props.gpsRoundCourse.tournamentMode}
-        onBack={props.onBack}
-        onFinishRound={props.onFinishGpsRound}
-      />
-    );
-  }
+  // GPS round is now rendered as a full-screen absolute overlay in AppRoot.tsx
 
   switch (props.activeTab) {
     case 'averages':
@@ -403,28 +372,34 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
                 Already have scorecards? Import 3 rounds and your stats will show here.
               </Text>
 
-              <View style={styles.featuresList}>
-                <View style={styles.featureItem}>
-                  <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                  <Text style={styles.featureText}>42,000 Courses Worldwide</Text>
+              {props.rounds.length === 0 ? (
+                <View style={styles.featuresList}>
+                  <View style={styles.featureItem}>
+                    <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                    <Text style={styles.featureText}>42,000 Courses Worldwide</Text>
+                  </View>
+                  <View style={styles.featureItem}>
+                    <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                    <Text style={styles.featureText}>GPS scoring with live yardages</Text>
+                  </View>
+                  <View style={styles.featureItem}>
+                    <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                    <Text style={styles.featureText}>Directional miss tracking</Text>
+                  </View>
+                  <View style={styles.featureItem}>
+                    <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                    <Text style={styles.featureText}>Scan scorecards to import instantly</Text>
+                  </View>
+                  <View style={styles.featureItem}>
+                    <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                    <Text style={styles.featureText}>GolfSum Player Rating calculation</Text>
+                  </View>
                 </View>
-                <View style={styles.featureItem}>
-                  <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                  <Text style={styles.featureText}>GPS scoring with live yardages</Text>
+              ) : (
+                <View style={styles.roundsAlreadyCard}>
+                  <Text style={styles.roundsAlreadyText}>You already have rounds. Start a new one or review history.</Text>
                 </View>
-                <View style={styles.featureItem}>
-                  <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                  <Text style={styles.featureText}>Directional miss tracking</Text>
-                </View>
-                <View style={styles.featureItem}>
-                  <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                  <Text style={styles.featureText}>Scan scorecards to import instantly</Text>
-                </View>
-                <View style={styles.featureItem}>
-                  <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                  <Text style={styles.featureText}>GolfSum Player Rating calculation</Text>
-                </View>
-              </View>
+              )}
             </View>
           </ScrollView>
         </View>

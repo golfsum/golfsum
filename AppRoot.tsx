@@ -3,6 +3,7 @@ import {
   View,
   Text,
   StatusBar,
+  StyleSheet,
   Platform,
   TouchableOpacity,
   Alert,
@@ -22,7 +23,7 @@ import { CourseSearchScreen } from './src/components/CourseSearchScreen';
 import { CourseAnalyticsScreen } from './src/components/CourseAnalyticsScreen';
 import { ManualScoreEntry } from './src/components/ManualScoreEntry';
 import { ScorecardImportScreen } from './src/components/ScorecardImportScreen';
-import { getRounds, calculateHandicapIndex, resetFirestoreConnection, syncLocalDataToFirestore, loadSampleRounds, getSampleRound, clearLocalRounds, seedPebbleHistoryRounds } from './src/services/roundsService';
+import { getRounds, calculateHandicapIndex, resetFirestoreConnection, syncLocalDataToFirestore, loadSampleRounds, getSampleRound, clearLocalRounds, seedPebbleHistoryRounds, seedHavenHistoryRounds } from './src/services/roundsService';
 import { getCurrentUser, onAuthChange } from './src/services/firebaseAuthService';
 import { RoundDetailView } from './src/components/RoundDetailView';
 import { ScorecardViewer } from './src/components/ScorecardViewer';
@@ -56,6 +57,8 @@ import { ProUpgradeScreen } from './src/screens/ProUpgradeScreen';
 import { appStyles as styles } from './src/app/appStyles';
 import { AppScreen } from './src/app/appTypes';
 import { AppMainContent } from './src/app/AppMainContent';
+import { GpsRoundScreen } from './src/screens/GpsRoundScreen';
+import { WebGpsRoundPreview } from './src/screens/WebGpsRoundPreview';
 import SaveConfirmationOverlay from './src/components/SaveConfirmationOverlay';
 import { detectMilestone, MilestoneEvent } from './src/services/milestoneDetector';
 import { consumeWatchEndRoundFlag, initializeWatchReceiver, type WatchBridgeEvent } from './src/services/watchBridgeService';
@@ -175,6 +178,8 @@ export default function App() {
     courseId: string;
     courseName?: string;
     teeColor?: string;
+    latitude?: number;
+    longitude?: number;
   } | null>(null);
   const [selectedScorecard, setSelectedScorecard] = useState<ScorecardResult | null>(null);
   const [scorecardCourseSeed, setScorecardCourseSeed] = useState<OSMGolfCourse | null>(null);
@@ -306,6 +311,23 @@ export default function App() {
         logger.debug('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         setRefreshTrigger(prev => prev + 1);
       };
+      (window as any).seedHavenHistory = async () => {
+        const user = getCurrentUser();
+        if (!user) {
+          logger.debug('❌ Not signed in. Run window.checkAuth() first.');
+          return;
+        }
+        logger.debug('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        logger.debug('🏌️  SEEDING HAVEN HISTORY');
+        logger.debug('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        const rounds = await seedHavenHistoryRounds();
+        logger.debug(`✅ Added ${rounds.length} Haven rounds`);
+        rounds.forEach((round, index) => {
+          logger.debug(`   ${index + 1}. ${round.courseName} ${round.score}`);
+        });
+        logger.debug('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        setRefreshTrigger(prev => prev + 1);
+      };
       logger.debug('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       logger.debug('💡 CONSOLE COMMANDS:');
       logger.debug('   window.checkAuth()    - Check authentication status');
@@ -313,6 +335,7 @@ export default function App() {
       logger.debug('   window.testFirestore() - Test Firestore connection');
       logger.debug('   window.resetFirestore() - Reset Firestore after rule changes');
       logger.debug('   window.seedPebbleHistory() - Add 3 Pebble Beach test rounds');
+      logger.debug('   window.seedHavenHistory() - Add 3 Haven Golf Course test rounds');
       logger.debug('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     }
   }, []);
@@ -518,8 +541,8 @@ export default function App() {
     setCurrentScreen('gps-round');
   };
 
-  const handleStartPlanning = (courseId: string, courseName?: string, teeColor?: string) => {
-    setPlanningCourse({ courseId, courseName, teeColor });
+  const handleStartPlanning = (courseId: string, courseName?: string, teeColor?: string, latitude?: number, longitude?: number) => {
+    setPlanningCourse({ courseId, courseName, teeColor, latitude, longitude });
     setCurrentScreen('course-planning');
   };
 
@@ -1020,6 +1043,43 @@ export default function App() {
       >
         {content}
       </View>
+
+      {/* GPS Round — full-screen absolute overlay, bypasses mainContent constraints */}
+      {currentScreen === 'gps-round' && gpsRoundCourse && (
+        Platform.OS === 'web' ? (
+          <View style={StyleSheet.absoluteFillObject}>
+            <WebGpsRoundPreview
+              courseId={gpsRoundCourse.courseId}
+              courseName={gpsRoundCourse.courseName}
+              teeColor={gpsRoundCourse.teeColor}
+              startingHole={gpsRoundCourse.startingHole}
+              endingHole={gpsRoundCourse.endingHole}
+              roundLength={gpsRoundCourse.roundLength}
+              routeHoleNumbers={gpsRoundCourse.routeHoleNumbers as any}
+              routeLabel={gpsRoundCourse.routeLabel}
+              tournamentMode={gpsRoundCourse.tournamentMode}
+              onBack={handleBack}
+              onSwitchToManual={handleBack}
+            />
+          </View>
+        ) : (
+          <View style={StyleSheet.absoluteFillObject}>
+            <GpsRoundScreen
+              courseId={gpsRoundCourse.courseId}
+              courseName={gpsRoundCourse.courseName}
+              teeColor={gpsRoundCourse.teeColor}
+              startingHole={gpsRoundCourse.startingHole}
+              endingHole={gpsRoundCourse.endingHole}
+              roundLength={gpsRoundCourse.roundLength}
+              routeHoleNumbers={gpsRoundCourse.routeHoleNumbers}
+              routeLabel={gpsRoundCourse.routeLabel}
+              tournamentMode={gpsRoundCourse.tournamentMode}
+              onBack={handleBack}
+              onFinishRound={handleFinishGpsRound}
+            />
+          </View>
+        )
+      )}
 
       {/* Bottom Navigation */}
       {showHeaderAndNav && (

@@ -37,7 +37,7 @@ import {
   appendReportReply,
   ReportedIssue,
 } from '../services/userService';
-import { syncLocalDataToFirestore, getRounds, clearLocalRounds, seedPebbleHistoryRounds } from '../services/roundsService';
+import { syncLocalDataToFirestore, getRounds, clearLocalRounds, seedPebbleHistoryRounds, seedHavenHistoryRounds } from '../services/roundsService';
 import { getStatPreferencesFromProfile } from '../utils/statPreferences';
 import { getHandicapCalculationDetails } from '../services/whsCalculations';
 import { exportRoundsCsv, exportRoundsExcel, exportRoundsJson } from '../services/dataExportService';
@@ -198,6 +198,7 @@ export const ProfileTab: React.FC<Props> = ({
   const [watchDebugQueueCount, setWatchDebugQueueCount] = useState(0);
   const [watchDebugLastEvent, setWatchDebugLastEvent] = useState<string>('—');
   const [isSeedingPebbleHistory, setIsSeedingPebbleHistory] = useState(false);
+  const [isSeedingHavenHistory, setIsSeedingHavenHistory] = useState(false);
   const scrollRef = useRef<ScrollView | null>(null);
   const autoHomeCourseAppliedRef = useRef(false);
   const { canAccess, inTrial, trialRoundsUsed, trialLimit, refreshTrial } = useFeatureGate({ refreshKey: isActive ? 1 : 0 });
@@ -234,6 +235,23 @@ export const ProfileTab: React.FC<Props> = ({
       Alert.alert('Could not add Pebble rounds', message);
     } finally {
       setIsSeedingPebbleHistory(false);
+    }
+  };
+
+  const handleSeedHavenHistory = async () => {
+    try {
+      setIsSeedingHavenHistory(true);
+      const seeded = await seedHavenHistoryRounds();
+      await loadRounds();
+      Alert.alert(
+        'Haven history added',
+        `${seeded.length} Haven Golf Course rounds added to History.`
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not add Haven rounds.';
+      Alert.alert('Could not add Haven rounds', message);
+    } finally {
+      setIsSeedingHavenHistory(false);
     }
   };
 
@@ -2097,6 +2115,22 @@ export const ProfileTab: React.FC<Props> = ({
                     {isSeedingPebbleHistory ? 'Adding Pebble rounds' : 'Add Pebble Beach rounds'}
                   </Text>
                   <Text style={styles.settingValue}>Adds 3 low-80s Pebble test rounds</Text>
+                </View>
+                <Ionicons name="add-circle-outline" size={18} color="#9CA3AF" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.settingRow, { marginTop: 12 }]}
+                onPress={handleSeedHavenHistory}
+                disabled={isSeedingHavenHistory}
+              >
+                <View style={styles.settingIcon}>
+                  <Ionicons name="golf-outline" size={18} color="#10B981" />
+                </View>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>
+                    {isSeedingHavenHistory ? 'Adding Haven rounds' : 'Add Haven Golf Course rounds'}
+                  </Text>
+                  <Text style={styles.settingValue}>Adds 3 low-80s Haven test rounds</Text>
                 </View>
                 <Ionicons name="add-circle-outline" size={18} color="#9CA3AF" />
               </TouchableOpacity>

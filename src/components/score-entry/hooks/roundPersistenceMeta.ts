@@ -17,5 +17,6 @@ export function buildRoundPersistenceMeta(
     gpsShotCount: gpsRoundData?.gpsShots?.length ?? 0,
     gpsHoleSummaries: gpsRoundData?.gpsHoleSummaries,
     gpsHoleFlags: gpsRoundData?.gpsHoleFlags,
+    holeMapUrls: gpsRoundData?.holeMapUrls,
   };
 }

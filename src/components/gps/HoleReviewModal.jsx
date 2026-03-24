@@ -121,6 +121,11 @@ function ShotRow({ shot, index, isEditable, onEditClub, onEditLie, onDelete }) {
         <Text style={styles.shotDistance}>
           {shot.distanceYards != null ? `${Math.round(shot.distanceYards)} yds` : '–'}
         </Text>
+        {shot.offCourseFlag && (
+          <View style={styles.offCourseBadge}>
+            <Text style={styles.offCourseBadgeText}>Logged off-course</Text>
+          </View>
+        )}
         {shot.addedRetrospectively && (
           <View style={styles.retroBadge}>
             <Text style={styles.retroBadgeText}>Added</Text>
@@ -582,6 +587,17 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: radius.sm,
     marginLeft: spacing.sm,
+  },
+  offCourseBadge: {
+    backgroundColor: 'rgba(245, 158, 11, 0.14)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    marginLeft: spacing.sm,
+  },
+  offCourseBadgeText: {
+    ...typography.labelSm,
+    color: '#F59E0B',
   },
   retroBadgeText: {
     ...typography.labelSm,

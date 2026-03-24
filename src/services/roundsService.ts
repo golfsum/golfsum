@@ -31,12 +31,14 @@ import { logger } from '../utils/logger';
 import { incrementTrialRound } from './trialService';
 import { getMockGpsCourse } from './gpsMockCourses';
 import { processRoundShotDistances } from './clubDistanceService';
+import { MAPBOX_PUBLIC_TOKEN } from '../config/mapbox';
 
 const STORAGE_KEY = 'golf_rounds';
 const SAMPLE_ROUND_KEY = '@GolfSum:SampleRound';
 const SAMPLE_DISMISSED_KEY = '@GolfSum:SampleRoundDismissed';
 export const SAMPLE_ROUND_ID = 'sample_round_1';
 const PEBBLE_BEACH_COURSE_ID = '141520658891108829';
+const HAVEN_COURSE_ID = 'haven_golf_course_green_valley_az';
 const HANDICAP_WINDOW = 20; // Last 20 rounds (WHS standard)
 const HANDICAP_BEST = 8; // Best 8 of 20 (WHS standard)
 
@@ -195,6 +197,125 @@ function buildPebbleShotLog(
   return shots;
 }
 
+function buildSyntheticShotPoint(
+  origin: { lat: number; lng: number },
+  bearingDeg: number,
+  distanceYards: number,
+  lateralYards = 0,
+): { lat: number; lng: number } {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const yardsPerDegreeLat = 121440;
+  const forwardLat = Math.cos(toRad(bearingDeg)) * distanceYards;
+  const forwardLng = Math.sin(toRad(bearingDeg)) * distanceYards;
+  const lateralBearing = bearingDeg + 90;
+  const lateralLat = Math.cos(toRad(lateralBearing)) * lateralYards;
+  const lateralLng = Math.sin(toRad(lateralBearing)) * lateralYards;
+  return {
+    lat: origin.lat + ((forwardLat + lateralLat) / yardsPerDegreeLat),
+    lng: origin.lng + ((forwardLng + lateralLng) / (yardsPerDegreeLat * Math.cos(toRad(origin.lat)))),
+  };
+}
+
+function buildSeedStaticMapUrl(shots: GpsShotLog[], width = 700, height = 400): string | null {
+  if (!MAPBOX_PUBLIC_TOKEN) return null;
+  const coords = shots.flatMap((shot) => {
+    const pts: Array<[number, number]> = [];
+    const from = shot?.from;
+    const to = shot?.to;
+    if (from && Number.isFinite(from.lng) && Number.isFinite(from.lat)) pts.push([from.lng, from.lat]);
+    if (to && Number.isFinite(to.lng) && Number.isFinite(to.lat)) pts.push([to.lng, to.lat]);
+    return pts;
+  });
+  if (coords.length === 0) return null;
+  const lngs = coords.map(([lng]) => lng);
+  const lats = coords.map(([, lat]) => lat);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const padLng = Math.max((maxLng - minLng) * 0.18, 0.0012);
+  const padLat = Math.max((maxLat - minLat) * 0.18, 0.001);
+  const markers = shots
+    .filter((shot): shot is GpsShotLog & { from: NonNullable<GpsShotLog['from']> } => !!shot?.from && Number.isFinite(shot.from.lng) && Number.isFinite(shot.from.lat))
+    .map((shot, index) => {
+      const from = shot.from;
+      return `pin-s-${index + 1}+${index === 0 ? '60A5FA' : '1ac855'}(${from.lng},${from.lat})`;
+    })
+    .join(',');
+  const staticPath = markers.length > 0
+    ? `${markers}/${minLng - padLng},${minLat - padLat},${maxLng + padLng},${maxLat + padLat}`
+    : `${minLng - padLng},${minLat - padLat},${maxLng + padLng},${maxLat + padLat}`;
+  return `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/${staticPath}/${width}x${height}@2x?access_token=${MAPBOX_PUBLIC_TOKEN}&attribution=false`;
+}
+
+function buildHavenShotLog(
+  holeNumber: number,
+  teeClub: string,
+  approachClub: string | null,
+  holeYardage: number,
+  par: number,
+  roundIndex: number,
+  dateIso?: string,
+): GpsShotLog[] {
+  const holeRow = Math.floor((holeNumber - 1) / 6);
+  const holeCol = (holeNumber - 1) % 6;
+  const tee = {
+    lat: 31.8718 + (holeRow * 0.00042) + ((holeCol - 2.5) * 0.00019),
+    lng: -111.0024 + (holeCol * 0.00042) + ((holeRow - 1) * 0.00017),
+  };
+  const bearing = (38 + (holeNumber * 17)) % 360;
+  const teeDistance = par === 3
+    ? Math.max(holeYardage - 8, 85)
+    : Math.max(Math.round(holeYardage * (par === 5 ? 0.54 : 0.61)), 130);
+  const approachDistance = par === 3
+    ? Math.max(holeYardage - teeDistance - 6, 6)
+    : Math.max(holeYardage - teeDistance - 18, 64);
+  const teeLateral = [10, 7, -5][roundIndex % 3] + ((holeNumber % 4 === 0) ? -4 : 0);
+  const approachLateral = [4, 2, -3][roundIndex % 3] + ((holeNumber % 5 === 0) ? 3 : 0);
+  const teeLanding = buildSyntheticShotPoint(tee, bearing, teeDistance, teeLateral);
+  const approachLanding = buildSyntheticShotPoint(tee, bearing, Math.max(holeYardage - 18, teeDistance + 8), approachLateral);
+  const greenLanding = buildSyntheticShotPoint(tee, bearing, holeYardage, 0);
+
+  return [
+    {
+      id: `haven_${holeNumber}_1_${Math.random().toString(36).slice(2, 8)}`,
+      holeNumber,
+      shotNumber: 1,
+      club: teeClub,
+      lie: 'Tee Box',
+      actualYards: teeDistance,
+      playingYards: teeDistance,
+      from: tee,
+      to: teeLanding,
+      loggedAt: dateIso,
+    },
+    {
+      id: `haven_${holeNumber}_2_${Math.random().toString(36).slice(2, 8)}`,
+      holeNumber,
+      shotNumber: 2,
+      club: approachClub || teeClub,
+      lie: par === 3 ? 'Fairway' : 'Fairway',
+      actualYards: approachDistance,
+      playingYards: approachDistance,
+      from: teeLanding,
+      to: approachLanding,
+      loggedAt: dateIso,
+    },
+    {
+      id: `haven_${holeNumber}_3_${Math.random().toString(36).slice(2, 8)}`,
+      holeNumber,
+      shotNumber: 3,
+      club: 'Putter',
+      lie: 'Green',
+      actualYards: Math.max(8, Math.min(14, Math.round(holeYardage * 0.04))),
+      playingYards: Math.max(8, Math.min(14, Math.round(holeYardage * 0.04))),
+      from: approachLanding,
+      to: greenLanding,
+      loggedAt: dateIso,
+    },
+  ];
+}
+
 function summarizeRoundStats(holes: RoundHole[]): RoundStats {
   const fairwayTracked = holes.filter((hole) => hole.par > 3 && hole.fairwayHit !== null && hole.fairwayHit !== undefined);
   const fairways = fairwayTracked.filter((hole) => hole.fairwayHit === true).length;
@@ -263,6 +384,12 @@ function buildPebbleSeedRounds(): Omit<SavedRound, 'id'>[] {
         date.toISOString()
       );
     });
+    const holeMapUrls = pebble.holes.reduce((acc, hole, holeIndex) => {
+      const shots = gpsShots.filter((shot) => shot.holeNumber === hole.hole);
+      const staticUrl = buildSeedStaticMapUrl(shots);
+      if (staticUrl) acc[hole.hole] = staticUrl;
+      return acc;
+    }, {} as Record<number, string>);
 
     const stats = summarizeRoundStats(holes);
     const startedAt = date.getTime() - 4 * 60 * 60 * 1000;
@@ -290,6 +417,7 @@ function buildPebbleSeedRounds(): Omit<SavedRound, 'id'>[] {
       roundDurationMinutes: 240,
       gpsShots,
       gpsShotCount: gpsShots.length,
+      holeMapUrls,
       holes,
       weather: {
         temp: '58F',
@@ -325,6 +453,160 @@ function buildPebbleSeedRounds(): Omit<SavedRound, 'id'>[] {
         version: 1,
         lastVerifiedAt: Date.now(),
       },
+    };
+  });
+}
+
+function buildHavenSeedRounds(): Omit<SavedRound, 'id'>[] {
+  const courseName = 'Haven Golf Course';
+  const courseId = HAVEN_COURSE_ID;
+  const baseDate = new Date();
+  const holeTemplates: Array<{
+    par: number;
+    score: number;
+    putts: number;
+    fairwayHit?: RoundHole['fairwayHit'];
+    greenHit?: RoundHole['greenHit'];
+    teeClub: string;
+    approachClub?: string | null;
+    approachDistance?: RoundHole['approachDistance'];
+    upDown?: boolean | null;
+  }> = [
+    { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '9i', approachDistance: '125-150' },
+    { par: 4, score: 5, putts: 2, fairwayHit: 'right', greenHit: 'short', teeClub: 'Driver', approachClub: '8i', approachDistance: '125-150', upDown: true },
+    { par: 3, score: 3, putts: 1, greenHit: true, teeClub: '8i', approachClub: '8i', approachDistance: '125-150' },
+    { par: 5, score: 6, putts: 2, fairwayHit: 'right', greenHit: 'short', teeClub: 'Driver', approachClub: '5i', approachDistance: '175-200', upDown: false },
+    { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: 'PW', approachDistance: '100-125' },
+    { par: 4, score: 5, putts: 2, fairwayHit: 'right', greenHit: 'right', teeClub: 'Driver', approachClub: '9i', approachDistance: '100-125', upDown: false },
+    { par: 3, score: 4, putts: 2, greenHit: 'short', teeClub: '9i', approachClub: '9i', approachDistance: '100-125', upDown: true },
+    { par: 5, score: 5, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '7i', approachDistance: '150-175' },
+    { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: '8i', approachDistance: '125-150' },
+    { par: 4, score: 5, putts: 2, fairwayHit: 'right', greenHit: 'short', teeClub: 'Driver', approachClub: 'PW', approachDistance: '100-125', upDown: true },
+    { par: 5, score: 6, putts: 2, fairwayHit: 'right', greenHit: 'left', teeClub: 'Driver', approachClub: '6i', approachDistance: '175-200', upDown: false },
+    { par: 3, score: 3, putts: 1, greenHit: true, teeClub: '9i', approachClub: '9i', approachDistance: '100-125' },
+    { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '8i', approachDistance: '125-150' },
+    { par: 4, score: 5, putts: 2, fairwayHit: 'left', greenHit: 'right', teeClub: 'Driver', approachClub: '7i', approachDistance: '150-175', upDown: false },
+    { par: 3, score: 3, putts: 1, greenHit: true, teeClub: '8i', approachClub: '8i', approachDistance: '125-150' },
+    { par: 5, score: 6, putts: 2, fairwayHit: true, greenHit: 'short', teeClub: 'Driver', approachClub: '5i', approachDistance: '175-200', upDown: true },
+    { par: 4, score: 4, putts: 2, fairwayHit: 'right', greenHit: true, teeClub: '3w', approachClub: 'PW', approachDistance: '100-125' },
+    { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '9i', approachDistance: '125-150' },
+  ];
+
+  const yardages = [378, 392, 165, 521, 405, 381, 174, 548, 397, 412, 515, 169, 401, 388, 158, 536, 406, 394];
+  const rounds = [
+    { daysAgo: 4, score: 80, putts: 31, fairways: 8, greens: 10, upDownMade: 4, upDownAttempts: 7, notes: 'Haven seed round 1' },
+    { daysAgo: 2, score: 81, putts: 32, fairways: 7, greens: 9, upDownMade: 3, upDownAttempts: 8, notes: 'Haven seed round 2' },
+    { daysAgo: 1, score: 79, putts: 30, fairways: 9, greens: 11, upDownMade: 5, upDownAttempts: 7, notes: 'Haven seed round 3' },
+  ];
+
+  return rounds.map((roundSeed, roundIndex) => {
+    const date = new Date(baseDate);
+    date.setDate(baseDate.getDate() - roundSeed.daysAgo);
+    date.setHours(8 + roundIndex, 15, 0, 0);
+
+    const holes: RoundHole[] = holeTemplates.map((hole, holeIndex) => ({
+      number: holeIndex + 1,
+      par: hole.par,
+      handicapIndex: holeIndex + 1,
+      score: hole.score + (roundIndex === 1 && holeIndex === 5 ? 1 : 0),
+      putts: hole.putts,
+      fairwayHit: hole.par === 3 ? null : hole.fairwayHit ?? null,
+      greenHit: hole.greenHit ?? null,
+      approachDistance: hole.approachDistance ?? null,
+      teeClub: hole.teeClub,
+      approachClub: hole.approachClub ?? null,
+      upDown: hole.upDown ?? null,
+      isSaved: true,
+    }));
+
+    const stats = summarizeRoundStats(holes);
+    const adjustedScore = roundSeed.score;
+    const gpsShots = holeTemplates.flatMap((hole, holeIndex) =>
+      buildHavenShotLog(
+        holeIndex + 1,
+        hole.teeClub,
+        hole.approachClub ?? null,
+        yardages[holeIndex],
+        hole.par,
+        roundIndex,
+        date.toISOString(),
+      )
+    );
+    const holeMapUrls = holes.reduce((acc, hole, holeIndex) => {
+      const shots = gpsShots.filter((shot) => shot.holeNumber === hole.number);
+      const staticUrl = buildSeedStaticMapUrl(shots);
+      if (staticUrl) acc[hole.number] = staticUrl;
+      return acc;
+    }, {} as Record<number, string>);
+
+    return {
+      date,
+      courseName,
+      score: roundSeed.score,
+      stats: {
+        ...stats,
+        score: roundSeed.score,
+        putts: roundSeed.putts,
+        fairways: roundSeed.fairways,
+        greens: roundSeed.greens,
+        upDownMade: roundSeed.upDownMade,
+        upDownAttempts: roundSeed.upDownAttempts,
+        teeBox: 'Blue',
+      },
+      html: '',
+      imageUri: '',
+      courseId,
+      courseSource: CourseSource.API,
+      teeName: 'Blue',
+      tee: 'Blue',
+      holeCount: 18,
+      plannedHoles: 18,
+      holesPlayed: holes.map((hole) => hole.number),
+      roundLength: '18',
+      roundSource: 'manual',
+      entryMode: 'advanced',
+      roundStartedAt: date.getTime() - 4 * 60 * 60 * 1000,
+      roundEndedAt: date.getTime(),
+      roundDurationMinutes: 235,
+      gpsShots,
+      gpsShotCount: gpsShots.length,
+      holeMapUrls,
+      holes,
+      weather: {
+        temp: '74F',
+        conditions: 'Clear',
+        wind: '8 mph',
+      },
+      notes: roundSeed.notes,
+      isSeededTestRound: true,
+      courseSnapshot: {
+        courseId,
+        name: courseName,
+        location: {
+          city: 'Green Valley',
+          state: 'AZ',
+          country: 'USA',
+          latitude: 31.872,
+          longitude: -111.001,
+        },
+        holesCount: 18,
+        tee: {
+          name: 'Blue',
+          rating: 71.6,
+          slope: 128,
+          yardageTotal: yardages.reduce((sum, yards) => sum + yards, 0),
+        },
+        holes: holes.map((hole, idx) => ({
+          number: hole.number,
+          par: hole.par,
+          yardage: yardages[idx],
+          handicapIndex: idx + 1,
+        })),
+        source: CourseSource.API,
+        version: 1,
+        lastVerifiedAt: Date.now(),
+      },
+      adjustedGrossScore: adjustedScore,
     };
   });
 }
@@ -537,6 +819,34 @@ export async function seedPebbleHistoryRounds(): Promise<SavedRound[]> {
     const savedRound = await saveRound(round);
     saved.push(savedRound);
   }
+
+  await syncLocalDataToFirestore().catch((error) => {
+    logger.warn('Pebble seed sync to Firestore failed, kept local cache only', error);
+  });
+
+  return saved;
+}
+
+export async function seedHavenHistoryRounds(): Promise<SavedRound[]> {
+  const existingRounds = await getRounds();
+  const staleHavenRounds = existingRounds.filter(
+    (round) => round.courseId === HAVEN_COURSE_ID && round.courseName === 'Haven Golf Course' && round.isSeededTestRound,
+  );
+  for (const round of staleHavenRounds) {
+    await deleteRound(round.id);
+  }
+
+  const seedRounds = buildHavenSeedRounds();
+  const saved: SavedRound[] = [];
+
+  for (const round of seedRounds) {
+    const savedRound = await saveRound(round);
+    saved.push(savedRound);
+  }
+
+  await syncLocalDataToFirestore().catch((error) => {
+    logger.warn('Haven seed sync to Firestore failed, kept local cache only', error);
+  });
 
   return saved;
 }

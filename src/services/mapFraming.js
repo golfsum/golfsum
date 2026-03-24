@@ -14,6 +14,16 @@ const DEFAULT_WEB_PADDING_RATIO = {
   left: 0.1,
 };
 
+const PAR_ZOOM_BOOST = {
+  4: 0.28,
+  5: 0.52,
+};
+
+const PAR_NATIVE_PADDING_SCALE = {
+  4: 0.9,
+  5: 0.82,
+};
+
 const MIN_WORLD_SPAN = 1e-6;
 
 function isFiniteNumber(value) {
@@ -54,6 +64,27 @@ function isFramingPoi(poi) {
   if (name === 'green' && (location === 'F' || location === 'C' || location === 'B')) return true;
   if (name === 'dogleg') return true;
   return false;
+}
+
+function getHolePar(hole) {
+  const par = Number(hole?.par);
+  return Number.isFinite(par) ? par : null;
+}
+
+function getHoleZoomBoost(hole) {
+  const par = getHolePar(hole);
+  return par != null ? (PAR_ZOOM_BOOST[par] || 0) : 0;
+}
+
+function getNativePaddingForHole(hole, padding) {
+  const par = getHolePar(hole);
+  const scale = par != null ? (PAR_NATIVE_PADDING_SCALE[par] || 1) : 1;
+  return {
+    top: Math.max(40, Math.round(padding.top * scale)),
+    right: Math.max(50, Math.round(padding.right * scale)),
+    bottom: Math.max(180, Math.round(padding.bottom * scale)),
+    left: Math.max(50, Math.round(padding.left * scale)),
+  };
 }
 
 function getCoordFromPoi(poi) {
@@ -133,7 +164,7 @@ export function getNativeHoleCameraConfig(hole, userPos = null, options = {}) {
   return {
     bounds,
     heading: getHoleBearing(hole),
-    padding,
+    padding: getNativePaddingForHole(hole, padding),
     animationDuration: 600,
     animationMode: 'easeTo',
   };
@@ -165,7 +196,7 @@ export function getStaticMapCameraConfig(hole, imageWidth, imageHeight, options 
 
   const zoomX = Math.log2(1 / expandedSpanX);
   const zoomY = Math.log2(1 / expandedSpanY);
-  const zoom = Math.max(13.8, Math.min(19.3, Math.min(zoomX, zoomY)));
+  const zoom = Math.max(13.8, Math.min(19.3, Math.min(zoomX, zoomY) + getHoleZoomBoost(hole)));
 
   return {
     centerLng: fromWorldLng(centerX),

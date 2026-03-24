@@ -553,6 +553,7 @@ export default function RoundDetailScreen({
         startCoords: s.from ? { lat: s.from.lat, lon: s.from.lon || s.from.lng } : null,
         distanceYards: s.actualYards,
         addedRetrospectively: s.addedRetrospectively || false,
+        offCourseFlag: s.offCourseFlag || false,
       })),
       conditions: null,
       playingYardage: null,
@@ -560,10 +561,10 @@ export default function RoundDetailScreen({
       windAdj: null,
       tempAdj: null,
       elevAdj: null,
-      mapSnapshotUrl: summary?.mapSnapshotUrl || hole.mapSnapshotUrl || null,
+      mapSnapshotUrl: summary?.mapSnapshotUrl || round.holeMapUrls?.[reviewHoleNum] || hole.mapSnapshotUrl || null,
       flags: hole.flags || {},
     };
-  }, [reviewHoleNum, holes, round.gpsShots, round.gpsHoleSummaries]);
+  }, [reviewHoleNum, holes, round.gpsShots, round.gpsHoleSummaries, round.holeMapUrls]);
 
   // 24-hour edit window
   const savedAt = round.roundEndedAt || (round.date instanceof Date ? round.date.getTime() : Date.now());

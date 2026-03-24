@@ -1,3 +1,5 @@
+import type { CourseDetails } from '../services/golfCourseApiService';
+
 export interface ScorecardResult {
   html: string;
   rawText?: string;
@@ -72,6 +74,7 @@ export interface GpsShotLog {
   loggedAt?: string;
   playerConfirmedDistance?: boolean;
   addedRetrospectively?: boolean;
+  offCourseFlag?: boolean;
 }
 
 export interface GpsHoleSummary {
@@ -94,6 +97,7 @@ export interface GpsHoleDataQuality {
 export interface PendingGpsRoundData {
   courseId: string;
   courseName: string;
+  courseOverride?: CourseDetails;
   teeName?: string;
   startingHole?: number;
   endingHole?: number;
@@ -105,6 +109,7 @@ export interface PendingGpsRoundData {
   gpsShots: GpsShotLog[];
   gpsHoleSummaries?: GpsHoleSummary[];
   gpsHoleFlags?: GpsHoleDataQuality[];
+  holeMapUrls?: Record<number, string>;
 }
 
 // History Stat State - Critical for WHS Compliance
@@ -225,6 +230,7 @@ export interface SavedRound {
   gpsShotCount?: number;
   gpsHoleSummaries?: GpsHoleSummary[];
   gpsHoleFlags?: GpsHoleDataQuality[];
+  holeMapUrls?: Record<number, string>;
 
   // Round holes (for NDB calculation)
   holes?: RoundHole[];

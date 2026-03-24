@@ -92,17 +92,17 @@ export function HoleSelectorBar({
 const styles = StyleSheet.create({
   row: {
     paddingVertical: 4,
-    paddingRight: 4,
-    paddingLeft: 4,
+    paddingRight: 8,
+    paddingLeft: 8,
   },
   holeBtn: {
-    width: rs(30),
-    height: rs(30),
-    borderRadius: rs(15),
+    width: rs(32),
+    height: rs(32),
+    borderRadius: rs(16),
     backgroundColor: 'rgba(255,255,255,0.14)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 7,
+    marginRight: 9,
     position: 'relative',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
@@ -112,7 +112,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(26,200,85,0.5)',
   },
   holeText: {
-    fontSize: rs(10),
+    fontSize: rs(11),
     fontWeight: '700',
     color: 'rgba(255,255,255,0.55)',
   },

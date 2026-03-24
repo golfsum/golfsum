@@ -837,9 +837,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(76, 175, 125, 0.12)',
   },
   teePill: {
-    width: 34,
-    height: 28,
-    borderRadius: 999,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: '#0F172A',
     overflow: 'hidden',
     borderWidth: 1,
@@ -849,8 +849,9 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
   },
   teePillCompact: {
-    width: 26,
-    height: 22,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     marginRight: 8,
   },
   teePillSingle: {

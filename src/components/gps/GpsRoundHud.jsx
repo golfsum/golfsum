@@ -7,6 +7,7 @@ import { colors, radius } from '../../theme/tokens';
 import { getScoreColor } from '../../utils/scoreColors';
 import { rs } from '../../utils/responsive';
 import { GPS_HUD, GPS_Z } from '../../constants/gpsLayout';
+import { formatAccuracy, formatYardage, unitSuffix } from '../../utils/units';
 
 export function GpsRoundHud({
   suggestion,
@@ -24,12 +25,14 @@ export function GpsRoundHud({
   addShotLabel = 'ADD SHOT',
   onPressAddShot,
   addShotActive = false,
+  onPressEditShot = null,
   yardages,
   compactYardage = false,
   bottomInset = 0,
   quietLinks = [],
   gpsQuality = 'good',
   gpsAccuracyMeters = null,
+  distanceUnit = 'yards',
   greenTarget = 'center',
   onGreenTargetChange,
   manualMode = false,
@@ -50,6 +53,7 @@ export function GpsRoundHud({
   onConfirmPlacement,
   onCycleLie,
   onOpenClubPicker,
+  placementInstructionText = null,
 }) {
   /** Use full device inset — parent uses absolute fill; trimming caused overlap with home indicator. */
   const effectiveBottomInset = Math.max(
@@ -121,7 +125,7 @@ export function GpsRoundHud({
               { bottom: barDockBottom + (isPlacing ? yardageBandH : 0) + GPS_HUD.FLOAT_GAP },
             ]}
           >
-            <Text style={styles.instructionText}>Pan map to position shot</Text>
+            <Text style={styles.instructionText}>{placementInstructionText || 'Tap the map where this shot started'}</Text>
             <TouchableOpacity onPress={onCancelPlacement}>
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
@@ -180,13 +184,15 @@ export function GpsRoundHud({
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              style={[styles.addShotButton, addShotActive && styles.addShotButtonActive]}
-              onPress={onPressAddShot}
-            >
-              <Ionicons name="add" size={16} color="#FFFFFF" />
-              <Text style={styles.addShotButtonText}>{addShotLabel}</Text>
-            </TouchableOpacity>
+            <View style={styles.shotActionStack}>
+              <TouchableOpacity
+                style={[styles.addShotButton, addShotActive && styles.addShotButtonActive]}
+                onPress={onPressAddShot}
+              >
+                <Ionicons name="add" size={16} color="#FFFFFF" />
+                <Text style={styles.addShotButtonText}>{addShotLabel}</Text>
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.scoreNextContainer}>
               <TouchableOpacity style={styles.scoreZone} onPress={onScorePress}>
@@ -221,8 +227,8 @@ export function GpsRoundHud({
         >
           <View style={styles.placementDistRow}>
             <Text style={styles.placementDistLabel}>TO GREEN</Text>
-            <Text style={styles.placementDistValue}>{placementDistance != null ? Math.round(placementDistance) : '--'}</Text>
-            <Text style={styles.placementDistUnit}>yds</Text>
+            <Text style={styles.placementDistValue}>{placementDistance != null ? (distanceUnit === 'meters' ? Math.round(placementDistance * 0.9144) : Math.round(placementDistance)) : '--'}</Text>
+            <Text style={styles.placementDistUnit}>{distanceUnit === 'meters' ? 'm' : 'yds'}</Text>
           </View>
         </View>
       ) : (
@@ -236,7 +242,7 @@ export function GpsRoundHud({
               ]}
             >
               <View style={styles.manualInputRow}>
-                <Text style={styles.manualLabel}>DISTANCE (yds)</Text>
+                <Text style={styles.manualLabel}>DISTANCE ({distanceUnit === 'meters' ? 'm' : 'yds'})</Text>
                 <TextInput
                   style={styles.manualInput}
                   value={manualYardage}
@@ -250,9 +256,9 @@ export function GpsRoundHud({
               </View>
             </View>
           ) : null}
-          {gpsQuality === 'moderate' && gpsAccuracyMeters != null ? (
+          {gpsQuality === 'fair' && gpsAccuracyMeters != null ? (
             <View style={[styles.gpsWarningBand, { bottom: warningBottomOffset }]}>
-              <Text style={styles.gpsWarning}>GPS accuracy {Math.round(gpsAccuracyMeters)}m</Text>
+              <Text style={styles.gpsWarning}>GPS accuracy {formatAccuracy(gpsAccuracyMeters, distanceUnit)}</Text>
             </View>
           ) : gpsQuality === 'poor' ? (
             <View style={[styles.gpsWarningBand, { bottom: warningBottomOffset }]}>
@@ -353,18 +359,17 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(6,6,6,0.88)',
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'transparent',
+    borderTopWidth: 0,
   },
   bottomActionBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    paddingHorizontal: 6,
-    paddingTop: 4,
-    paddingBottom: 3,
+    gap: 2,
+    paddingHorizontal: 0,
+    paddingTop: 3,
+    paddingBottom: 2,
   },
   suggestedWrapActive: {
     backgroundColor: colors.brand.primaryMuted,
@@ -373,21 +378,21 @@ const styles = StyleSheet.create({
   suggestionInlineCard: {
     flexShrink: 0,
     borderRadius: radius.md,
-    marginRight: 1,
+    marginRight: 0,
   },
   puttStepper: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: 'rgba(6,6,6,0.72)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
+    borderColor: 'rgba(255,255,255,0.14)',
     borderRadius: 10,
     paddingHorizontal: 3,
     paddingVertical: 0,
     minWidth: 76,
-    height: 38,
+    height: 36,
     overflow: 'hidden',
   },
   puttStepperButton: {
@@ -396,7 +401,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
   puttStepperButtonText: {
     color: colors.text.primary,
@@ -423,11 +428,11 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   scoreNextContainer: {
-    height: 40,
+    height: 36,
     borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: 'rgba(6,6,6,0.72)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: 'rgba(255,255,255,0.14)',
     flexDirection: 'row',
     alignItems: 'center',
     overflow: 'hidden',
@@ -438,7 +443,7 @@ const styles = StyleSheet.create({
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
     borderRightWidth: 0.5,
     borderRightColor: 'rgba(255,255,255,0.15)',
   },
@@ -456,7 +461,7 @@ const styles = StyleSheet.create({
     width: 0,
   },
   nextZone: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     height: '100%',
     flexDirection: 'row',
     alignItems: 'center',
@@ -474,16 +479,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
-    backgroundColor: 'rgba(18,110,45,0.50)',
+    backgroundColor: 'rgba(6,6,6,0.72)',
     borderWidth: 1,
-    borderColor: 'rgba(26,200,75,0.48)',
+    borderColor: 'rgba(26,200,75,0.38)',
     borderRadius: 10,
     paddingVertical: 0,
-    height: 38,
+    height: 36,
   },
   addShotButtonActive: {
     borderColor: colors.brand.primaryBorder,
-    backgroundColor: colors.brand.primaryMuted,
+    backgroundColor: 'rgba(6,6,6,0.72)',
   },
   addShotButtonText: {
     color: '#3ddb72',
@@ -491,6 +496,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.3,
     textAlign: 'center',
+  },
+  shotActionStack: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 2,
   },
   yardageBarFrame: {
     justifyContent: 'center',

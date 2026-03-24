@@ -75,6 +75,7 @@ export const GPS_CHROME = {
   WEATHER_BELOW_HEADER_GAP: 4,
   RIGHT_COLUMN_BELOW_CHROME_GAP: 4,
   RIGHT_COLUMN_EDGE: 10,
+  HEADER_FALLBACK_HEIGHT: 88,
 } as const;
 
 /** Map overlay chips (plan / compare) — bottom offset from map view bottom. */

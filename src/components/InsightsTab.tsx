@@ -659,10 +659,10 @@ export const InsightsTab: React.FC<Props> = ({
           style={[styles.subTabButton, activeTab === 'patterns' && styles.subTabButtonActive]}
           onPress={() => setActiveTab('patterns')}
           accessibilityRole="tab"
-          accessibilityLabel="Trends tab"
+          accessibilityLabel="Patterns tab"
           accessibilityState={{ selected: activeTab === 'patterns' }}
         >
-          <Text style={[styles.subTabButtonText, activeTab === 'patterns' && styles.subTabButtonTextActive]}>Trends</Text>
+          <Text style={[styles.subTabButtonText, activeTab === 'patterns' && styles.subTabButtonTextActive]}>Patterns</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.subTabButton, activeTab === 'trends' && styles.subTabButtonActive]}

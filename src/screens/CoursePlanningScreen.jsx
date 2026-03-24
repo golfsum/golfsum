@@ -50,11 +50,30 @@ function normalizeDegrees(deg) {
   return ((deg % 360) + 360) % 360;
 }
 
+function toRadians(deg) {
+  return deg * (Math.PI / 180);
+}
+
+function toDegrees(rad) {
+  return rad * (180 / Math.PI);
+}
+
+function bearingDeg(lat1, lng1, lat2, lng2) {
+  const phi1 = toRadians(lat1);
+  const phi2 = toRadians(lat2);
+  const lambda = toRadians(lng2 - lng1);
+  const y = Math.sin(lambda) * Math.cos(phi2);
+  const x = (Math.cos(phi1) * Math.sin(phi2)) - (Math.sin(phi1) * Math.cos(phi2) * Math.cos(lambda));
+  return normalizeDegrees(toDegrees(Math.atan2(y, x)));
+}
+
 export function CoursePlanningScreen({
   courseId,
   courseName,
   teeColor,
   uid,
+  latitude,
+  longitude,
   onBack,
   onStartGpsRound,
 }) {
@@ -80,6 +99,7 @@ export function CoursePlanningScreen({
   const greenCenter = useMemo(() => findPoi(currentHole, 'Green', 'C'), [currentHole]);
   const greenFront = useMemo(() => findPoi(currentHole, 'Green', 'F'), [currentHole]);
   const greenBack = useMemo(() => findPoi(currentHole, 'Green', 'B'), [currentHole]);
+  const anyHolePoi = currentHole?.pois?.find(p => Number.isFinite(p?.Longitude) && Number.isFinite(p?.Latitude)) || null;
 
   // Set Mapbox access token
   useEffect(() => {
@@ -93,9 +113,19 @@ export function CoursePlanningScreen({
     (async () => {
       setLoading(true);
       try {
-        let data = await getCourse(courseId);
+        let data = null;
+        if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+          try {
+            data = await fetchCourseHolesFromBackend(courseId, courseName, latitude, longitude);
+          } catch {
+            data = null;
+          }
+        }
         if (!data) {
-          data = await fetchCourseHolesFromBackend(courseId, courseName);
+          data = await getCourse(courseId);
+        }
+        if (!data) {
+          data = await fetchCourseHolesFromBackend(courseId, courseName).catch(() => null);
         }
         setCourse(data);
       } catch (err) {
@@ -104,7 +134,7 @@ export function CoursePlanningScreen({
         setLoading(false);
       }
     })();
-  }, [courseId, courseName]);
+  }, [courseId, courseName, latitude, longitude]);
 
   // Load existing plan
   useEffect(() => {
@@ -137,13 +167,17 @@ export function CoursePlanningScreen({
     return Number.isFinite(y) ? Math.round(y) : null;
   }, [teeBack, greenCenter]);
 
+  const initialCenter = useMemo(() => {
+    if (teeBack) return [teeBack.Longitude, teeBack.Latitude];
+    if (greenCenter) return [greenCenter.Longitude, greenCenter.Latitude];
+    if (anyHolePoi) return [anyHolePoi.Longitude, anyHolePoi.Latitude];
+    return null;
+  }, [teeBack, greenCenter, anyHolePoi]);
+
   // Bearing for wind adjustment
   const shotBearingDeg = useMemo(() => {
     if (!teeBack || !greenCenter) return null;
-    const dy = (greenCenter.Latitude - teeBack.Latitude) * (Math.PI / 180);
-    const dx = ((greenCenter.Longitude - teeBack.Longitude) * (Math.PI / 180)) *
-      Math.cos(((greenCenter.Latitude + teeBack.Latitude) / 2) * (Math.PI / 180));
-    return normalizeDegrees(Math.atan2(dx, dy) * (180 / Math.PI));
+    return bearingDeg(teeBack.Latitude, teeBack.Longitude, greenCenter.Latitude, greenCenter.Longitude);
   }, [teeBack, greenCenter]);
 
   // Playing distance with adjustments
@@ -309,78 +343,87 @@ export function CoursePlanningScreen({
 
       {/* Map */}
       <View style={styles.mapContainer}>
-        <MapboxGL.MapView
-          style={styles.map}
-          styleURL="mapbox://styles/mapbox/satellite-v9"
-          compassEnabled={false}
-          logoEnabled={false}
-          attributionEnabled={false}
-          scaleBarEnabled={false}
-        >
-          <MapboxGL.Camera
-            ref={cameraRef}
-            defaultSettings={{
-              centerCoordinate: [-122.4, 37.8],
-              zoomLevel: 16,
-            }}
-            {...(teeBack && greenCenter ? {
-              bounds: {
-                ne: [Math.max(teeBack.Longitude, greenCenter.Longitude) + 0.0005, Math.max(teeBack.Latitude, greenCenter.Latitude) + 0.0005],
-                sw: [Math.min(teeBack.Longitude, greenCenter.Longitude) - 0.0005, Math.min(teeBack.Latitude, greenCenter.Latitude) - 0.0005],
-                paddingLeft: 40, paddingRight: 40, paddingTop: 40, paddingBottom: 40,
-              },
-              animationDuration: 600,
-            } : {})}
-          />
+        {initialCenter ? (
+          <MapboxGL.MapView
+            style={styles.map}
+            styleURL="mapbox://styles/mapbox/satellite-v9"
+            compassEnabled={false}
+            logoEnabled={false}
+            attributionEnabled={false}
+            scaleBarEnabled={false}
+          >
+            <MapboxGL.Camera
+              ref={cameraRef}
+              {...(initialCenter ? {
+                defaultSettings: {
+                  centerCoordinate: initialCenter,
+                  zoomLevel: 16,
+                },
+              } : {})}
+              {...(teeBack && greenCenter ? {
+                bounds: {
+                  ne: [Math.max(teeBack.Longitude, greenCenter.Longitude) + 0.0005, Math.max(teeBack.Latitude, greenCenter.Latitude) + 0.0005],
+                  sw: [Math.min(teeBack.Longitude, greenCenter.Longitude) - 0.0005, Math.min(teeBack.Latitude, greenCenter.Latitude) - 0.0005],
+                  paddingLeft: 40, paddingRight: 40, paddingTop: 40, paddingBottom: 40,
+                },
+                animationDuration: 600,
+              } : {})}
+            />
 
-          {/* Marked tee shot */}
-          {markedShot && (
-            <>
-              {teeBack && (
-                <MapboxGL.ShapeSource
-                  id="plan-shot-line"
-                  shape={{
-                    type: 'Feature',
-                    geometry: {
-                      type: 'LineString',
-                      coordinates: [
-                        [teeBack.Longitude, teeBack.Latitude],
-                        [markedShot.lng, markedShot.lat],
-                      ],
-                    },
+            {/* Marked tee shot */}
+            {markedShot && (
+              <>
+                {teeBack && (
+                  <MapboxGL.ShapeSource
+                    id="plan-shot-line"
+                    shape={{
+                      type: 'Feature',
+                      geometry: {
+                        type: 'LineString',
+                        coordinates: [
+                          [teeBack.Longitude, teeBack.Latitude],
+                          [markedShot.lng, markedShot.lat],
+                        ],
+                      },
+                    }}
+                  >
+                    <MapboxGL.LineLayer
+                      id="plan-shot-line-layer"
+                      style={{
+                        lineColor: 'rgba(16,185,129,0.7)',
+                        lineWidth: 2,
+                        lineDasharray: [3, 2],
+                      }}
+                    />
+                  </MapboxGL.ShapeSource>
+                )}
+                <MapboxGL.PointAnnotation
+                  id="plan-shot-marker"
+                  coordinate={[markedShot.lng, markedShot.lat]}
+                  draggable
+                  onDragEnd={(e) => {
+                    const coords = e?.geometry?.coordinates;
+                    if (Array.isArray(coords) && coords.length >= 2) {
+                      setMarkedShot({ lat: coords[1], lng: coords[0] });
+                    }
                   }}
                 >
-                  <MapboxGL.LineLayer
-                    id="plan-shot-line-layer"
-                    style={{
-                      lineColor: 'rgba(16,185,129,0.7)',
-                      lineWidth: 2,
-                      lineDasharray: [3, 2],
-                    }}
-                  />
-                </MapboxGL.ShapeSource>
-              )}
-              <MapboxGL.PointAnnotation
-                id="plan-shot-marker"
-                coordinate={[markedShot.lng, markedShot.lat]}
-                draggable
-                onDragEnd={(e) => {
-                  const coords = e?.geometry?.coordinates;
-                  if (Array.isArray(coords) && coords.length >= 2) {
-                    setMarkedShot({ lat: coords[1], lng: coords[0] });
-                  }
-                }}
-              >
-                <View style={styles.planMarker}>
-                  <View style={styles.planDiamond} />
-                  <Text style={styles.planMarkerLabel}>
-                    {markedShotDistance ? `${markedShotDistance}y` : 'P'}
-                  </Text>
-                </View>
-              </MapboxGL.PointAnnotation>
-            </>
-          )}
-        </MapboxGL.MapView>
+                  <View style={styles.planMarker}>
+                    <View style={styles.planDiamond} />
+                    <Text style={styles.planMarkerLabel}>
+                      {markedShotDistance ? `${markedShotDistance}y` : 'P'}
+                    </Text>
+                  </View>
+                </MapboxGL.PointAnnotation>
+              </>
+            )}
+          </MapboxGL.MapView>
+        ) : (
+          <View style={styles.mapLoadingOverlay}>
+            <Ionicons name="map-outline" size={20} color="rgba(255,255,255,0.35)" />
+            <Text style={styles.mapLoadingText}>Loading course map...</Text>
+          </View>
+        )}
 
         {/* Distance badge */}
         <View style={styles.distanceBadge}>
@@ -503,6 +546,19 @@ const styles = StyleSheet.create({
 
   mapContainer: { flex: 1 },
   map: { flex: 1 },
+  mapLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    zIndex: 10,
+  },
+  mapLoadingText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 13,
+    fontWeight: '600',
+  },
 
   distanceBadge: {
     position: 'absolute',

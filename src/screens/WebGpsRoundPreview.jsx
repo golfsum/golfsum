@@ -23,6 +23,8 @@ import { getHoleFramingCoords, getStaticMapCameraConfig } from '../services/mapF
 import { buildInRoundNudge } from '../services/inRoundNudgeService';
 import { getSuggestion } from '../services/courseStatsService';
 import { buildEffectiveClubDistanceMap, getActiveBagClubs, getBestClubForPar3, getClubAverages } from '../services/clubDistanceService';
+import { buildHoleDispersion, buildLiveDispersionInsight, dispersionLieColor, getDispersionMode } from '../services/shotDispersionService';
+import { deriveGreenSummary, formatPuttDistances } from '../services/greenSummaryService';
 import { buildHazardCarryModel, buildHoleStrategyModel, getPreferredLeaveYards } from '../services/holeStrategyModel';
 import ReportModal from '../components/ReportModal';
 import { isGpsDistanceSuspect, isTeeMarkerSuspect } from '../services/reportDetection';
@@ -499,6 +501,8 @@ export function WebGpsRoundPreview({
   const [measurePin, setMeasurePin] = useState(null);
   const [gpsActive, setGpsActive] = useState(true);
   const [showNudge, setShowNudge] = useState(false);
+  const [showDispersion, setShowDispersion] = useState(false);
+  const [holeDispersion, setHoleDispersion] = useState(null);
   const [dismissedHoles, setDismissedHoles] = useState(() => new Set());
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [reportContext, setReportContext] = useState(null);
@@ -592,7 +596,29 @@ export function WebGpsRoundPreview({
     [loggedShotsByHole]
   );
   const currentHoleSummary = holeSummariesByHole[currentHoleIndex] || { firstPuttDistance: 0, pinLocation: 'middle', putts: null };
-  const currentPutts = holePutts[currentHoleIndex] || 0;
+  const derivedGreenSummary = useMemo(
+    () => deriveGreenSummary(currentHoleShots, currentHoleSummary),
+    [currentHoleShots, currentHoleSummary]
+  );
+  const currentPutts = holePutts[currentHoleIndex]
+    ?? currentHoleSummary.putts
+    ?? derivedGreenSummary.putts
+    ?? 0;
+  const currentPuttValue = holePutts[currentHoleIndex]
+    ?? currentHoleSummary.putts
+    ?? derivedGreenSummary.putts
+    ?? null;
+  const currentFirstPuttDistance = currentHoleSummary.firstPuttDistance ?? derivedGreenSummary.firstPuttDistance;
+  const currentPuttDistanceSummary = useMemo(() => {
+    const chainSummary = formatPuttDistances(derivedGreenSummary.puttDistances);
+    if (chainSummary) return chainSummary;
+    return currentFirstPuttDistance != null ? `${currentFirstPuttDistance} ft` : null;
+  }, [currentFirstPuttDistance, derivedGreenSummary.puttDistances]);
+  const puttMarkerPoint = useMemo(() => {
+    if (currentHoleSummary.pinLocation === 'front') return PREVIEW_POINTS.greenFront;
+    if (currentHoleSummary.pinLocation === 'back') return PREVIEW_POINTS.greenBack;
+    return PREVIEW_POINTS.greenCenter;
+  }, [currentHoleSummary.pinLocation]);
   const holeScore = currentHoleShots.length + currentPutts;
   const loggedHoles = useMemo(
     () => Object.keys(loggedShotsByHole)
@@ -614,14 +640,15 @@ export function WebGpsRoundPreview({
     const result = {};
     visibleHoles.forEach((h, idx) => {
       const shots = (loggedShotsByHole[idx] || []).length;
-      const putts = holePutts[idx] || 0;
+      const derived = deriveGreenSummary(loggedShotsByHole[idx] || [], holeSummariesByHole[idx] || {});
+      const putts = holePutts[idx] ?? holeSummariesByHole[idx]?.putts ?? derived.putts ?? 0;
       const computed = shots + putts;
       if (computed > 0) {
         result[idx] = { score: computed, par: h?.par || 4 };
       }
     });
     return result;
-  }, [visibleHoles, loggedShotsByHole, holePutts]);
+  }, [holePutts, holeSummariesByHole, loggedShotsByHole, visibleHoles]);
 
   const isOffCourse = liveLie?.lie === 'Off Course' || (Number.isFinite(yardages.center) && yardages.center > 800);
 
@@ -877,6 +904,14 @@ export function WebGpsRoundPreview({
       return point ? { ...label, ...point } : null;
     }).filter(Boolean)
   ), [hazardCarryLabels, projection]);
+  const screenHoleDispersion = useMemo(() => (
+    (holeDispersion || [])
+      .map((shot, index) => {
+        const point = projectLatLngToPercent(projection, shot.lat, shot.lng);
+        return point ? { ...shot, ...point, id: `${shot.roundId}-${index}` } : null;
+      })
+      .filter(Boolean)
+  ), [holeDispersion, projection]);
   const screenStrategyPoints = useMemo(() => (
     (strategyModel.strategyLinePoints || []).map((point, index) => {
       const projected = projectLatLngToPercent(projection, point.lat, point.lng);
@@ -960,9 +995,55 @@ export function WebGpsRoundPreview({
       })
       .catch(() => {
         if (active) setRecentRounds([]);
-      });
+    });
     return () => { active = false; };
   }, [courseId, courseName]);
+
+  useEffect(() => {
+    setShowDispersion(false);
+    setHoleDispersion(null);
+  }, [currentHoleIndex]);
+
+  useEffect(() => {
+    if (!currentHole || !courseId) {
+      setHoleDispersion(null);
+      return;
+    }
+
+    let active = true;
+    const holeNumber = currentHole?.hole || currentHoleIndex + 1;
+    const roundsSource = recentRounds.length > 0 ? recentRounds : null;
+    const mode = getDispersionMode(currentHoleShots.length);
+
+    const applyRounds = (rounds) => {
+      if (!active) return;
+      setHoleDispersion(buildHoleDispersion(rounds, {
+        courseId,
+        courseName,
+        holeNumber,
+        mode,
+        teeCoords: teeBack ? { lat: teeBack.Latitude, lng: teeBack.Longitude } : null,
+        greenCoords: greenCenter ? { lat: greenCenter.Latitude, lng: greenCenter.Longitude } : null,
+      }));
+    };
+
+    if (roundsSource) {
+      applyRounds(roundsSource);
+      return () => {
+        active = false;
+      };
+    }
+
+    getRounds()
+      .then((rounds) => applyRounds(rounds.filter((round) => round.courseId === courseId || round.courseName === courseName).slice(0, 12)))
+      .catch(() => {
+        if (active) setHoleDispersion(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [courseId, courseName, currentHole, currentHoleIndex, currentHoleShots.length, recentRounds]);
 
   useEffect(() => {
     let active = true;
@@ -1056,10 +1137,14 @@ export function WebGpsRoundPreview({
     const x = clamp(event.nativeEvent.locationX / mapLayout.width, 0.04, 0.96);
     const y = clamp(event.nativeEvent.locationY / mapLayout.height, 0.04, 0.96);
     const tapPoint = { x, y };
-    const fromYou = Math.max(1, Math.round(getShotDistance(playerPoint, tapPoint, baseYardages.center)));
+    if (measurePin && distanceBetweenPoints(tapPoint, measurePin) <= 0.015) {
+      setMeasurePin(null);
+      return;
+    }
+    const fromTee = Math.max(1, Math.round(getShotDistance(PREVIEW_POINTS.tee, tapPoint, baseYardages.center)));
     const toGreen = Math.max(1, Math.round(getShotDistance(tapPoint, PREVIEW_POINTS.greenCenter, baseYardages.center)));
-    setMeasurePin({ x, y, fromYou, toGreen });
-  }, [baseYardages.center, mapLayout.height, mapLayout.width, playerPoint]);
+    setMeasurePin({ x, y, fromTee, toGreen });
+  }, [baseYardages.center, mapLayout.height, mapLayout.width, measurePin]);
 
   const handleMapShotPlacement = useCallback((event) => {
     if (shotFlow !== 'mark' || !selectedClub || !mapLayout.width || !mapLayout.height) return;
@@ -1297,6 +1382,21 @@ export function WebGpsRoundPreview({
               </View>
             </View>
           ))}
+          {showDispersion && screenHoleDispersion.length >= 2 ? screenHoleDispersion.map((shot) => (
+            <View
+              key={`disp-${shot.id}`}
+              pointerEvents="none"
+              style={[
+                styles.dispersionDot,
+                {
+                  top: `${shot.y * 100}%`,
+                  left: `${shot.x * 100}%`,
+                  backgroundColor: dispersionLieColor(shot.lie),
+                  borderColor: dispersionLieColor(shot.lie),
+                },
+              ]}
+            />
+          )) : null}
           {!showGreenView && (
             <>
               <View
@@ -1343,6 +1443,13 @@ export function WebGpsRoundPreview({
               )}
             </Pressable>
           )}
+          {showDispersion && screenHoleDispersion.length >= 3 ? (
+            <View style={styles.dispersionInsightChip}>
+              <Text style={styles.dispersionInsightText}>
+                {buildLiveDispersionInsight(holeDispersion, getDispersionMode(currentHoleShots.length))}
+              </Text>
+            </View>
+          ) : null}
           {!showGreenView && (shotFlow === 'idle' || shotFlow === 'mark') && (
             <Pressable style={styles.mapTapCatcher} onPress={shotFlow === 'mark' ? handleMapShotPlacement : handleMapMeasureTap}>
               {measurePin ? (
@@ -1356,15 +1463,35 @@ export function WebGpsRoundPreview({
                     },
                   ]}
                 >
-                  {measurePin.fromYou != null && (
+                  {measurePin.fromTee != null && (
                     <View style={styles.measurePinBadge}>
-                      <Text style={styles.measurePinFromYou}>{measurePin.fromYou}y from you</Text>
+                      <Text style={styles.measurePinFromYou}>{measurePin.fromTee}y from tee</Text>
                       <Text style={styles.measurePinText}>{measurePin.toGreen}y to green</Text>
                     </View>
                   )}
                   <View style={styles.measurePinDot} />
                 </View>
-          ) : null}
+              ) : null}
+              {(currentHoleSummary.firstPuttDistance != null || currentPutts > 0) ? (
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.greenPuttBadge,
+                    {
+                      left: `${puttMarkerPoint.x * 100}%`,
+                      top: `${puttMarkerPoint.y * 100}%`,
+                    },
+                  ]}
+                >
+                  <Text style={styles.greenPuttBadgeLabel}>PUTTS</Text>
+                  <Text style={styles.greenPuttBadgeValue}>{currentPutts}</Text>
+                  {currentPuttDistanceSummary ? (
+                    <Text style={styles.greenPuttBadgeSub}>{currentPuttDistanceSummary}</Text>
+                  ) : null}
+                </View>
+              ) : null}
+            </Pressable>
+          )}
           <GpsGlassChrome
             courseName={courseName || course?.courseName || 'GPS Preview'}
             cachedLabel={cached ? 'Cached on device' : course?.source === 'LOCAL_SAMPLE' ? 'Local sample data' : 'Loaded now'}
@@ -1376,6 +1503,11 @@ export function WebGpsRoundPreview({
             holes={visibleHoles}
             holeNumbers={holeWindow.custom ? routeHoleNumbers : undefined}
             loggedHoles={visibleLoggedHoles}
+            teeBack={teeBack}
+            greenFront={greenFront}
+            greenBack={greenBack}
+            lastShotFrom={currentHoleShots[currentHoleShots.length - 1]?.from || null}
+            currentHoleShotCount={currentHoleShots.length}
             onSelectHole={(holeNumber) => handleSelectHole(holeWindow.custom ? holeNumber - 1 : holeNumber - 1 + holeWindow.startIndex)}
             onBack={onBack}
             onGpsPress={() => setGpsActive((v) => !v)}
@@ -1395,6 +1527,24 @@ export function WebGpsRoundPreview({
             showOffCourse={isOffCourse}
             teeYardage={selectedTeeYardage}
           />
+          {holeDispersion?.length >= 2 ? (
+            <View style={[styles.dispersionToggleWrap, { top: GPS_WEB_PREVIEW.NAV + GPS_WEB_PREVIEW.HOLE_META + GPS_WEB_PREVIEW.HOLE_SELECTOR + 10 }]}>
+              <TouchableOpacity
+                style={[styles.dispersionPill, showDispersion && styles.dispersionPillActive]}
+                onPress={() => setShowDispersion((value) => !value)}
+              >
+                <Ionicons name="stats-chart-outline" size={14} color={showDispersion ? '#fff' : '#1ac855'} />
+                <Text style={[styles.dispersionPillText, showDispersion && styles.dispersionPillTextActive]}>
+                  {showDispersion ? 'Hide' : 'Pattern'}
+                </Text>
+                {!showDispersion ? (
+                  <View style={styles.dispersionCountBadge}>
+                    <Text style={styles.dispersionCountText}>{holeDispersion.length}</Text>
+                  </View>
+                ) : null}
+              </TouchableOpacity>
+            </View>
+          ) : null}
           <View
             pointerEvents="none"
             style={[
@@ -1404,8 +1554,6 @@ export function WebGpsRoundPreview({
           >
             <Text style={styles.mapboxWordmarkText}>mapbox</Text>
           </View>
-            </Pressable>
-          )}
           {!clubPickerOpen && shotFlow === 'idle' && currentHoleShots.length > 0 && !displayNudge && (
             <View style={styles.shotRow}>
               {currentHoleShots.map((shot) => (
@@ -1588,13 +1736,16 @@ export function WebGpsRoundPreview({
                   {[0, 1, 2, 3, 4].map((putts) => (
                     <TouchableOpacity
                       key={`web-putts-${putts}`}
-                      style={[styles.greenChoiceChip, currentHoleSummary.putts === putts && styles.greenChoiceChipActive]}
-                      onPress={() => setHoleSummariesByHole((prev) => ({
-                        ...prev,
-                        [currentHoleIndex]: { ...currentHoleSummary, putts },
-                      }))}
+                      style={[styles.greenChoiceChip, currentPuttValue === putts && styles.greenChoiceChipActive]}
+                      onPress={() => {
+                        setHoleSummariesByHole((prev) => ({
+                          ...prev,
+                          [currentHoleIndex]: { ...currentHoleSummary, putts },
+                        }));
+                        setHolePutts((prev) => ({ ...prev, [currentHoleIndex]: putts }));
+                      }}
                     >
-                      <Text style={[styles.greenChoiceText, currentHoleSummary.putts === putts && styles.greenChoiceTextActive]}>{putts}</Text>
+                      <Text style={[styles.greenChoiceText, currentPuttValue === putts && styles.greenChoiceTextActive]}>{putts}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -1879,6 +2030,77 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#FFFFFF',
   },
+  dispersionDot: {
+    position: 'absolute',
+    width: 10,
+    height: 10,
+    marginLeft: -5,
+    marginTop: -5,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    opacity: 0.82,
+  },
+  dispersionToggleWrap: {
+    position: 'absolute',
+    right: 12,
+    zIndex: 22,
+  },
+  dispersionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(6,6,6,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(26,200,85,0.35)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  dispersionPillActive: {
+    backgroundColor: 'rgba(26,200,85,0.22)',
+    borderColor: 'rgba(26,200,85,0.6)',
+  },
+  dispersionPillText: {
+    color: '#1ac855',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  dispersionPillTextActive: {
+    color: '#fff',
+  },
+  dispersionCountBadge: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#1ac855',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dispersionCountText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '800',
+    lineHeight: 10,
+  },
+  dispersionInsightChip: {
+    position: 'absolute',
+    top: 122,
+    left: 10,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    zIndex: 16,
+  },
+  dispersionInsightText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 17,
+  },
   shotPath: {
     position: 'absolute',
     borderWidth: 0,
@@ -2116,6 +2338,44 @@ const styles = StyleSheet.create({
     backgroundColor: '#FBBF24',
     borderWidth: 1.5,
     borderColor: 'rgba(0,0,0,0.5)',
+  },
+  greenPuttBadge: {
+    position: 'absolute',
+    marginLeft: -24,
+    marginTop: -18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(4,12,8,0.94)',
+    borderColor: 'rgba(26,200,85,0.65)',
+    borderWidth: 1,
+    borderRadius: 999,
+    minWidth: 48,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    zIndex: 10,
+  },
+  greenPuttBadgeLabel: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 7,
+    fontWeight: '700',
+    letterSpacing: 0.7,
+    lineHeight: 8,
+  },
+  greenPuttBadgeValue: {
+    color: '#1ac855',
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 15,
+    textShadowColor: 'rgba(0,0,0,0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  greenPuttBadgeSub: {
+    color: 'rgba(255,255,255,0.66)',
+    fontSize: 8,
+    fontWeight: '600',
+    lineHeight: 9,
+    marginTop: 1,
   },
   mapboxWordmark: {
     position: 'absolute',

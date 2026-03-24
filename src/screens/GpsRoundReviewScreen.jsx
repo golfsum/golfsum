@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haversineYards } from '../services/haversine';
 import { getCourseDetail } from '../services/golfApiIoService';
 import { MAPBOX_PUBLIC_TOKEN } from '../config/mapbox';
 import { colors, radius, spacing, typography } from '../theme/tokens';
+
+let FileSystem = null;
+try { FileSystem = require('expo-file-system'); } catch { FileSystem = null; }
 
 let MapboxGL = null;
 try { MapboxGL = require('@rnmapbox/maps'); } catch { MapboxGL = null; }
@@ -53,7 +56,57 @@ function clubAbbr(club) {
   return club.slice(0, 3).toUpperCase();
 }
 
-function HoleMapCard({ holeNumber, par, yardage, score, putts, shots, holeSummary, courseHole }) {
+function compareGpsShots(left, right) {
+  return String(left?.loggedAt || '').localeCompare(String(right?.loggedAt || ''))
+    || Number(left?.holeNumber || 0) - Number(right?.holeNumber || 0)
+    || Number(left?.shotNumber || 0) - Number(right?.shotNumber || 0)
+    || String(left?.id || '').localeCompare(String(right?.id || ''));
+}
+
+function buildStaticHoleMapUrl({ teePoi, greenPoi, shots, width = 700, height = 400 }) {
+  if (!MAPBOX_PUBLIC_TOKEN || !teePoi || !greenPoi) return null;
+  const coords = [];
+  if (Number.isFinite(teePoi.Longitude) && Number.isFinite(teePoi.Latitude)) coords.push([teePoi.Longitude, teePoi.Latitude]);
+  if (Number.isFinite(greenPoi.Longitude) && Number.isFinite(greenPoi.Latitude)) coords.push([greenPoi.Longitude, greenPoi.Latitude]);
+  (shots || []).forEach((shot) => {
+    if (Number.isFinite(shot?.from?.lng) && Number.isFinite(shot?.from?.lat)) coords.push([shot.from.lng, shot.from.lat]);
+    if (Number.isFinite(shot?.to?.lng) && Number.isFinite(shot?.to?.lat)) coords.push([shot.to.lng, shot.to.lat]);
+  });
+  if (coords.length === 0) return null;
+
+  const lngs = coords.map(([lng]) => lng);
+  const lats = coords.map(([, lat]) => lat);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const padLng = Math.max((maxLng - minLng) * 0.2, 0.002);
+  const padLat = Math.max((maxLat - minLat) * 0.2, 0.0015);
+  const markers = (shots || [])
+    .filter((shot) => Number.isFinite(shot?.from?.lng) && Number.isFinite(shot?.from?.lat))
+    .map((shot, index) => `pin-s-${index + 1}+${index === 0 ? '60A5FA' : '1ac855'}(${shot.from.lng},${shot.from.lat})`);
+  const overlay = markers.length > 0 ? `${markers.join(',')}` : '';
+  const bbox = [minLng - padLng, minLat - padLat, maxLng + padLng, maxLat + padLat].join(',');
+  const staticPath = overlay ? `${overlay}/${bbox}` : `${bbox}`;
+  return `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/${staticPath}/${width}x${height}@2x?access_token=${MAPBOX_PUBLIC_TOKEN}&attribution=false`;
+}
+
+async function cacheStaticMap(url, holeNum, roundId) {
+  if (!FileSystem?.cacheDirectory || !url) return url;
+  const cacheDir = `${FileSystem.cacheDirectory}maps/`;
+  const localPath = `${cacheDir}${roundId || 'round'}_hole${holeNum}.jpg`;
+  try {
+    const info = await FileSystem.getInfoAsync(localPath);
+    if (info.exists) return localPath;
+    await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
+    await FileSystem.downloadAsync(url, localPath);
+    return localPath;
+  } catch {
+    return url;
+  }
+}
+
+function HoleMapCard({ holeNumber, par, yardage, score, putts, shots, holeSummary, courseHole, snapshotUri }) {
   const cameraRef = useRef(null);
   const sc = score != null ? scoreColor(score, par) : colors.text.secondary;
 
@@ -68,6 +121,14 @@ function HoleMapCard({ holeNumber, par, yardage, score, putts, shots, holeSummar
     if (!courseHole?.pois) return null;
     return courseHole.pois.find(p => p.POI === 'Green' && p.Location === 'C');
   }, [courseHole]);
+
+  const isReasonableShotCoord = useCallback((shot) => {
+    if (!shot?.from || !greenPoi) return true;
+    if (shot.offCourseFlag) return false;
+    if (!Number.isFinite(shot.from.lng) || !Number.isFinite(shot.from.lat)) return false;
+    const distToGreen = haversineYards(shot.from.lat, shot.from.lng, greenPoi.Latitude, greenPoi.Longitude);
+    return Number.isFinite(distToGreen) ? distToGreen < 700 : true;
+  }, [greenPoi]);
 
   // Build shot path GeoJSON
   const shotPathGeo = useMemo(() => {
@@ -97,8 +158,8 @@ function HoleMapCard({ holeNumber, par, yardage, score, putts, shots, holeSummar
     if (teePoi) pts.push([teePoi.Longitude, teePoi.Latitude]);
     if (greenPoi) pts.push([greenPoi.Longitude, greenPoi.Latitude]);
     (shots || []).forEach(s => {
-      if (s.from?.lng && s.from?.lat) pts.push([s.from.lng, s.from.lat]);
-      if (s.to?.lng && s.to?.lat) pts.push([s.to.lng, s.to.lat]);
+      if (s.from?.lng && s.from?.lat && isReasonableShotCoord(s)) pts.push([s.from.lng, s.from.lat]);
+      if (s.to?.lng && s.to?.lat && isReasonableShotCoord(s)) pts.push([s.to.lng, s.to.lat]);
     });
     if (pts.length < 2) return null;
     const lngs = pts.map(p => p[0]);
@@ -110,15 +171,16 @@ function HoleMapCard({ holeNumber, par, yardage, score, putts, shots, holeSummar
       ne: [Math.max(...lngs) + lngSpan * pad, Math.max(...lats) + latSpan * pad],
       sw: [Math.min(...lngs) - lngSpan * pad, Math.min(...lats) - latSpan * pad],
     };
-  }, [teePoi, greenPoi, shots]);
+  }, [teePoi, greenPoi, shots, isReasonableShotCoord]);
 
   const defaultCenter = teePoi
     ? [teePoi.Longitude, teePoi.Latitude]
     : greenPoi
       ? [greenPoi.Longitude, greenPoi.Latitude]
-      : [-122.4, 37.8];
+      : null;
 
-  const hasMap = MapboxGL && (teePoi || greenPoi || shots?.length);
+  const staticMapUri = snapshotUri;
+  const hasMap = Boolean(staticMapUri);
 
   return (
     <View style={s.holeCard}>
@@ -151,90 +213,7 @@ function HoleMapCard({ holeNumber, par, yardage, score, putts, shots, holeSummar
       {/* Satellite map with shot trail */}
       {hasMap ? (
         <View style={s.mapContainer}>
-          <MapboxGL.MapView
-            style={s.map}
-            styleURL="mapbox://styles/mapbox/satellite-v9"
-            logoEnabled={false}
-            attributionEnabled={false}
-            scaleBarEnabled={false}
-            compassEnabled={false}
-            scrollEnabled={false}
-            zoomEnabled={false}
-            pitchEnabled={false}
-            rotateEnabled={false}
-          >
-            <MapboxGL.Camera
-              ref={cameraRef}
-              defaultSettings={{
-                centerCoordinate: defaultCenter,
-                zoomLevel: 16.5,
-              }}
-              {...(cameraBounds ? {
-                bounds: {
-                  ...cameraBounds,
-                  paddingLeft: 50, paddingRight: 50, paddingTop: 50, paddingBottom: 50,
-                },
-              } : {})}
-            />
-
-            {/* Shot trail line */}
-            {shotPathGeo && (
-              <MapboxGL.ShapeSource id={`trail-${holeNumber}`} shape={shotPathGeo}>
-                <MapboxGL.LineLayer
-                  id={`trail-line-${holeNumber}`}
-                  style={{
-                    lineColor: 'rgba(255,255,255,0.8)',
-                    lineWidth: 2.5,
-                    lineCap: 'round',
-                    lineJoin: 'round',
-                  }}
-                />
-              </MapboxGL.ShapeSource>
-            )}
-
-            {/* Shot markers */}
-            {(shots || []).map((shot, i) => (
-              shot.from?.lng && shot.from?.lat ? (
-                <MapboxGL.MarkerView
-                  key={`shot-r-${holeNumber}-${shot.id || i}`}
-                  id={`shot-r-${holeNumber}-${shot.id || i}`}
-                  coordinate={[shot.from.lng, shot.from.lat]}
-                >
-                  <View style={s.shotMarker}>
-                    <View style={[s.shotDot, { backgroundColor: i === 0 ? '#FFFFFF' : colors.brand.primary }]} />
-                    <View style={s.shotLabel}>
-                      <Text style={s.shotClub}>{clubAbbr(shot.club)}</Text>
-                      {Number.isFinite(shot.actualYards) && (
-                        <Text style={s.shotYards}>{shot.actualYards}y</Text>
-                      )}
-                    </View>
-                  </View>
-                </MapboxGL.MarkerView>
-              ) : null
-            ))}
-
-            {/* Green marker */}
-            {greenPoi && (
-              <MapboxGL.ShapeSource
-                id={`green-${holeNumber}`}
-                shape={{
-                  type: 'Feature',
-                  geometry: { type: 'Point', coordinates: [greenPoi.Longitude, greenPoi.Latitude] },
-                  properties: {},
-                }}
-              >
-                <MapboxGL.CircleLayer
-                  id={`green-circle-${holeNumber}`}
-                  style={{
-                    circleRadius: 5,
-                    circleColor: 'rgba(16,185,129,0.0)',
-                    circleStrokeWidth: 2,
-                    circleStrokeColor: '#10B981',
-                  }}
-                />
-              </MapboxGL.ShapeSource>
-            )}
-          </MapboxGL.MapView>
+          <Image source={{ uri: staticMapUri }} style={s.map} resizeMode="cover" />
 
           {/* Shot count overlay */}
           <View style={s.shotCountOverlay}>
@@ -245,7 +224,9 @@ function HoleMapCard({ holeNumber, par, yardage, score, putts, shots, holeSummar
       ) : (
         <View style={s.noMapPlaceholder}>
           <Ionicons name="map-outline" size={24} color={colors.text.tertiary} />
-          <Text style={s.noMapText}>No GPS data for this hole</Text>
+          <Text style={s.noMapText}>
+            {shots?.length ? 'GPS data logged off-course' : 'No GPS data for this hole'}
+          </Text>
         </View>
       )}
 
@@ -262,6 +243,9 @@ function HoleMapCard({ holeNumber, par, yardage, score, putts, shots, holeSummar
               {shot.lie && (
                 <Text style={s.shotChipLie}>{shot.lie}</Text>
               )}
+              {shot.offCourseFlag && (
+                <Text style={s.shotChipFlag}>Logged off-course</Text>
+              )}
             </View>
           ))}
         </View>
@@ -273,6 +257,11 @@ function HoleMapCard({ holeNumber, par, yardage, score, putts, shots, holeSummar
 export function GpsRoundReviewScreen({ round, courseData: courseDataProp, onBack }) {
   const insets = useSafeAreaInsets();
   const [loadedCourseData, setLoadedCourseData] = useState(null);
+  const [replayVisible, setReplayVisible] = useState(false);
+  const [replayIndex, setReplayIndex] = useState(0);
+  const [replayPlaying, setReplayPlaying] = useState(false);
+  const [activeHoleIndex, setActiveHoleIndex] = useState(0);
+  const [activeHoleMapUri, setActiveHoleMapUri] = useState(null);
   const courseData = courseDataProp || loadedCourseData;
 
   useEffect(() => {
@@ -294,10 +283,17 @@ export function GpsRoundReviewScreen({ round, courseData: courseDataProp, onBack
     return () => { cancelled = true; };
   }, [courseDataProp, round]);
 
+  useEffect(() => {
+    setActiveHoleIndex(0);
+    setActiveHoleMapUri(null);
+  }, [round?.id]);
+
   const holes = round?.courseSnapshot?.holes || [];
   const gpsShots = round?.gpsShots || [];
   const gpsSummaries = round?.gpsHoleSummaries || [];
   const roundHoles = round?.holes || [];
+  const sortedGpsShots = useMemo(() => [...gpsShots].sort(compareGpsShots), [gpsShots]);
+  const activeHole = holes[activeHoleIndex] || holes[0] || null;
 
   // Group shots by hole
   const shotsByHole = useMemo(() => {
@@ -320,6 +316,71 @@ export function GpsRoundReviewScreen({ round, courseData: courseDataProp, onBack
     });
     return map;
   }, [courseData]);
+
+  const replayShot = sortedGpsShots[replayIndex] || null;
+  const replayHoleNumber = replayShot?.holeNumber ?? null;
+  const replayHole = replayHoleNumber != null
+    ? (roundHoles.find((hole) => hole.number === replayHoleNumber) || holes.find((hole) => hole.number === replayHoleNumber) || null)
+    : null;
+  const replayCourseHole = replayHoleNumber != null ? courseHolesByNumber[replayHoleNumber] : null;
+  const replayHoleShots = useMemo(() => {
+    if (replayHoleNumber == null) return [];
+    return sortedGpsShots.filter((shot, index) => shot.holeNumber === replayHoleNumber && index <= replayIndex);
+  }, [replayHoleNumber, replayIndex, sortedGpsShots]);
+
+  const activeHoleNumber = activeHole?.number ?? null;
+  const activeHoleShots = activeHoleNumber != null ? (shotsByHole[activeHoleNumber] || []) : [];
+  const activeHoleSummary = activeHoleNumber != null
+    ? gpsSummaries.find((summary) => summary.holeNumber === activeHoleNumber)
+    : null;
+  const activeCourseHole = activeHoleNumber != null ? courseHolesByNumber[activeHoleNumber] : null;
+  const activeHoleMapUrl = useMemo(() => {
+    if (activeHoleNumber == null) return null;
+    const fromRound = round?.holeMapUrls?.[activeHoleNumber];
+    if (fromRound) return fromRound;
+    const teePoi = activeCourseHole?.pois?.find((poi) => poi.POI === 'Tee Back' && poi.Location === 'C')
+      || activeCourseHole?.pois?.find((poi) => poi.POI === 'Tee Front' && poi.Location === 'C');
+    const greenPoi = activeCourseHole?.pois?.find((poi) => poi.POI === 'Green' && poi.Location === 'C');
+    return buildStaticHoleMapUrl({
+      teePoi,
+      greenPoi,
+      shots: activeHoleShots,
+    });
+  }, [activeCourseHole, activeHoleNumber, activeHoleShots, round?.holeMapUrls]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeHoleMapUrl) {
+      setActiveHoleMapUri(null);
+      return undefined;
+    }
+    (async () => {
+      const cached = await cacheStaticMap(activeHoleMapUrl, activeHoleNumber, round?.id || round?.courseId || 'round');
+      if (!cancelled) setActiveHoleMapUri(cached);
+    })();
+    return () => { cancelled = true; };
+  }, [activeHoleMapUrl, activeHoleNumber, round?.courseId, round?.id]);
+
+  useEffect(() => {
+    if (!replayPlaying || !sortedGpsShots.length) return undefined;
+    const timer = setInterval(() => {
+      setReplayIndex((current) => {
+        if (current >= sortedGpsShots.length - 1) {
+          setReplayPlaying(false);
+          return current;
+        }
+        return current + 1;
+      });
+    }, 900);
+    return () => clearInterval(timer);
+  }, [replayPlaying, sortedGpsShots.length]);
+
+  useEffect(() => {
+    if (!replayVisible) {
+      setReplayPlaying(false);
+      setReplayIndex(0);
+    }
+  }, [replayVisible]);
 
   // Summary stats
   const totalScore = round?.score || 0;
@@ -346,6 +407,21 @@ export function GpsRoundReviewScreen({ round, courseData: courseDataProp, onBack
           <Text style={s.headerTitle} numberOfLines={1}>{round?.courseName || 'Round Review'}</Text>
           <Text style={s.headerSub}>{dateStr}{round?.teeName ? ` · ${round.teeName}` : ''}</Text>
         </View>
+        {sortedGpsShots.length > 0 ? (
+          <TouchableOpacity
+            style={s.replayBtn}
+            onPress={() => {
+              setReplayIndex(0);
+              setReplayVisible(true);
+              setReplayPlaying(false);
+            }}
+          >
+            <Ionicons name="play-circle-outline" size={16} color={colors.brand.primary} />
+            <Text style={s.replayBtnText}>Replay</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={s.navSpacer} />
+        )}
       </View>
 
       <ScrollView style={s.scroll} contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
@@ -379,44 +455,65 @@ export function GpsRoundReviewScreen({ round, courseData: courseDataProp, onBack
           </View>
         </View>
 
-        {/* Compact scorecard strip */}
+        {/* Hole navigation */}
+        {holes.length > 0 && activeHole ? (
+          <View style={s.holeNav}>
+            <TouchableOpacity
+              style={[s.holeNavBtn, activeHoleIndex === 0 && s.holeNavBtnDisabled]}
+              onPress={() => setActiveHoleIndex((prev) => Math.max(0, prev - 1))}
+              disabled={activeHoleIndex === 0}
+            >
+              <Ionicons name="chevron-back" size={18} color={activeHoleIndex === 0 ? colors.text.tertiary : colors.text.primary} />
+            </TouchableOpacity>
+
+            <View style={s.holeNavCenter}>
+              <Text style={s.holeNavTitle}>Hole {activeHole.number}</Text>
+              <Text style={s.holeNavSub}>
+                Par {activeHole.par} · {activeHole.yardage || '--'}y · HCP {activeHole.handicapIndex || '--'}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={[s.holeNavBtn, activeHoleIndex >= holes.length - 1 && s.holeNavBtnDisabled]}
+              onPress={() => setActiveHoleIndex((prev) => Math.min(holes.length - 1, prev + 1))}
+              disabled={activeHoleIndex >= holes.length - 1}
+            >
+              <Ionicons name="chevron-forward" size={18} color={activeHoleIndex >= holes.length - 1 ? colors.text.tertiary : colors.text.primary} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.scorecardStrip} contentContainerStyle={s.scorecardContent}>
           {holes.map((hole, i) => {
             const rh = roundHoles.find(r => r.number === hole.number);
             const hScore = rh?.score;
             const hPar = hole.par;
             const hc = hScore != null ? scoreColor(hScore, hPar) : colors.text.tertiary;
+            const isActive = i === activeHoleIndex;
             return (
-              <View key={hole.number} style={s.scorecardCell}>
+              <TouchableOpacity key={hole.number} style={[s.scorecardCell, isActive && s.scorecardCellActive]} onPress={() => setActiveHoleIndex(i)}>
                 <Text style={s.scorecardHoleNum}>{hole.number}</Text>
                 <Text style={[s.scorecardScore, { color: hc }]}>{hScore ?? '-'}</Text>
                 <Text style={s.scorecardPar}>{hPar}</Text>
-              </View>
+              </TouchableOpacity>
             );
           })}
         </ScrollView>
 
-        {/* Hole-by-hole maps */}
-        {holes.map((hole) => {
-          const rh = roundHoles.find(r => r.number === hole.number);
-          const holeShots = shotsByHole[hole.number] || [];
-          const holeSummary = gpsSummaries.find(gs => gs.holeNumber === hole.number);
-          const courseHole = courseHolesByNumber[hole.number];
-
-          return (
-            <HoleMapCard
-              key={hole.number}
-              holeNumber={hole.number}
-              par={hole.par}
-              yardage={hole.yardage}
-              score={rh?.score}
-              putts={rh?.putts ?? holeSummary?.putts}
-              shots={holeShots}
-              holeSummary={holeSummary}
-              courseHole={courseHole}
-            />
-          );
-        })}
+        {activeHole ? (
+          <HoleMapCard
+            key={activeHole.number}
+            holeNumber={activeHole.number}
+            par={activeHole.par}
+            yardage={activeHole.yardage}
+            score={roundHoles.find((r) => r.number === activeHole.number)?.score}
+            putts={roundHoles.find((r) => r.number === activeHole.number)?.putts ?? activeHoleSummary?.putts}
+            shots={activeHoleShots}
+            holeSummary={activeHoleSummary}
+            courseHole={activeCourseHole}
+            snapshotUri={activeHoleMapUri}
+          />
+        ) : null}
 
         {/* GPS shot summary footer */}
         {gpsShots.length > 0 && (
@@ -428,6 +525,76 @@ export function GpsRoundReviewScreen({ round, courseData: courseDataProp, onBack
           </View>
         )}
       </ScrollView>
+
+      <Modal visible={replayVisible} transparent animationType="fade" onRequestClose={() => setReplayVisible(false)}>
+        <View style={s.replayBackdrop}>
+          <View style={s.replaySheet}>
+            <View style={s.replayHeader}>
+              <View style={{ flex: 1, paddingRight: spacing.sm }}>
+                <Text style={s.replayTitle}>Round Replay</Text>
+                <Text style={s.replaySubtitle}>
+                  {replayHoleNumber != null
+                    ? `Hole ${replayHoleNumber} · Shot ${replayIndex + 1} of ${sortedGpsShots.length}`
+                    : 'No GPS shots'}
+                </Text>
+              </View>
+              <TouchableOpacity style={s.replayCloseBtn} onPress={() => setReplayVisible(false)}>
+                <Ionicons name="close" size={18} color={colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+
+            {replayHoleNumber != null && replayHole ? (
+              <View style={s.replayCardWrap}>
+                <HoleMapCard
+                  holeNumber={replayHole.number}
+                  par={replayHole.par}
+                  yardage={replayHole.yardage}
+                  score={replayHole.score}
+                  putts={replayHole.putts}
+                  shots={replayHoleShots}
+                  holeSummary={gpsSummaries.find((summary) => summary.holeNumber === replayHole.number)}
+                  courseHole={replayCourseHole}
+                  snapshotUri={round?.holeMapUrls?.[replayHole.number] || null}
+                />
+              </View>
+            ) : (
+              <View style={s.replayEmpty}>
+                <ActivityIndicator color={colors.brand.primary} />
+                <Text style={s.replayEmptyText}>No tracked shots to replay</Text>
+              </View>
+            )}
+
+            <View style={s.replayControls}>
+              <TouchableOpacity
+                style={s.replayControlBtn}
+                onPress={() => setReplayIndex((current) => Math.max(0, current - 1))}
+                disabled={replayIndex <= 0}
+              >
+                <Ionicons name="play-back" size={18} color={replayIndex <= 0 ? colors.text.tertiary : colors.text.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.replayPlayBtn, replayPlaying && s.replayPlayBtnActive]}
+                onPress={() => {
+                  if (!sortedGpsShots.length) return;
+                  setReplayPlaying((value) => !value);
+                }}
+              >
+                <Ionicons name={replayPlaying ? 'pause' : 'play'} size={18} color={replayPlaying ? '#fff' : colors.brand.primary} />
+                <Text style={[s.replayPlayText, replayPlaying && s.replayPlayTextActive]}>
+                  {replayPlaying ? 'Pause' : 'Play'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={s.replayControlBtn}
+                onPress={() => setReplayIndex((current) => Math.min(sortedGpsShots.length - 1, current + 1))}
+                disabled={replayIndex >= sortedGpsShots.length - 1}
+              >
+                <Ionicons name="play-forward" size={18} color={replayIndex >= sortedGpsShots.length - 1 ? colors.text.tertiary : colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -466,6 +633,27 @@ const s = StyleSheet.create({
     color: colors.text.secondary,
     fontSize: 11,
     marginTop: 1,
+  },
+  replayBtn: {
+    minWidth: 72,
+    height: 32,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    backgroundColor: colors.bg.secondary,
+    borderWidth: 1,
+    borderColor: colors.brand.primaryBorder,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  replayBtnText: {
+    color: colors.brand.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  navSpacer: {
+    width: 72,
   },
   scroll: {
     flex: 1,
@@ -529,6 +717,11 @@ const s = StyleSheet.create({
     backgroundColor: colors.bg.secondary,
     borderRadius: 6,
   },
+  scorecardCellActive: {
+    borderWidth: 1,
+    borderColor: colors.brand.primaryBorder,
+    backgroundColor: 'rgba(16,185,129,0.12)',
+  },
   scorecardHoleNum: {
     color: colors.text.tertiary,
     fontSize: 9,
@@ -542,6 +735,45 @@ const s = StyleSheet.create({
   scorecardPar: {
     color: colors.text.tertiary,
     fontSize: 9,
+  },
+  holeNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.bg.secondary,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+  },
+  holeNavBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg.elevated,
+  },
+  holeNavBtnDisabled: {
+    opacity: 0.35,
+  },
+  holeNavCenter: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  holeNavTitle: {
+    color: colors.text.primary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  holeNavSub: {
+    color: colors.text.secondary,
+    fontSize: 11,
+    marginTop: 2,
   },
   holeCard: {
     marginHorizontal: spacing.md,
@@ -713,6 +945,11 @@ const s = StyleSheet.create({
     color: colors.text.tertiary,
     fontSize: 9,
   },
+  shotChipFlag: {
+    color: '#F59E0B',
+    fontSize: 9,
+    fontWeight: '700',
+  },
   footerCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -730,6 +967,100 @@ const s = StyleSheet.create({
     color: colors.brand.primary,
     fontSize: 12,
     fontWeight: '600',
+  },
+  replayBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(5,8,12,0.92)',
+    justifyContent: 'center',
+    padding: spacing.md,
+  },
+  replaySheet: {
+    backgroundColor: colors.bg.primary,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    overflow: 'hidden',
+  },
+  replayHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.subtle,
+  },
+  replayTitle: {
+    color: colors.text.primary,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  replaySubtitle: {
+    color: colors.text.secondary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  replayCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.bg.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  replayCardWrap: {
+    padding: spacing.md,
+  },
+  replayEmpty: {
+    height: MAP_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: colors.bg.secondary,
+  },
+  replayEmptyText: {
+    color: colors.text.secondary,
+    fontSize: 13,
+  },
+  replayControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+  },
+  replayControlBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.bg.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  replayPlayBtn: {
+    minWidth: 100,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.bg.secondary,
+    borderWidth: 1,
+    borderColor: colors.brand.primaryBorder,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+  },
+  replayPlayBtnActive: {
+    backgroundColor: colors.brand.primary,
+  },
+  replayPlayText: {
+    color: colors.brand.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  replayPlayTextActive: {
+    color: '#fff',
   },
 });
 
