@@ -9,7 +9,7 @@
       "distribution": "store",
       "environment": "development",
       "ios": {
-        "image": "latest",
+        "image": "macos-sonoma-14.6-xcode-16.0",
         "buildConfiguration": "Debug"
       }
     },
@@ -17,7 +17,7 @@
       "distribution": "store",
       "environment": "preview",
       "ios": {
-        "image": "latest",
+        "image": "macos-sonoma-14.6-xcode-16.0",
         "buildConfiguration": "Release"
       }
     },
@@ -26,7 +26,7 @@
       "distribution": "store",
       "environment": "production",
       "ios": {
-        "image": "latest",
+        "image": "macos-sonoma-14.6-xcode-16.0",
         "buildConfiguration": "Release"
       }
     }
