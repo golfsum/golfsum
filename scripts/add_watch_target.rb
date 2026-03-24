@@ -1,257 +1,270 @@
 #!/usr/bin/env ruby
 # scripts/add_watch_target.rb
-#
-# Adds an Apple Watch App target to the Xcode project using Xcodeproj gem.
-# Xcodeproj is pre-installed on all EAS Mac build servers.
-#
-# Called from eas.json prebuildCommand after expo prebuild completes:
-#   "prebuildCommand": "npx expo prebuild --platform ios && ruby scripts/add_watch_target.rb"
+# Adds Watch + Widget targets with explicit product references
 
 require 'xcodeproj'
 require 'fileutils'
 
-# ── Constants ────────────────────────────────────────────────────────────────
-
 MAIN_APP_NAME        = 'GolfSum'
 WATCH_APP_NAME       = 'GolfSumWatch'
-MAIN_BUNDLE_ID       = 'com.golfsum.app'
+LIVE_ACTIVITY_NAME   = 'GolfSumLiveActivity'
 WATCH_BUNDLE_ID      = 'com.golfsum.app.watchkitapp'
+LIVE_ACTIVITY_BUNDLE = 'com.golfsum.app.liveactivity'
 WATCH_DEPLOY_TARGET  = '7.0'
-IOS_DEPLOY_TARGET    = '15.1'
+IOS_DEPLOY_TARGET    = '16.2'
 SWIFT_VERSION        = '5.9'
 APP_GROUP_ID         = 'group.com.golfsum.app'
 
-# ── Locate Xcode project ─────────────────────────────────────────────────────
+project_path = Dir.glob('*.xcodeproj').first
+abort('ERROR: No .xcodeproj found. Run from ios/ directory.') unless project_path
 
-project_path = Dir.glob('ios/*.xcodeproj').first
-abort('ERROR: Could not find .xcodeproj in ios/') unless project_path
-
-puts "[WatchPlugin] Opening #{project_path}"
+puts "[Plugin] Opening #{project_path}"
 project = Xcodeproj::Project.open(project_path)
+main_target = project.targets.find { |t| t.name == MAIN_APP_NAME }
+abort("ERROR: No target '#{MAIN_APP_NAME}'") unless main_target
 
-# ── Guard: don't add target twice ────────────────────────────────────────────
+SCRIPT_DIR   = File.expand_path(File.dirname(__FILE__))
+PROJECT_ROOT = File.expand_path('..', SCRIPT_DIR)
+IOS_DIR      = Dir.pwd  # we run from ios/
 
-if project.targets.any? { |t| t.name == WATCH_APP_NAME }
-  puts "[WatchPlugin] Watch target '#{WATCH_APP_NAME}' already exists — skipping."
-  exit 0
+def copy_if_changed(src, dst)
+  return unless File.exist?(src)
+  FileUtils.mkdir_p(File.dirname(dst))
+  content = File.read(src)
+  return if File.exist?(dst) && File.read(dst) == content
+  File.write(dst, content)
+  puts "[Plugin] Copied: #{File.basename(dst)}"
 end
 
-# ── 1. Copy Swift source files into ios/GolfSumWatch/ ─────────────────────
-
-watch_ios_dir = File.join('ios', WATCH_APP_NAME)
-watch_src_dir = File.join(File.dirname(__FILE__), '..', 'watch-src')
-
-FileUtils.mkdir_p(watch_ios_dir)
-
-%w[GolfSumWatchApp.swift ContentView.swift WatchSessionManager.swift].each do |file|
-  src = File.join(watch_src_dir, file)
-  dst = File.join(watch_ios_dir, file)
-  if File.exist?(src)
-    FileUtils.cp(src, dst)
-    puts "[WatchPlugin] Copied #{file}"
-  else
-    abort("ERROR: Missing watch source file: #{src}")
-  end
+def write_file(path, content)
+  FileUtils.mkdir_p(File.dirname(path))
+  return if File.exist?(path) && File.read(path) == content
+  File.write(path, content)
+  puts "[Plugin] Wrote: #{File.basename(path)}"
 end
 
-# ── 2. Write Info.plist ───────────────────────────────────────────────────────
+def entitlements(app_group, extra = '')
+  <<~XML
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0"><dict>
+      <key>com.apple.security.application-groups</key>
+      <array><string>#{app_group}</string></array>
+      #{extra}
+    </dict></plist>
+  XML
+end
 
-info_plist_content = <<~XML
+# ── Copy source files ────────────────────────────────────────────────────────
+
+watch_dir = File.join(IOS_DIR, WATCH_APP_NAME)
+la_dir    = File.join(IOS_DIR, LIVE_ACTIVITY_NAME)
+main_dir  = File.join(IOS_DIR, MAIN_APP_NAME)
+
+FileUtils.mkdir_p(watch_dir)
+FileUtils.mkdir_p(la_dir)
+
+%w[GolfSumWatchApp.swift ContentView.swift WatchSessionManager.swift].each do |f|
+  copy_if_changed(File.join(PROJECT_ROOT, 'watch-src', f), File.join(watch_dir, f))
+end
+%w[GolfSumWatchBridge.h GolfSumWatchBridge.m].each do |f|
+  copy_if_changed(File.join(PROJECT_ROOT, 'watch-src', 'bridge', f), File.join(main_dir, f))
+end
+%w[GolfSumLiveActivityAttributes.swift GolfSumLiveActivity.swift GolfSumWidget.swift GolfSumLiveActivityBundle.swift].each do |f|
+  copy_if_changed(File.join(PROJECT_ROOT, 'live-activity-src', f), File.join(la_dir, f))
+end
+%w[GolfSumLiveActivityBridge.h GolfSumLiveActivityBridge.m GolfSumLiveActivityManager.swift GolfSumWidgetBridge.swift].each do |f|
+  copy_if_changed(File.join(PROJECT_ROOT, 'live-activity-src', 'bridge', f), File.join(main_dir, f))
+end
+
+# Plists + entitlements
+write_file(File.join(watch_dir, 'Info.plist'), <<~XML)
   <?xml version="1.0" encoding="UTF-8"?>
   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-  <plist version="1.0">
-  <dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>$(DEVELOPMENT_LANGUAGE)</string>
-    <key>CFBundleDisplayName</key>
-    <string>GolfSum</string>
-    <key>CFBundleExecutable</key>
-    <string>$(EXECUTABLE_NAME)</string>
-    <key>CFBundleIdentifier</key>
-    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>$(PRODUCT_NAME)</string>
-    <key>CFBundlePackageType</key>
-    <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
-    <key>CFBundleShortVersionString</key>
-    <string>$(MARKETING_VERSION)</string>
-    <key>CFBundleVersion</key>
-    <string>$(CURRENT_PROJECT_VERSION)</string>
-    <key>WKApplication</key>
-    <true/>
-  </dict>
-  </plist>
+  <plist version="1.0"><dict>
+    <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
+    <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundlePackageType</key><string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+    <key>WKApplication</key><true/>
+  </dict></plist>
 XML
-
-File.write(File.join(watch_ios_dir, 'Info.plist'), info_plist_content)
-puts "[WatchPlugin] Wrote Info.plist"
-
-# ── 3. Write entitlements for both targets ───────────────────────────────────
-
-entitlements_content = <<~XML
+write_file(File.join(watch_dir, "#{WATCH_APP_NAME}.entitlements"), entitlements(APP_GROUP_ID))
+write_file(File.join(la_dir, 'Info.plist'), <<~XML)
   <?xml version="1.0" encoding="UTF-8"?>
   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-  <plist version="1.0">
-  <dict>
-    <key>com.apple.security.application-groups</key>
-    <array>
-      <string>#{APP_GROUP_ID}</string>
-    </array>
-  </dict>
-  </plist>
+  <plist version="1.0"><dict>
+    <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
+    <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundlePackageType</key><string>XPC!</string>
+    <key>NSExtension</key><dict>
+      <key>NSExtensionPointIdentifier</key><string>com.apple.widgetkit-extension</string>
+    </dict>
+  </dict></plist>
 XML
+write_file(File.join(la_dir, "#{LIVE_ACTIVITY_NAME}.entitlements"),
+  entitlements(APP_GROUP_ID, '<key>com.apple.developer.live-activities</key><true/>'))
+write_file(File.join(main_dir, "#{MAIN_APP_NAME}.entitlements"),
+  entitlements(APP_GROUP_ID, '<key>com.apple.developer.live-activities</key><true/>'))
 
-File.write(File.join(watch_ios_dir, "#{WATCH_APP_NAME}.entitlements"), entitlements_content)
-puts "[WatchPlugin] Wrote Watch entitlements"
+# ── Helper: add target ───────────────────────────────────────────────────────
 
-# Also write entitlements for the iPhone app if not already there
-iphone_entitlements_path = File.join('ios', MAIN_APP_NAME, "#{MAIN_APP_NAME}.entitlements")
-unless File.exist?(iphone_entitlements_path)
-  File.write(iphone_entitlements_path, entitlements_content)
-  puts "[WatchPlugin] Wrote iPhone entitlements"
-end
+def add_target(project, name, product_type, platform, deploy, bundle_id, settings_extra = {})
+  target = project.new_target(product_type, name, platform, deploy)
+  dir    = File.join(Dir.pwd, name)
 
-# ── 4. Copy native bridge ObjC files into iPhone target dir ─────────────────
+  group = project.main_group.find_subpath(name) ||
+          project.main_group.new_group(name, name)
 
-bridge_dst_dir = File.join('ios', MAIN_APP_NAME)
-bridge_src_dir = File.join(File.dirname(__FILE__), '..', 'watch-src', 'bridge')
-
-if File.directory?(bridge_src_dir)
-  %w[GolfSumWatchBridge.h GolfSumWatchBridge.m].each do |file|
-    src = File.join(bridge_src_dir, file)
-    dst = File.join(bridge_dst_dir, file)
-    if File.exist?(src)
-      FileUtils.cp(src, dst) unless File.exist?(dst)
-      puts "[WatchPlugin] Bridge file ready: #{file}"
+  # Add Swift source files
+  Dir.glob(File.join(dir, '*.swift')).each do |f|
+    fname = File.basename(f)
+    existing = group.files.find { |r| r.path == fname }
+    ref = existing || group.new_reference(fname)
+    ref.last_known_file_type = 'sourcecode.swift'
+    unless target.source_build_phase.files_references.include?(ref)
+      target.add_file_references([ref])
     end
   end
-end
 
-# ── 5. Create Watch App target in Xcode project ───────────────────────────────
-
-puts "[WatchPlugin] Creating Watch App target..."
-
-watch_target = project.new_target(
-  :watch2_app,
-  WATCH_APP_NAME,
-  :watchos,
-  WATCH_DEPLOY_TARGET
-)
-
-# ── 6. Configure build settings ───────────────────────────────────────────────
-
-watch_target.build_configurations.each do |config|
-  s = config.build_settings
-
-  s['PRODUCT_BUNDLE_IDENTIFIER']    = WATCH_BUNDLE_ID
-  s['PRODUCT_NAME']                  = WATCH_APP_NAME
-  s['SWIFT_VERSION']                 = SWIFT_VERSION
-  s['WATCHOS_DEPLOYMENT_TARGET']     = WATCH_DEPLOY_TARGET
-  s['TARGETED_DEVICE_FAMILY']        = '4'
-  s['SDKROOT']                       = 'watchos'
-  s['SUPPORTED_PLATFORMS']           = 'watchos watchsimulator'
-  s['INFOPLIST_FILE']                = "#{WATCH_APP_NAME}/Info.plist"
-  s['CODE_SIGN_STYLE']               = 'Automatic'
-  s['DEVELOPMENT_TEAM']              = '$(DEVELOPMENT_TEAM)'
-  s['MARKETING_VERSION']             = '1.0'
-  s['CURRENT_PROJECT_VERSION']       = '1'
-  s['GENERATE_INFOPLIST_FILE']       = 'NO'
-  s['ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES'] = 'NO'
-  s['CODE_SIGN_ENTITLEMENTS']        = "#{WATCH_APP_NAME}/#{WATCH_APP_NAME}.entitlements"
-
-  if config.name == 'Debug'
-    s['DEBUG_INFORMATION_FORMAT']    = 'dwarf'
-    s['SWIFT_OPTIMIZATION_LEVEL']    = '-Onone'
-    s['SWIFT_ACTIVE_COMPILATION_CONDITIONS'] = 'DEBUG'
-  else
-    s['DEBUG_INFORMATION_FORMAT']    = 'dwarf-with-dsym'
-    s['SWIFT_OPTIMIZATION_LEVEL']    = '-O'
-    s['VALIDATE_PRODUCT']            = 'YES'
+  # Reference plists without compiling
+  ['Info.plist', "#{name}.entitlements"].each do |meta|
+    if File.exist?(File.join(dir, meta)) && !group.files.find { |r| r.path == meta }
+      group.new_reference(meta)
+    end
   end
+
+  # Build settings
+  target.build_configurations.each do |c|
+    c.build_settings.merge!({
+      'PRODUCT_BUNDLE_IDENTIFIER'    => bundle_id,
+      'SWIFT_VERSION'                => SWIFT_VERSION,
+      'CODE_SIGN_STYLE'              => 'Automatic',
+      'MARKETING_VERSION'            => '1.0',
+      'CURRENT_PROJECT_VERSION'      => '1',
+      'INFOPLIST_FILE'               => "#{name}/Info.plist",
+      'CODE_SIGN_ENTITLEMENTS'       => "#{name}/#{name}.entitlements",
+    }.merge(settings_extra))
+  end
+
+  target
 end
 
-# ── 7. Add Swift source files to Watch target ─────────────────────────────────
+# ── Helper: create explicit product reference ────────────────────────────────
+# This is the critical fix — product_reference is nil before first build,
+# so we create a PBXFileReference for the .app product manually.
 
-# Create a group for the watch app in the Xcode navigator
-watch_group = project.main_group.new_group(WATCH_APP_NAME, WATCH_APP_NAME)
+def create_product_ref(project, name, file_type)
+  products_group = project.products_group
+  existing = products_group.files.find { |f| f.path == "#{name}.app" }
+  return existing if existing
 
-swift_files = %w[GolfSumWatchApp.swift ContentView.swift WatchSessionManager.swift]
-
-swift_files.each do |file|
-  file_ref = watch_group.new_reference(file)
-  file_ref.last_known_file_type = 'sourcecode.swift'
-  watch_target.add_file_references([file_ref])
+  ref = products_group.new_reference("#{name}.app")
+  ref.explicit_file_type   = file_type
+  ref.include_in_index     = '0'
+  ref.source_tree          = 'BUILT_PRODUCTS_DIR'
+  ref
 end
 
-# Add Info.plist to group (not to build phases)
-watch_group.new_reference('Info.plist')
-watch_group.new_reference("#{WATCH_APP_NAME}.entitlements")
+# ── Helper: create appex product reference ───────────────────────────────────
 
-puts "[WatchPlugin] Added #{swift_files.length} Swift files to Watch target"
+def create_appex_ref(project, name)
+  products_group = project.products_group
+  existing = products_group.files.find { |f| f.path == "#{name}.appex" }
+  return existing if existing
 
-# ── 8. Add ObjC bridge files to iPhone target ────────────────────────────────
+  ref = products_group.new_reference("#{name}.appex")
+  ref.explicit_file_type   = 'plug-in'
+  ref.include_in_index     = '0'
+  ref.source_tree          = 'BUILT_PRODUCTS_DIR'
+  ref
+end
 
-main_target = project.targets.find { |t| t.name == MAIN_APP_NAME }
-abort("ERROR: Could not find main target '#{MAIN_APP_NAME}'") unless main_target
+# ── 1. WATCH TARGET ──────────────────────────────────────────────────────────
 
-main_group = project.main_group.find_subpath(MAIN_APP_NAME, false)
+unless project.targets.any? { |t| t.name == WATCH_APP_NAME }
+  watch_target = add_target(
+    project, WATCH_APP_NAME, :watch2_app, :watchos, WATCH_DEPLOY_TARGET,
+    WATCH_BUNDLE_ID,
+    'WATCHOS_DEPLOYMENT_TARGET'    => WATCH_DEPLOY_TARGET,
+    'TARGETED_DEVICE_FAMILY'       => '4',
+    'SDKROOT'                      => 'watchos',
+    'SUPPORTED_PLATFORMS'          => 'watchos watchsimulator',
+    'ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES' => 'NO'
+  )
+
+  # Create explicit product reference
+  watch_product_ref = create_product_ref(project, WATCH_APP_NAME, 'com.apple.product-type.application')
+  watch_target.product_reference = watch_product_ref
+
+  # Dependency
+  main_target.add_dependency(watch_target)
+
+  # Embed Watch Content phase with explicit product ref
+  embed = main_target.new_copy_files_build_phase('Embed Watch Content')
+  embed.symbol_dst_subfolder_spec = :wrapper
+  embed.dst_path = '$(CONTENTS_FOLDER_PATH)/Watch'
+  bf = embed.add_file_reference(watch_product_ref)
+  bf.settings = { 'ATTRIBUTES' => ['RemoveHeadersOnCopy'] }
+
+  puts "[Plugin] Watch target added with explicit product reference"
+else
+  puts "[Plugin] Watch target exists — sources synced"
+end
+
+# ── 2. LIVE ACTIVITY + WIDGET TARGET ─────────────────────────────────────────
+
+unless project.targets.any? { |t| t.name == LIVE_ACTIVITY_NAME }
+  la_target = add_target(
+    project, LIVE_ACTIVITY_NAME, :app_extension, :ios, IOS_DEPLOY_TARGET,
+    LIVE_ACTIVITY_BUNDLE,
+    'IPHONEOS_DEPLOYMENT_TARGET'      => IOS_DEPLOY_TARGET,
+    'TARGETED_DEVICE_FAMILY'          => '1,2',
+    'SDKROOT'                         => 'iphoneos',
+    'APPLICATION_EXTENSION_API_ONLY'  => 'YES'
+  )
+
+  la_product_ref = create_appex_ref(project, LIVE_ACTIVITY_NAME)
+  la_target.product_reference = la_product_ref
+
+  main_target.add_dependency(la_target)
+
+  embed_ext = main_target.new_copy_files_build_phase('Embed App Extensions')
+  embed_ext.symbol_dst_subfolder_spec = :plug_ins
+  bf = embed_ext.add_file_reference(la_product_ref)
+  bf.settings = { 'ATTRIBUTES' => ['RemoveHeadersOnCopy'] }
+
+  puts "[Plugin] Live Activity / Widget target added"
+else
+  puts "[Plugin] Live Activity target exists — sources synced"
+end
+
+# ── 3. Bridge files → main target ────────────────────────────────────────────
+
+main_group = project.main_group.find_subpath(MAIN_APP_NAME)
+sources    = main_target.source_build_phase
 
 if main_group
-  bridge_files = %w[GolfSumWatchBridge.h GolfSumWatchBridge.m]
-  bridge_files.each do |file|
-    file_path = File.join('ios', MAIN_APP_NAME, file)
-    next unless File.exist?(file_path)
-
-    # Check if already referenced
-    already_referenced = project.files.any? { |f| f.path&.include?(file) }
-    next if already_referenced
-
-    file_ref = main_group.new_reference(file)
-    file_ref.last_known_file_type = file.end_with?('.h') ? 'sourcecode.c.h' : 'sourcecode.c.objc'
-
-    # Only .m files go in Sources build phase
-    if file.end_with?('.m')
-      sources_phase = main_target.source_build_phase
-      sources_phase.add_file_reference(file_ref)
-    end
-    puts "[WatchPlugin] Added bridge file: #{file}"
+  %w[GolfSumWatchBridge.m GolfSumLiveActivityBridge.m GolfSumLiveActivityManager.swift GolfSumWidgetBridge.swift].each do |f|
+    next unless File.exist?(File.join(IOS_DIR, MAIN_APP_NAME, f))
+    next if project.files.any? { |pf| (pf.path || '').end_with?(f) }
+    ref = main_group.new_reference(f)
+    ref.last_known_file_type = f.end_with?('.swift') ? 'sourcecode.swift' : 'sourcecode.c.objc'
+    sources.add_file_reference(ref)
+    puts "[Plugin] Bridge → main: #{f}"
   end
 end
 
-# ── 9. Add iPhone app entitlements to build settings ─────────────────────────
+# ── 4. Main app entitlements build setting ────────────────────────────────────
 
-main_target.build_configurations.each do |config|
-  existing = config.build_settings['CODE_SIGN_ENTITLEMENTS']
-  unless existing
-    config.build_settings['CODE_SIGN_ENTITLEMENTS'] = "#{MAIN_APP_NAME}/#{MAIN_APP_NAME}.entitlements"
-  end
+main_target.build_configurations.each do |c|
+  c.build_settings['CODE_SIGN_ENTITLEMENTS'] ||= "#{MAIN_APP_NAME}/#{MAIN_APP_NAME}.entitlements"
 end
 
-# ── 10. Wire Watch App as dependency + embed in iPhone target ─────────────────
-
-# Add target dependency
-main_target.add_dependency(watch_target)
-puts "[WatchPlugin] Added Watch target dependency to #{MAIN_APP_NAME}"
-
-# Create embed Watch Content copy files phase
-embed_phase = main_target.new_copy_files_build_phase('Embed Watch Content')
-embed_phase.symbol_dst_subfolder_spec = :wrapper
-embed_phase.dst_path = '$(CONTENTS_FOLDER_PATH)/Watch'
-
-# Add watch app product to embed phase
-watch_product_ref = watch_target.product_reference
-if watch_product_ref
-  build_file = embed_phase.add_file_reference(watch_product_ref)
-  build_file.settings = { 'ATTRIBUTES' => ['RemoveHeadersOnCopy'] }
-  puts "[WatchPlugin] Embed Watch Content phase configured"
-else
-  puts "[WatchPlugin] WARNING: Could not find Watch product reference for embed phase"
-end
-
-# ── 11. Save project ─────────────────────────────────────────────────────────
+# ── 5. Save ───────────────────────────────────────────────────────────────────
 
 project.save
-puts "[WatchPlugin] Xcode project saved successfully"
-puts "[WatchPlugin] Watch target '#{WATCH_APP_NAME}' added with bundle ID: #{WATCH_BUNDLE_ID}"
+puts "[Plugin] Done — Watch + Widget targets saved"
