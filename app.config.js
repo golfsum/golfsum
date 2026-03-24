@@ -50,33 +50,33 @@ module.exports = function(env) {
       resizeMode: 'contain',
       backgroundColor: '#0f1419',
     },
-ios: {
-  supportsTablet: true,
-  bundleIdentifier: 'com.golfsum.app',
-  buildNumber: '1',
-  infoPlist: {
-    NSCameraUsageDescription: 'GolfSum needs camera access to photograph scorecards',
-    NSPhotoLibraryUsageDescription: 'GolfSum needs photo library access to upload scorecard images',
-    NSLocationWhenInUseUsageDescription: 'GolfSum needs your location to find nearby golf courses',
-    ITSAppUsesNonExemptEncryption: false,
-    ...(urlTypes.length > 0 ? { CFBundleURLTypes: urlTypes } : {}),
-  },
-  targets: {
-    'GolfSumWatch': {
-      bundleIdentifier: 'com.golfsum.app.watchkitapp',
-      entitlements: {
-        'com.apple.security.application-groups': ['group.com.golfsum.app'],
+    ios: {
+      supportsTablet: true,
+      bundleIdentifier: 'com.golfsum.app',
+      buildNumber: '1',
+      infoPlist: {
+        NSCameraUsageDescription: 'GolfSum needs camera access to photograph scorecards',
+        NSPhotoLibraryUsageDescription: 'GolfSum needs photo library access to upload scorecard images',
+        NSLocationWhenInUseUsageDescription: 'GolfSum needs your location to find nearby golf courses',
+        ITSAppUsesNonExemptEncryption: false,
+        ...(urlTypes.length > 0 ? { CFBundleURLTypes: urlTypes } : {}),
+      },
+      targets: {
+        'GolfSumWatch': {
+          bundleIdentifier: 'com.golfsum.app.watchkitapp',
+          entitlements: {
+            'com.apple.security.application-groups': ['group.com.golfsum.app'],
+          },
+        },
+        'GolfSumLiveActivity': {
+          bundleIdentifier: 'com.golfsum.app.liveactivity',
+          entitlements: {
+            'com.apple.security.application-groups': ['group.com.golfsum.app'],
+            'com.apple.developer.live-activities': true,
+          },
+        },
       },
     },
-    'GolfSumLiveActivity': {
-      bundleIdentifier: 'com.golfsum.app.liveactivity',
-      entitlements: {
-        'com.apple.security.application-groups': ['group.com.golfsum.app'],
-        'com.apple.developer.live-activities': true,
-      },
-    },
-  },
-},
     android: {
       softwareKeyboardLayoutMode: 'pan',
       // Window background when system draws behind status/nav (edge-to-edge)
