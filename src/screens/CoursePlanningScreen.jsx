@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getCourse, isCourseCached, downloadCourse } from '../services/courseCache';
-import { fetchCourseHolesFromBackend } from '../services/golfApi';
+import { isCourseCached, downloadCourse } from '../services/courseCache';
+import { hasGpsHoleData, loadGpsRoundSetup } from '../services/gpsRoundSetup';
 import { haversineYards } from '../services/haversine';
 import { MAPBOX_PUBLIC_TOKEN } from '../config/mapbox';
 import { HoleHeader } from '../components/gps/HoleHeader';
@@ -42,8 +42,23 @@ function getPlayingAdjustment(baseYards, weather, shotBearingDeg) {
   };
 }
 
-function findPoi(hole, type, subType) {
-  return hole?.pois?.find(p => p.POI === type && p.SubType === subType) || null;
+/** Align with GPS round / course cache shape: `POI` + `Location` (not `SubType`). */
+function findPoi(hole, poi, location) {
+  return (hole?.pois || []).find((p) => p?.POI === poi && (!location || p?.Location === location)) || null;
+}
+
+function firstTeePoiForHole(hole) {
+  if (!hole?.pois?.length) return null;
+  return (
+    findPoi(hole, 'Tee Back', 'C') ||
+    findPoi(hole, 'Tee Back', 'B') ||
+    findPoi(hole, 'Tee Back') ||
+    findPoi(hole, 'Tee Front', 'C') ||
+    findPoi(hole, 'Tee Middle', 'C') ||
+    findPoi(hole, 'Tee', 'C') ||
+    hole.pois.find((p) => String(p?.POI || '').includes('Tee') && Number.isFinite(p?.Latitude) && Number.isFinite(p?.Longitude)) ||
+    null
+  );
 }
 
 function normalizeDegrees(deg) {
@@ -95,8 +110,11 @@ export function CoursePlanningScreen({
   const currentHole = visibleHoles[currentHoleIndex] || null;
   const currentHoleNumber = currentHole?.hole ?? currentHole?.number ?? currentHoleIndex + 1;
 
-  const teeBack = useMemo(() => findPoi(currentHole, 'Tee', 'B'), [currentHole]);
-  const greenCenter = useMemo(() => findPoi(currentHole, 'Green', 'C'), [currentHole]);
+  const teeBack = useMemo(() => firstTeePoiForHole(currentHole), [currentHole]);
+  const greenCenter = useMemo(
+    () => findPoi(currentHole, 'Green', 'C') || (currentHole?.pois || []).find((p) => p?.POI === 'Green' && !p?.Location),
+    [currentHole],
+  );
   const greenFront = useMemo(() => findPoi(currentHole, 'Green', 'F'), [currentHole]);
   const greenBack = useMemo(() => findPoi(currentHole, 'Green', 'B'), [currentHole]);
   const anyHolePoi = currentHole?.pois?.find(p => Number.isFinite(p?.Longitude) && Number.isFinite(p?.Latitude)) || null;
@@ -108,32 +126,36 @@ export function CoursePlanningScreen({
     }
   }, []);
 
-  // Load course data
+  // Load course data — same order as GPS round: local cache → Firestore gpsData →
+  // Firebase getCourseHoles (golfapi.io via server) → direct golfapi.io fallback.
+  // Remote hits are written to AsyncStorage + Firestore for offline play.
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       setLoading(true);
+      setError(null);
       try {
-        let data = null;
-        if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
-          try {
-            data = await fetchCourseHolesFromBackend(courseId, courseName, latitude, longitude);
-          } catch {
-            data = null;
-          }
+        const payload = await loadGpsRoundSetup(courseId, courseName, latitude, longitude);
+        if (cancelled) return;
+        const data = payload?.course;
+        if (data && hasGpsHoleData(data)) {
+          setCourse(data);
+        } else {
+          setCourse(null);
+          setError('Could not load course GPS data. Check your connection or open the course from Play to download it.');
         }
-        if (!data) {
-          data = await getCourse(courseId);
+      } catch {
+        if (!cancelled) {
+          setCourse(null);
+          setError('Could not load course data.');
         }
-        if (!data) {
-          data = await fetchCourseHolesFromBackend(courseId, courseName).catch(() => null);
-        }
-        setCourse(data);
-      } catch (err) {
-        setError('Could not load course data.');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [courseId, courseName, latitude, longitude]);
 
   // Load existing plan
@@ -244,7 +266,7 @@ export function CoursePlanningScreen({
     } finally {
       setSaving(false);
     }
-  }, [planHoles, currentHoleNumber, markedShot, noteText, playingDistance, teeYardage, uid, courseId, teeColor, weather, saveHolePlan]);
+  }, [planHoles, currentHoleNumber, markedShot, noteText, playingDistance, teeYardage, uid, courseId, courseName, teeColor, weather, saveHolePlan]);
 
   const handleMarkTeeShot = useCallback(() => {
     if (!teeBack) return;

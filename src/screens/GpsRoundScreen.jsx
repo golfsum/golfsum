@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, AppState, Modal, Platform, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { ActionSheetIOS, ActivityIndicator, Alert, Animated, AppState, Modal, Platform, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getCourse, saveCourse } from '../services/courseCache';
 import { fetchCourseHolesFromBackend } from '../services/golfApi';
@@ -7,6 +7,7 @@ import { requestGpsPermission, watchUserPosition, classifyGpsQuality } from '../
 import { haversineYards } from '../services/haversine';
 import { rs } from '../utils/responsive';
 import { MAPBOX_PUBLIC_TOKEN } from '../config/mapbox';
+import { buildStaticHoleMapUrl, greenPoiFromHole, teePoiFromHole } from '../utils/gpsHoleMapSnapshot';
 import GpsOverlay from '../components/gps/GpsOverlay';
 import GpsRoundHud from '../components/gps/GpsRoundHud';
 import GpsGlassChrome from '../components/gps/GpsGlassChrome';
@@ -48,6 +49,11 @@ import { loadPlan } from '../services/CoursePlanningService';
 import { getCurrentUser } from '../services/firebaseAuthService';
 import { buildHoleDispersion, buildLiveDispersionInsight, dispersionLieColor, getDispersionMode } from '../services/shotDispersionService';
 import { deriveGreenSummary, formatPuttDistances } from '../services/greenSummaryService';
+import { calculateFinalTiming, createPauseEvent } from '../services/roundTimingService';
+import {
+  saveGpsInProgressRound,
+  clearGpsInProgressRound,
+} from '../services/inProgressRoundService';
 
 let MapboxGL = null;
 try {
@@ -282,63 +288,6 @@ function bearingDeg(lat1, lng1, lat2, lng2) {
   return normalizeDegrees(toDegrees(Math.atan2(y, x)));
 }
 
-function buildStaticHoleMapUrl({ shots, teePoi, greenPoi, width = 700, height = 400 }) {
-  if (!MAPBOX_PUBLIC_TOKEN || !teePoi || !greenPoi) return null;
-  const coordinates = [];
-  if (Number.isFinite(teePoi.Longitude) && Number.isFinite(teePoi.Latitude)) {
-    coordinates.push([teePoi.Longitude, teePoi.Latitude]);
-  }
-  if (Number.isFinite(greenPoi.Longitude) && Number.isFinite(greenPoi.Latitude)) {
-    coordinates.push([greenPoi.Longitude, greenPoi.Latitude]);
-  }
-  (shots || []).forEach((shot) => {
-    if (Number.isFinite(shot?.from?.lng) && Number.isFinite(shot?.from?.lat)) {
-      coordinates.push([shot.from.lng, shot.from.lat]);
-    }
-    if (Number.isFinite(shot?.to?.lng) && Number.isFinite(shot?.to?.lat)) {
-      coordinates.push([shot.to.lng, shot.to.lat]);
-    }
-  });
-  if (coordinates.length === 0) return null;
-
-  const lngs = coordinates.map(([lng]) => lng);
-  const lats = coordinates.map(([, lat]) => lat);
-  const minLng = Math.min(...lngs);
-  const maxLng = Math.max(...lngs);
-  const minLat = Math.min(...lats);
-  const maxLat = Math.max(...lats);
-  const lngPad = Math.max((maxLng - minLng) * 0.18, 0.002);
-  const latPad = Math.max((maxLat - minLat) * 0.18, 0.0015);
-
-  const markers = (shots || [])
-    .filter((shot) => Number.isFinite(shot?.from?.lng) && Number.isFinite(shot?.from?.lat))
-    .map((shot, index) => {
-      const color = index === 0 ? '60A5FA' : '1ac855';
-      return `pin-s-${index + 1}+${color}(${shot.from.lng},${shot.from.lat})`;
-    });
-
-  const geojson = {
-    type: 'FeatureCollection',
-    features: [
-      {
-        type: 'Feature',
-        geometry: {
-          type: 'LineString',
-          coordinates: (shots || [])
-            .flatMap((shot) => (shot?.from?.lng && shot?.from?.lat ? [[shot.from.lng, shot.from.lat]] : []))
-            .concat(Number.isFinite(greenPoi.Longitude) && Number.isFinite(greenPoi.Latitude) ? [[greenPoi.Longitude, greenPoi.Latitude]] : []),
-        },
-        properties: { stroke: '#1ac855', 'stroke-width': 2 },
-      },
-    ],
-  };
-
-  const overlayParts = [`geojson(${encodeURIComponent(JSON.stringify(geojson))})`, ...markers];
-  const overlay = overlayParts.filter(Boolean).join(',');
-
-  return `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/${overlay}/${[minLng - lngPad, minLat - latPad, maxLng + lngPad, maxLat + latPad].join(',')}/${width}x${height}@2x?access_token=${MAPBOX_PUBLIC_TOKEN}&attribution=false`;
-}
-
 function getPolylineSegments(points) {
   const segments = [];
   let totalYards = 0;
@@ -553,6 +502,7 @@ export function GpsRoundScreen({
   tournamentMode = false,
   onBack,
   onFinishRound,
+  resumedRoundData = null,
 }) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -560,7 +510,11 @@ export function GpsRoundScreen({
   const [error, setError] = useState('');
   const [cached, setCached] = useState(false);
   const [course, setCourse] = useState(null);
-  const [currentHoleIndex, setCurrentHoleIndex] = useState(Math.max(0, (startingHole || 1) - 1));
+  const [currentHoleIndex, setCurrentHoleIndex] = useState(() => (
+    resumedRoundData?.currentHoleIndex != null
+      ? resumedRoundData.currentHoleIndex
+      : Math.max(0, (startingHole || 1) - 1)
+  ));
   // userPos is now part of gpsState (batched with accuracy + quality)
   const [yardages, setYardages] = useState({ front: '--', center: '--', back: '--' });
   const cameraRef = useRef(null);
@@ -603,14 +557,26 @@ export function GpsRoundScreen({
     shotFlowActiveRef.current = overlayState.shotFlow !== 'idle';
   }, [overlayState.shotFlow]);
   const [weather, setWeather] = useState(null);
-  const [loggedShotsByHole, setLoggedShotsByHole] = useState({});
+  const [loggedShotsByHole, setLoggedShotsByHole] = useState(() => (
+    resumedRoundData?.loggedShotsByHole && typeof resumedRoundData.loggedShotsByHole === 'object'
+      ? { ...resumedRoundData.loggedShotsByHole }
+      : {}
+  ));
   const loggedShotsByHoleRef = useRef(loggedShotsByHole);
   useEffect(() => {
     loggedShotsByHoleRef.current = loggedShotsByHole;
   }, [loggedShotsByHole]);
-  const [holeSummariesByHole, setHoleSummariesByHole] = useState({});
+  const [holeSummariesByHole, setHoleSummariesByHole] = useState(() => (
+    resumedRoundData?.holeSummariesByHole && typeof resumedRoundData.holeSummariesByHole === 'object'
+      ? { ...resumedRoundData.holeSummariesByHole }
+      : {}
+  ));
   const [lieToast, setLieToast] = useState(null);
-  const [holeScoresByHole, setHoleScoresByHole] = useState({});
+  const [holeScoresByHole, setHoleScoresByHole] = useState(() => (
+    resumedRoundData?.holeScoresByHole && typeof resumedRoundData.holeScoresByHole === 'object'
+      ? { ...resumedRoundData.holeScoresByHole }
+      : {}
+  ));
   const [showScoreSheet, setShowScoreSheet] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showScorecard, setShowScorecard] = useState(false);
@@ -631,7 +597,11 @@ export function GpsRoundScreen({
   const [showSuggestionModal, setShowSuggestionModal] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [reportContext, setReportContext] = useState(null);
-  const [holeFlagsByHole, setHoleFlagsByHole] = useState({});
+  const [holeFlagsByHole, setHoleFlagsByHole] = useState(() => (
+    resumedRoundData?.holeFlagsByHole && typeof resumedRoundData.holeFlagsByHole === 'object'
+      ? { ...resumedRoundData.holeFlagsByHole }
+      : {}
+  ));
   const [missedShotBanner, setMissedShotBanner] = useState(null);
   const [missedShotForm, setMissedShotForm] = useState(null);
   const [holeDispersion, setHoleDispersion] = useState(null);
@@ -647,6 +617,23 @@ export function GpsRoundScreen({
   const [flaggedForPreSave, setFlaggedForPreSave] = useState([]);
   const [coursePlan, setCoursePlan] = useState(null);
   const [showGhostOverlay, setShowGhostOverlay] = useState(true);
+
+  const roundIdRef = useRef(resumedRoundData?.id ?? `gps-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`);
+  const createdAtRoundRef = useRef(resumedRoundData?.createdAt ?? new Date().toISOString());
+  const [timingState, setTimingState] = useState(() => {
+    if (resumedRoundData?.timing) {
+      return { ...resumedRoundData.timing, lastActiveAt: Date.now() };
+    }
+    const t = Date.now();
+    return {
+      roundStartedAt: t,
+      lastActiveAt: t,
+      playedMs: 0,
+      pauseEvents: [],
+      holeTimestamps: {},
+    };
+  });
+  const [currentHolePausedMs, setCurrentHolePausedMs] = useState(0);
 
   const handleBackPress = useCallback(() => {
     const totalShots = Object.values(loggedShotsByHole)
@@ -669,7 +656,6 @@ export function GpsRoundScreen({
   }, [loggedShotsByHole, holeSummariesByHole, onBack]);
 
   const lieToastTimeoutRef = useRef(null);
-  const roundStartedAtRef = useRef(Date.now());
   const mapHeight = Math.max(220, windowHeight + insets.top + insets.bottom);
 
   const holeWindow = useMemo(() => {
@@ -692,6 +678,29 @@ export function GpsRoundScreen({
     [course?.holes, holeWindow.custom, holeWindow.endIndex, holeWindow.startIndex, routeHoleNumbers]
   );
   const currentHole = visibleHoles[currentHoleIndex] || null;
+
+  useEffect(() => {
+    const hNum = visibleHoles[currentHoleIndex]?.hole ?? currentHoleIndex + 1;
+    setTimingState((prev) => {
+      const existing = prev.holeTimestamps[hNum];
+      if (existing?.startedAt) return prev;
+      return {
+        ...prev,
+        holeTimestamps: {
+          ...prev.holeTimestamps,
+          [hNum]: {
+            holeNumber: hNum,
+            startedAt: Date.now(),
+            teeShotAt: null,
+            savedAt: null,
+            pausedMs: 0,
+            ...existing,
+          },
+        },
+      };
+    });
+    setCurrentHolePausedMs(0);
+  }, [currentHoleIndex, visibleHoles]);
 
   // Retroactive missed shot nudge: show flagged hole at least 2 holes behind
   const nudgeHole = useMemo(() => {
@@ -1869,6 +1878,27 @@ export function GpsRoundScreen({
       }
     }
 
+    if (nextIndex !== currentHoleIndex) {
+      const prevHoleNum = visibleHoles[currentHoleIndex]?.hole ?? currentHoleIndex + 1;
+      setTimingState((prev) => ({
+        ...prev,
+        holeTimestamps: {
+          ...prev.holeTimestamps,
+          [prevHoleNum]: {
+            ...(prev.holeTimestamps[prevHoleNum] || {
+              holeNumber: prevHoleNum,
+              startedAt: Date.now(),
+              teeShotAt: null,
+              savedAt: null,
+              pausedMs: 0,
+            }),
+            savedAt: Date.now(),
+            pausedMs: currentHolePausedMs,
+          },
+        },
+      }));
+    }
+
     setCurrentHoleIndex(nextIndex);
     setLiveLie(LIVE_LIE_DEFAULT);
     setShowGreenSheet(false);
@@ -1877,7 +1907,7 @@ export function GpsRoundScreen({
     setMissedShotBanner(null);
     setMissedShotForm(null);
     overlayRef.current?.resetOverlay?.();
-  }, [currentHole, currentHoleIndex, currentHoleSummary?.putts, currentPutts, loggedShotsByHole, markHoleFlag, missedShotBanner?.holeIndex, missedShotBanner?.kind, missedShotBanner?.targetHoleIndex, selectedTeeYardage]);
+  }, [currentHole, currentHoleIndex, currentHoleSummary?.putts, currentPutts, loggedShotsByHole, markHoleFlag, missedShotBanner?.holeIndex, missedShotBanner?.kind, missedShotBanner?.targetHoleIndex, selectedTeeYardage, visibleHoles, currentHolePausedMs]);
 
   const handleConfirmDistanceJump = useCallback(() => {
     if (!missedShotBanner?.shot) return;
@@ -1978,8 +2008,8 @@ export function GpsRoundScreen({
 
     const holeMapUrls = Object.entries(loggedShotsByHole).reduce((acc, [holeIndex, shots]) => {
       const holeData = visibleHoles[Number(holeIndex)] || null;
-      const teePoi = holeData ? (findPoi(holeData, 'Tee Back', 'C') || findPoi(holeData, 'Tee', 'C')) : null;
-      const greenPoi = holeData ? findPoi(holeData, 'Green', 'C') : null;
+      const teePoi = holeData ? teePoiFromHole(holeData) : null;
+      const greenPoi = holeData ? greenPoiFromHole(holeData) : null;
       if (!shots?.length || !teePoi || !greenPoi) return acc;
       const url = buildStaticHoleMapUrl({
         shots,
@@ -2048,6 +2078,28 @@ export function GpsRoundScreen({
       };
     }
 
+    const endedAt = Date.now();
+    const finishHoleNum = visibleHoles[currentHoleIndex]?.hole ?? currentHoleIndex + 1;
+    const mergedHoleTimestamps = {
+      ...timingState.holeTimestamps,
+      [finishHoleNum]: {
+        ...(timingState.holeTimestamps[finishHoleNum] || {
+          holeNumber: finishHoleNum,
+          startedAt: endedAt,
+          teeShotAt: null,
+          savedAt: null,
+          pausedMs: 0,
+        }),
+        savedAt: endedAt,
+        pausedMs: currentHolePausedMs,
+      },
+    };
+    const mergedTiming = { ...timingState, holeTimestamps: mergedHoleTimestamps };
+    const holesCompleted = Object.values(mergedHoleTimestamps).filter((h) => h.savedAt).length;
+    const roundTiming = calculateFinalTiming(mergedTiming, holesCompleted, endedAt);
+
+    await clearGpsInProgressRound().catch(() => undefined);
+
     const payload = {
       courseId,
       courseName: courseName || course?.courseName || course?.name || 'GPS Round',
@@ -2058,12 +2110,13 @@ export function GpsRoundScreen({
       roundLength,
       routeHoleNumbers: routeHoleNumbers?.length ? routeHoleNumbers : undefined,
       routeLabel: routeLabel || undefined,
-      startedAt: roundStartedAtRef.current,
-      endedAt: Date.now(),
+      startedAt: mergedTiming.roundStartedAt,
+      endedAt,
       gpsShots,
       gpsHoleSummaries,
       gpsHoleFlags: Object.values(holeFlagsByHole),
       holeMapUrls,
+      roundTiming,
     };
 
     // Check for flagged holes needing review
@@ -2089,7 +2142,89 @@ export function GpsRoundScreen({
     } else {
       onFinishRound?.(payload);
     }
-  }, [course, courseId, courseName, endingHole, holeFlagsByHole, holeSummariesByHole, loggedShotsByHole, onFinishRound, roundLength, routeHoleNumbers, routeLabel, selectedTee?.name, startingHole, teeColor, visibleHoles]);
+  }, [course, courseId, courseName, currentHoleIndex, currentHolePausedMs, endingHole, holeFlagsByHole, holeSummariesByHole, loggedShotsByHole, onFinishRound, roundLength, routeHoleNumbers, routeLabel, selectedTee?.name, startingHole, teeColor, timingState, visibleHoles]);
+
+  const handlePauseRound = useCallback(async () => {
+    try {
+      const now = Date.now();
+      const closedPauseMs = timingState.pauseEvents.reduce((s, p) => s + (p.durationMs ?? 0), 0);
+      const wall = now - timingState.roundStartedAt;
+      const playedMs = Math.max(0, wall - closedPauseMs);
+
+      const pauseEv = createPauseEvent('weather');
+      const nextTiming = {
+        ...timingState,
+        lastActiveAt: now,
+        playedMs,
+        pauseEvents: [...timingState.pauseEvents, pauseEv],
+      };
+
+      const pausedPayload = {
+        id: roundIdRef.current,
+        status: 'paused',
+        courseId,
+        courseName: courseName || course?.courseName || course?.name || 'GPS Round',
+        teeColor,
+        selectedTee: selectedTee ? { name: selectedTee.name, color: selectedTee.color, yards: selectedTee.yards } : null,
+        selectedTeeYardage,
+        startingHole: visibleHoles[0]?.hole,
+        endingHole,
+        roundLength,
+        routeHoleNumbers,
+        routeLabel,
+        tournamentMode,
+        currentHoleIndex,
+        pausedOnHole: currentHole?.hole ?? currentHoleIndex + 1,
+        holesCompleted: Object.values(nextTiming.holeTimestamps).filter((h) => h.savedAt).length,
+        loggedShotsByHole,
+        holeSummariesByHole,
+        holeScoresByHole,
+        holeFlagsByHole,
+        timing: nextTiming,
+        createdAt: createdAtRoundRef.current,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await saveGpsInProgressRound(pausedPayload);
+      onBack?.();
+    } catch {
+      Alert.alert('Error', 'Could not save round. Try again.');
+    }
+  }, [course, courseId, courseName, currentHole, currentHoleIndex, endingHole, holeFlagsByHole, holeScoresByHole, holeSummariesByHole, loggedShotsByHole, onBack, roundLength, routeHoleNumbers, routeLabel, selectedTee, selectedTeeYardage, teeColor, timingState, tournamentMode, visibleHoles]);
+
+  const handleEndRoundPress = useCallback(() => {
+    const message = currentHoleIndex < visibleHoles.length - 1
+      ? `You are on hole ${currentHoleIndex + 1} of ${visibleHoles.length}`
+      : undefined;
+
+    const runFinish = () => {
+      void handleFinishRound();
+    };
+    const runPause = () => {
+      void handlePauseRound();
+    };
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: 'End Round',
+          message,
+          options: ['Finish Round', 'Save & Pause — Resume Later', 'Cancel'],
+          cancelButtonIndex: 2,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 0) runFinish();
+          else if (buttonIndex === 1) runPause();
+        },
+      );
+    } else {
+      Alert.alert('End Round', message, [
+        { text: 'Finish Round', onPress: runFinish },
+        { text: 'Save & Pause — Resume Later', onPress: runPause },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  }, [currentHoleIndex, handleFinishRound, handlePauseRound, visibleHoles]);
 
   if (!MapboxGL) {
     return (
@@ -2162,7 +2297,7 @@ export function GpsRoundScreen({
         gpsLabel={manualMode ? 'MANUAL' : 'GPS'}
         gpsIcon={manualMode ? 'hand-left-outline' : gpsQuality === 'none' ? 'navigate-outline' : 'navigate'}
         onCardPress={() => setShowScorecard(true)}
-        onFinishRound={handleFinishRound}
+        onFinishRound={handleEndRoundPress}
         weatherText={!tournamentMode
           ? `${Number.isFinite(weather?.windMph) ? `${Math.round(weather.windMph)} mph` : '--'}  ${Number.isFinite(weather?.tempF) ? `${Math.round(weather.tempF)}F` : '--'}  ${Number.isFinite(weather?.humidity) ? `${Math.round(weather.humidity)}%` : '--'}`
           : 'Tournament mode'}
@@ -2530,6 +2665,23 @@ export function GpsRoundScreen({
 
               // Capture hole entry conditions on first shot
               if (existing.length === 0) {
+                const hNum = currentHole?.hole ?? currentHoleIndex + 1;
+                setTimingState((prev) => ({
+                  ...prev,
+                  holeTimestamps: {
+                    ...prev.holeTimestamps,
+                    [hNum]: {
+                      ...(prev.holeTimestamps[hNum] || {
+                        holeNumber: hNum,
+                        startedAt: Date.now(),
+                        teeShotAt: null,
+                        savedAt: null,
+                        pausedMs: 0,
+                      }),
+                      teeShotAt: Date.now(),
+                    },
+                  },
+                }));
                 setHoleSummariesByHole(prev => ({
                   ...prev,
                   [currentHoleIndex]: {
@@ -2774,7 +2926,7 @@ export function GpsRoundScreen({
         onNextHole={() => {
           const advance = () => {
             if (currentHoleIndex >= visibleHoles.length - 1) {
-              handleFinishRound();
+              handleEndRoundPress();
             } else {
               handleSelectHole(currentHoleIndex + 1);
             }

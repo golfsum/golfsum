@@ -11,6 +11,9 @@
       "ios": {
         "image": "macos-sequoia-15.3-xcode-16.2",
         "buildConfiguration": "Debug"
+      },
+      "env": {
+        "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "sk.eyJ1IjoibmRvZGRzNjQiLCJhIjoiY21ta3ZuOWxyMWdjbjJwcHptMnUzazNvOSJ9.wh3wDWj8spsJ8kQhCb2K9w"
       }
     },
     "preview": {
@@ -19,6 +22,9 @@
       "ios": {
         "image": "macos-sequoia-15.3-xcode-16.2",
         "buildConfiguration": "Release"
+      },
+      "env": {
+        "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "sk.eyJ1IjoibmRvZGRzNjQiLCJhIjoiY21ta3ZuOWxyMWdjbjJwcHptMnUzazNvOSJ9.wh3wDWj8spsJ8kQhCb2K9w"
       }
     },
     "production": {
@@ -28,6 +34,9 @@
       "ios": {
         "image": "macos-sequoia-15.3-xcode-16.2",
         "buildConfiguration": "Release"
+      },
+      "env": {
+        "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "sk.eyJ1IjoibmRvZGRzNjQiLCJhIjoiY21ta3ZuOWxyMWdjbjJwcHptMnUzazNvOSJ9.wh3wDWj8spsJ8kQhCb2K9w"
       }
     }
   },

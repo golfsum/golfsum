@@ -12,6 +12,7 @@ import { formatYardage, getYardageUnitLabel, type DistanceUnit } from '../../../
 import { FEEDBACK_COPY } from '../../../constants/feedbackCopy';
 import type { HoleScore } from '../types';
 import { getStatPreferencesFromProfile } from '../../../utils/statPreferences';
+import { resolveHoleMapUrlsForRoundSave } from '../../../utils/gpsHoleMapSnapshot';
 import { buildRoundPersistenceMeta } from './roundPersistenceMeta';
 
 interface UseRoundSaveParams {
@@ -225,10 +226,12 @@ export function useRoundSave({
       const roundWeather = await resolveRoundWeather();
       const frontWeather = weatherFront9 || roundWeather;
       const backWeather = weatherBack9;
+      const holeMapUrls = await resolveHoleMapUrlsForRoundSave(gpsRoundData, course.id);
       const persistenceMeta = buildRoundPersistenceMeta(
         gpsRoundData,
         firstSaveTimestampRef.current,
         lastSaveTimestampRef.current,
+        holeMapUrls,
       );
 
       const savedRound = await saveRound({
@@ -387,10 +390,12 @@ ${renderRow('GIR', [...back9.map(girLabel), '-', `${holesOverride.filter(h => h.
       const roundWeather = await resolveRoundWeather();
       const frontWeather = weatherFront9 || roundWeather;
       const backWeather = weatherBack9;
+      const holeMapUrls = await resolveHoleMapUrlsForRoundSave(gpsRoundData, course.id);
       const persistenceMeta = buildRoundPersistenceMeta(
         gpsRoundData,
         firstSaveTimestampRef.current,
         lastSaveTimestampRef.current,
+        holeMapUrls,
       );
 
       const savedRound = await saveRound({

@@ -3,7 +3,6 @@ import { ActivityIndicator, Dimensions, Image, Modal, ScrollView, StyleSheet, Te
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haversineYards } from '../services/haversine';
-import { getCourseDetail } from '../services/golfApiIoService';
 import { MAPBOX_PUBLIC_TOKEN } from '../config/mapbox';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 
@@ -61,34 +60,6 @@ function compareGpsShots(left, right) {
     || Number(left?.holeNumber || 0) - Number(right?.holeNumber || 0)
     || Number(left?.shotNumber || 0) - Number(right?.shotNumber || 0)
     || String(left?.id || '').localeCompare(String(right?.id || ''));
-}
-
-function buildStaticHoleMapUrl({ teePoi, greenPoi, shots, width = 700, height = 400 }) {
-  if (!MAPBOX_PUBLIC_TOKEN || !teePoi || !greenPoi) return null;
-  const coords = [];
-  if (Number.isFinite(teePoi.Longitude) && Number.isFinite(teePoi.Latitude)) coords.push([teePoi.Longitude, teePoi.Latitude]);
-  if (Number.isFinite(greenPoi.Longitude) && Number.isFinite(greenPoi.Latitude)) coords.push([greenPoi.Longitude, greenPoi.Latitude]);
-  (shots || []).forEach((shot) => {
-    if (Number.isFinite(shot?.from?.lng) && Number.isFinite(shot?.from?.lat)) coords.push([shot.from.lng, shot.from.lat]);
-    if (Number.isFinite(shot?.to?.lng) && Number.isFinite(shot?.to?.lat)) coords.push([shot.to.lng, shot.to.lat]);
-  });
-  if (coords.length === 0) return null;
-
-  const lngs = coords.map(([lng]) => lng);
-  const lats = coords.map(([, lat]) => lat);
-  const minLng = Math.min(...lngs);
-  const maxLng = Math.max(...lngs);
-  const minLat = Math.min(...lats);
-  const maxLat = Math.max(...lats);
-  const padLng = Math.max((maxLng - minLng) * 0.2, 0.002);
-  const padLat = Math.max((maxLat - minLat) * 0.2, 0.0015);
-  const markers = (shots || [])
-    .filter((shot) => Number.isFinite(shot?.from?.lng) && Number.isFinite(shot?.from?.lat))
-    .map((shot, index) => `pin-s-${index + 1}+${index === 0 ? '60A5FA' : '1ac855'}(${shot.from.lng},${shot.from.lat})`);
-  const overlay = markers.length > 0 ? `${markers.join(',')}` : '';
-  const bbox = [minLng - padLng, minLat - padLat, maxLng + padLng, maxLat + padLat].join(',');
-  const staticPath = overlay ? `${overlay}/${bbox}` : `${bbox}`;
-  return `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/${staticPath}/${width}x${height}@2x?access_token=${MAPBOX_PUBLIC_TOKEN}&attribution=false`;
 }
 
 async function cacheStaticMap(url, holeNum, roundId) {
@@ -256,32 +227,18 @@ function HoleMapCard({ holeNumber, par, yardage, score, putts, shots, holeSummar
 
 export function GpsRoundReviewScreen({ round, courseData: courseDataProp, onBack }) {
   const insets = useSafeAreaInsets();
-  const [loadedCourseData, setLoadedCourseData] = useState(null);
   const [replayVisible, setReplayVisible] = useState(false);
   const [replayIndex, setReplayIndex] = useState(0);
   const [replayPlaying, setReplayPlaying] = useState(false);
   const [activeHoleIndex, setActiveHoleIndex] = useState(0);
   const [activeHoleMapUri, setActiveHoleMapUri] = useState(null);
-  const courseData = courseDataProp || loadedCourseData;
+  const courseData = courseDataProp;
 
   useEffect(() => {
     if (MapboxGL && MAPBOX_PUBLIC_TOKEN) {
       MapboxGL.setAccessToken(MAPBOX_PUBLIC_TOKEN);
     }
   }, []);
-
-  // Auto-load course data with POIs if not provided via prop
-  useEffect(() => {
-    if (courseDataProp) return;
-    const courseId = round?.courseId || round?.courseSnapshot?.courseId || round?.courseSnapshot?.externalId;
-    if (!courseId) return;
-    let cancelled = false;
-    getCourseDetail(courseId).then(detail => {
-      if (cancelled || !detail?.holesData) return;
-      setLoadedCourseData({ holes: detail.holesData });
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [courseDataProp, round]);
 
   useEffect(() => {
     setActiveHoleIndex(0);
@@ -334,19 +291,11 @@ export function GpsRoundReviewScreen({ round, courseData: courseDataProp, onBack
     ? gpsSummaries.find((summary) => summary.holeNumber === activeHoleNumber)
     : null;
   const activeCourseHole = activeHoleNumber != null ? courseHolesByNumber[activeHoleNumber] : null;
+  /** Persisted at save time (GPS finish + score save). Never rebuild from course POIs — avoids "live" maps in history. */
   const activeHoleMapUrl = useMemo(() => {
     if (activeHoleNumber == null) return null;
-    const fromRound = round?.holeMapUrls?.[activeHoleNumber];
-    if (fromRound) return fromRound;
-    const teePoi = activeCourseHole?.pois?.find((poi) => poi.POI === 'Tee Back' && poi.Location === 'C')
-      || activeCourseHole?.pois?.find((poi) => poi.POI === 'Tee Front' && poi.Location === 'C');
-    const greenPoi = activeCourseHole?.pois?.find((poi) => poi.POI === 'Green' && poi.Location === 'C');
-    return buildStaticHoleMapUrl({
-      teePoi,
-      greenPoi,
-      shots: activeHoleShots,
-    });
-  }, [activeCourseHole, activeHoleNumber, activeHoleShots, round?.holeMapUrls]);
+    return round?.holeMapUrls?.[activeHoleNumber] ?? null;
+  }, [activeHoleNumber, round?.holeMapUrls]);
 
   useEffect(() => {
     let cancelled = false;

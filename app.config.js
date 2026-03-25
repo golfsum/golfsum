@@ -1,7 +1,5 @@
-// Dynamic Expo config — reads iOS Google Client ID from env
-// and auto-registers the reversed client ID as a URL scheme (required for Google Sign-In on iOS).
+// Dynamic Expo config — reads environment variables for Mapbox and Google Auth
 const iosGoogleClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
-const allowCleartextTraffic = process.env.EXPO_PUBLIC_ALLOW_CLEARTEXT_TRAFFIC === 'true';
 const mapboxDownloadToken =
   process.env.MAPBOX_DOWNLOAD_TOKEN ||
   process.env.MAPBOX_DOWNLOADS_TOKEN ||
@@ -10,12 +8,12 @@ const mapboxDownloadToken =
 const mapboxPublicToken = process.env.EXPO_PUBLIC_MAPBOX_PUBLIC_TOKEN || '';
 const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID || 'c4865044-3a6b-42c0-93b7-64f036338f22';
 
+// Set this for the @rnmapbox/maps plugin to pick up during prebuild
 if (mapboxDownloadToken) {
   process.env.RNMAPBOX_MAPS_DOWNLOAD_TOKEN = mapboxDownloadToken;
 }
 
-// Google requires the reversed client ID as an iOS URL scheme for OAuth redirects.
-// e.g. "123456-abcdef.apps.googleusercontent.com" → "com.googleusercontent.apps.123456-abcdef"
+// Helper to reverse Client ID for Google Auth URL Schemes
 function reversedClientId(clientId) {
   if (!clientId) return null;
   const parts = clientId.split('.');
@@ -27,7 +25,6 @@ const iosReversedClientId = reversedClientId(iosGoogleClientId);
 module.exports = function(env) {
   const config = env.config;
 
-  // Build the CFBundleURLTypes array
   const urlTypes = [];
   if (iosReversedClientId) {
     urlTypes.push({
@@ -44,7 +41,8 @@ module.exports = function(env) {
     orientation: 'default',
     icon: './assets/icon.png',
     userInterfaceStyle: 'dark',
-    newArchEnabled: true,
+    // Warning: New Arch can sometimes conflict with complex Pod setups (Mapbox + Watch)
+    newArchEnabled: true, 
     splash: {
       image: './assets/splash-icon.png',
       resizeMode: 'contain',
@@ -61,35 +59,15 @@ module.exports = function(env) {
         ITSAppUsesNonExemptEncryption: false,
         ...(urlTypes.length > 0 ? { CFBundleURLTypes: urlTypes } : {}),
       },
-      targets: {
-        'GolfSumWatch': {
-          bundleIdentifier: 'com.golfsum.app.watchkitapp',
-          entitlements: {
-            'com.apple.security.application-groups': ['group.com.golfsum.app'],
-          },
-        },
-        'GolfSumLiveActivity': {
-          bundleIdentifier: 'com.golfsum.app.liveactivity',
-          entitlements: {
-            'com.apple.security.application-groups': ['group.com.golfsum.app'],
-            'com.apple.developer.live-activities': true,
-          },
-        },
-      },
     },
     android: {
       softwareKeyboardLayoutMode: 'pan',
-      // Window background when system draws behind status/nav (edge-to-edge)
       backgroundColor: '#1C1C1E',
       adaptiveIcon: {
         foregroundImage: './assets/icon.png',
         backgroundColor: '#0f1419',
       },
       package: 'com.golfsum.app',
-      navigationBar: {
-        visible: 'sticky-immersive',
-        backgroundColor: '#00000000',
-      },
       permissions: [
         'android.permission.CAMERA',
         'android.permission.READ_EXTERNAL_STORAGE',
@@ -97,11 +75,6 @@ module.exports = function(env) {
         'android.permission.ACCESS_FINE_LOCATION',
         'android.permission.ACCESS_COARSE_LOCATION',
       ],
-    },
-    web: {
-      favicon: './assets/favicon.png',
-      bundler: 'metro',
-      output: 'single',
     },
     extra: {
       ...(config.extra || {}),
@@ -112,30 +85,45 @@ module.exports = function(env) {
       mapboxPublicToken,
     },
     plugins: [
-      './withWatchApp',
+      // 1. Force build from source to fix Maven/Tarball download errors
       [
-        'expo-image-picker',
+        "expo-build-properties",
         {
-          photosPermission: 'GolfSum needs access to your photos to upload scorecard images.',
-          cameraPermission: 'GolfSum needs access to your camera to photograph scorecards.',
-        },
+          "ios": {
+            "useFrameworks": "static",
+            "reactNativeDependencies": {
+              "buildFromSource": true
+            }
+          }
+        }
+      ],
+      // 2. Native Mapbox setup with download token
+      [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsImpl": "mapbox",
+          "RNMapboxMapsDownloadToken": mapboxDownloadToken
+        }
+      ],
+      "@bacons/apple-targets",
+      "expo-widgets", 
+      "./withWatchApp",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "GolfSum needs access to your photos to upload scorecard images.",
+          "cameraPermission": "GolfSum needs access to your camera to photograph scorecards."
+        }
       ],
       [
-        'expo-location',
+        "expo-location",
         {
-          locationAlwaysAndWhenInUsePermission: 'GolfSum needs your location to find nearby golf courses.',
-        },
+          "locationAlwaysAndWhenInUsePermission": "GolfSum needs your location to find nearby golf courses."
+        }
       ],
-      'expo-notifications',
-      '@react-native-community/datetimepicker',
-      'expo-apple-authentication',
-      ...(mapboxDownloadToken ? [[
-        '@rnmapbox/maps',
-        {
-          RNMapboxMapsImpl: 'mapbox',
-          RNMapboxMapsDownloadToken: mapboxDownloadToken,
-        },
-      ]] : []),
+      "expo-notifications",
+      "@react-native-community/datetimepicker",
+      "expo-apple-authentication",
     ],
   };
 };

@@ -9,6 +9,8 @@ import {
   Alert,
   ScrollView,
   AppState,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -35,10 +37,20 @@ import { GolfSumLogo } from './src/components/ui/GolfSumLogo';
 import { UpgradeTrigger } from './src/components/UpgradeSheet';
 import Storage from './src/services/storage';
 import {
+  checkForResumableGpsRound,
+  clearGpsInProgressRound,
   clearInProgressRound,
   getInProgressRound,
   InProgressRoundDraft,
+  saveGpsInProgressRound,
+  type GpsInProgressRound,
 } from './src/services/inProgressRoundService';
+import { savePausedGpsAsPartialRound } from './src/services/savePausedGpsAsPartialRound';
+import {
+  closePauseEvent,
+  createEstimatedPauseEvent,
+  formatTimeAgo,
+} from './src/services/roundTimingService';
 import {
   appendPersonalBests,
   detectPersonalBests,
@@ -188,7 +200,20 @@ export default function App() {
   const [inProgressRound, setInProgressRound] = useState<InProgressRoundDraft | null>(null);
   const [resumeDraft, setResumeDraft] = useState<InProgressRoundDraft | null>(null);
   const [pendingGpsRoundData, setPendingGpsRoundData] = useState<PendingGpsRoundData | null>(null);
-  
+  const [gpsResumeData, setGpsResumeData] = useState<GpsInProgressRound | null>(null);
+  const [resumableGpsRound, setResumableGpsRound] = useState<GpsInProgressRound | null>(null);
+  const [showGpsResumeModal, setShowGpsResumeModal] = useState(false);
+  const [savingPausedGps, setSavingPausedGps] = useState(false);
+
+  useEffect(() => {
+    checkForResumableGpsRound().then((r) => {
+      if (r) {
+        setResumableGpsRound(r);
+        setShowGpsResumeModal(true);
+      }
+    });
+  }, []);
+
   // Listen to Firebase Auth state changes
   useEffect(() => {
     logger.debug('🔐 Setting up auth state listener...');
@@ -226,6 +251,7 @@ export default function App() {
             setResumeDraft(null);
             setPendingGpsRoundData(null);
             clearInProgressRound().catch(() => undefined);
+            clearGpsInProgressRound().catch(() => undefined);
             setRefreshTrigger(prev => prev + 1);
           })
           .catch(() => undefined);
@@ -527,6 +553,7 @@ export default function App() {
     courseName?: string,
     settings?: { teeName?: string; startingHole?: number; endingHole?: number; roundLength?: '18' | 'front9' | 'back9'; tournamentMode?: boolean; routeHoleNumbers?: number[]; routeLabel?: string }
   ) => {
+    setGpsResumeData(null);
     setGpsRoundCourse({
       courseId,
       courseName,
@@ -578,7 +605,56 @@ export default function App() {
     });
     setResumeDraft(null);
     setGpsRoundCourse(null);
+    setGpsResumeData(null);
     setCurrentScreen('score-entry');
+  };
+
+  const handleResumePausedGpsRound = async (bucket: string | null) => {
+    setShowGpsResumeModal(false);
+    const r = resumableGpsRound;
+    if (!r) return;
+    let updatedPauseEvents = [...(r.timing.pauseEvents || [])];
+    const hasOpenPause = updatedPauseEvents.some((p) => !p.resumedAt);
+    if (!hasOpenPause && bucket) {
+      updatedPauseEvents.push(createEstimatedPauseEvent(bucket, r.timing.lastActiveAt));
+    } else if (hasOpenPause) {
+      updatedPauseEvents = updatedPauseEvents.map((p) => (p.resumedAt ? p : closePauseEvent(p)));
+    }
+    const next: GpsInProgressRound = {
+      ...r,
+      status: 'in_progress',
+      timing: {
+        ...r.timing,
+        pauseEvents: updatedPauseEvents,
+        lastActiveAt: Date.now(),
+      },
+    };
+    await saveGpsInProgressRound(next);
+    setGpsResumeData(next);
+    setResumableGpsRound(null);
+    setGpsRoundCourse({
+      courseId: next.courseId,
+      courseName: next.courseName,
+      teeColor: next.teeColor,
+      startingHole: next.startingHole ?? 1,
+      endingHole: next.endingHole ?? 18,
+      roundLength: next.roundLength || '18',
+      routeHoleNumbers: next.routeHoleNumbers,
+      routeLabel: next.routeLabel,
+      tournamentMode: next.tournamentMode ?? false,
+    });
+    setCurrentScreen('gps-round');
+  };
+
+  const handleDismissGpsResumeModal = () => {
+    setShowGpsResumeModal(false);
+  };
+
+  const handleAbandonPausedGpsRound = async () => {
+    setShowGpsResumeModal(false);
+    await clearGpsInProgressRound().catch(() => undefined);
+    setResumableGpsRound(null);
+    Alert.alert('Paused round discarded', 'You can start a new GPS round anytime.');
   };
 
   const handleUploadScorecard = (seed?: OSMGolfCourse) => {
@@ -645,6 +721,32 @@ export default function App() {
     // Show save confirmation overlay
     setSaveConfirmationRound(round);
     setShowSaveConfirmation(true);
+  };
+
+  const handleSavePausedGpsToHistory = async () => {
+    const r = resumableGpsRound;
+    if (!r || savingPausedGps) return;
+    setSavingPausedGps(true);
+    try {
+      const saved = await savePausedGpsAsPartialRound(r);
+      if (!saved) {
+        Alert.alert(
+          'Could not save',
+          'You need at least one hole with shots or a score. If you are offline, try again when course details can load.'
+        );
+        return;
+      }
+      await clearGpsInProgressRound().catch(() => undefined);
+      setResumableGpsRound(null);
+      setShowGpsResumeModal(false);
+      setGpsResumeData(null);
+      handleRoundSaved(saved);
+    } catch (e) {
+      logger.error('handleSavePausedGpsToHistory', e);
+      Alert.alert('Save failed', 'Please try again.');
+    } finally {
+      setSavingPausedGps(false);
+    }
   };
 
   // Called after 2.5s confirmation auto-advance
@@ -739,6 +841,7 @@ export default function App() {
       setCurrentScreen(upgradeReturnScreen === 'pro-upgrade' ? 'tabs' : upgradeReturnScreen);
     } else if (currentScreen === 'gps-round') {
       setGpsRoundCourse(null);
+      setGpsResumeData(null);
       setCurrentScreen('course-search');
     } else if (currentScreen === 'course-planning') {
       setPlanningCourse(null);
@@ -1041,6 +1144,26 @@ export default function App() {
           showHeaderAndNav && { paddingBottom: BOTTOM_NAV_CONTENT_HEIGHT + tabBottomInset },
         ]}
       >
+        {showHeaderAndNav && resumableGpsRound && !showGpsResumeModal ? (
+          <TouchableOpacity
+            style={resumeBannerStyles.wrap}
+            onPress={() => setShowGpsResumeModal(true)}
+            activeOpacity={0.85}
+          >
+            <View style={resumeBannerStyles.row}>
+              <View style={resumeBannerStyles.left}>
+                <View style={resumeBannerStyles.dot} />
+                <View style={{ flex: 1 }}>
+                  <Text style={resumeBannerStyles.title}>Round paused — {resumableGpsRound.courseName}</Text>
+                  <Text style={resumeBannerStyles.sub}>
+                    Hole {resumableGpsRound.pausedOnHole ?? '—'} · {formatTimeAgo(resumableGpsRound.timing.lastActiveAt)}
+                  </Text>
+                </View>
+              </View>
+              <Text style={resumeBannerStyles.cta}>Resume →</Text>
+            </View>
+          </TouchableOpacity>
+        ) : null}
         {content}
       </View>
 
@@ -1071,11 +1194,12 @@ export default function App() {
               startingHole={gpsRoundCourse.startingHole}
               endingHole={gpsRoundCourse.endingHole}
               roundLength={gpsRoundCourse.roundLength}
-              routeHoleNumbers={gpsRoundCourse.routeHoleNumbers}
+              routeHoleNumbers={gpsRoundCourse.routeHoleNumbers as any}
               routeLabel={gpsRoundCourse.routeLabel}
               tournamentMode={gpsRoundCourse.tournamentMode}
               onBack={handleBack}
               onFinishRound={handleFinishGpsRound}
+              resumedRoundData={gpsResumeData as any}
             />
           </View>
         )
@@ -1098,8 +1222,127 @@ export default function App() {
         />
       )}
 
+      {showGpsResumeModal && resumableGpsRound ? (
+        <Modal visible transparent animationType="fade" onRequestClose={handleDismissGpsResumeModal}>
+          <View style={resumeModalStyles.backdrop}>
+            <View style={resumeModalStyles.card}>
+              <Text style={resumeModalStyles.title}>Round paused</Text>
+              <Text style={resumeModalStyles.course}>{resumableGpsRound.courseName}</Text>
+              <Text style={resumeModalStyles.meta}>
+                Hole {resumableGpsRound.pausedOnHole ?? '—'} · {formatTimeAgo(resumableGpsRound.timing.lastActiveAt)}
+              </Text>
+              <TouchableOpacity
+                style={resumeModalStyles.primaryBtn}
+                disabled={savingPausedGps}
+                onPress={() => handleResumePausedGpsRound(null)}
+              >
+                <Text style={resumeModalStyles.primaryBtnText}>Resume round</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[resumeModalStyles.outlineBtn, savingPausedGps && resumeModalStyles.btnDisabled]}
+                disabled={savingPausedGps}
+                onPress={handleSavePausedGpsToHistory}
+              >
+                {savingPausedGps ? (
+                  <ActivityIndicator color="#facc15" />
+                ) : (
+                  <Text style={resumeModalStyles.outlineBtnText}>Save to history</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={resumeModalStyles.secondaryBtn}
+                disabled={savingPausedGps}
+                onPress={handleAbandonPausedGpsRound}
+              >
+                <Text style={resumeModalStyles.secondaryBtnText}>Discard</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={resumeModalStyles.dismissBtn}
+                disabled={savingPausedGps}
+                onPress={handleDismissGpsResumeModal}
+              >
+                <Text style={resumeModalStyles.dismissText}>Remind me later</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
+
         </View>
       </ErrorBoundary>
     </GestureHandlerRootView>
   );
 }
+
+const resumeBannerStyles = StyleSheet.create({
+  wrap: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(250,204,21,0.3)',
+    backgroundColor: 'rgba(250,204,21,0.12)',
+  },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  left: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#facc15',
+    marginRight: 10,
+  },
+  title: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  sub: { color: 'rgba(255,255,255,0.5)', fontSize: 11, marginTop: 1 },
+  cta: { color: '#facc15', fontSize: 13, fontWeight: '600' },
+});
+
+const resumeModalStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  card: {
+    backgroundColor: '#1f2937',
+    borderRadius: 14,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  title: { color: '#facc15', fontSize: 16, fontWeight: '700', marginBottom: 8 },
+  course: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  meta: { color: 'rgba(255,255,255,0.55)', fontSize: 13, marginTop: 6, marginBottom: 18 },
+  primaryBtn: {
+    backgroundColor: '#facc15',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  primaryBtnText: { color: '#0f1419', fontWeight: '700', fontSize: 15 },
+  outlineBtn: {
+    borderWidth: 1,
+    borderColor: 'rgba(250,204,21,0.55)',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 10,
+    minHeight: 46,
+    justifyContent: 'center',
+  },
+  outlineBtnText: { color: '#facc15', fontWeight: '600', fontSize: 15 },
+  btnDisabled: { opacity: 0.55 },
+  secondaryBtn: {
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  secondaryBtnText: { color: '#f87171', fontWeight: '600', fontSize: 15 },
+  dismissBtn: { paddingVertical: 8, alignItems: 'center' },
+  dismissText: { color: 'rgba(255,255,255,0.45)', fontSize: 14 },
+});

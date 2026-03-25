@@ -1,4 +1,5 @@
 import type { CourseDetails } from '../services/golfCourseApiService';
+import type { RoundTiming } from '../services/roundTimingService';
 
 export interface ScorecardResult {
   html: string;
@@ -110,6 +111,8 @@ export interface PendingGpsRoundData {
   gpsHoleSummaries?: GpsHoleSummary[];
   gpsHoleFlags?: GpsHoleDataQuality[];
   holeMapUrls?: Record<number, string>;
+  /** GPS round timing (pauses, play time, hole timestamps). */
+  roundTiming?: RoundTiming;
 }
 
 // History Stat State - Critical for WHS Compliance
@@ -231,6 +234,9 @@ export interface SavedRound {
   gpsHoleSummaries?: GpsHoleSummary[];
   gpsHoleFlags?: GpsHoleDataQuality[];
   holeMapUrls?: Record<number, string>;
+  /** GPS / session timing when available. */
+  roundTiming?: RoundTiming;
+  roundComplete?: boolean;
 
   // Round holes (for NDB calculation)
   holes?: RoundHole[];

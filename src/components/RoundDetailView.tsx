@@ -41,6 +41,7 @@ import { useFeatureGate } from '../hooks/useFeatureGate';
 import { buildNormalizedScore } from '../utils/conditionsNormalization';
 import { useScorecardColorPreference } from '../hooks/useScorecardColorPreference';
 import { getPuttColor } from '../utils/scoreColors';
+import { formatDuration } from '../services/roundTimingService';
 
 interface Props {
   round: SavedRound;
@@ -768,6 +769,43 @@ export const RoundDetailView: React.FC<Props> = ({
 
         <RoundInsightsCard insights={insights} />
 
+        {currentRound.roundTiming ? (
+          <View style={styles.timingBlock}>
+            <View style={styles.timingRow}>
+              <View style={styles.timingItem}>
+                <Text style={styles.timingLabel}>On course</Text>
+                <Text style={styles.timingValue}>
+                  {formatDuration(currentRound.roundTiming.totalElapsedMs)}
+                </Text>
+              </View>
+              {currentRound.roundTiming.pausedMs > 60000 ? (
+                <View style={styles.timingItem}>
+                  <Text style={styles.timingLabel}>Play time</Text>
+                  <Text style={styles.timingValue}>
+                    {formatDuration(currentRound.roundTiming.playedMs)}
+                  </Text>
+                </View>
+              ) : null}
+              <View style={styles.timingItem}>
+                <Text style={styles.timingLabel}>Avg / hole</Text>
+                <Text style={styles.timingValue}>
+                  {formatDuration(currentRound.roundTiming.avgPerHoleMs)}
+                </Text>
+              </View>
+            </View>
+            {currentRound.roundTiming.pausedMs > 60000 ? (
+              <View style={styles.timingDelayRow}>
+                <Ionicons name="rainy-outline" size={12} color="rgba(255,255,255,0.4)" />
+                <Text style={styles.timingDelayText}>
+                  {formatDuration(currentRound.roundTiming.pausedMs)} delay
+                  {currentRound.roundTiming.resumedNextDay ? ' · resumed next day' : ''}
+                  {currentRound.roundTiming.pauseEvents?.some((p) => p.isEstimated) ? ' (estimated)' : ''}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
         <ScoringDistribution
           eagles={scoring.eagles}
           birdies={scoring.birdies}
@@ -997,6 +1035,46 @@ const styles = StyleSheet.create({
   contentInner: {
     padding: spacing.lg,
     paddingBottom: spacing.xxl,
+  },
+  timingBlock: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    backgroundColor: colors.bg.secondary,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+  },
+  timingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  timingItem: {
+    flex: 1,
+    minWidth: 0,
+  },
+  timingLabel: {
+    color: colors.text.tertiary,
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  timingValue: {
+    color: colors.text.primary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  timingDelayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: spacing.sm,
+  },
+  timingDelayText: {
+    color: colors.text.secondary,
+    fontSize: 12,
+    flex: 1,
   },
   shareButtonRow: {
     marginTop: spacing.sm,

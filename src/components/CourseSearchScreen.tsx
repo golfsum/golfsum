@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Platform,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -1352,7 +1353,13 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
             />
           </TouchableOpacity>
         </View>
-        <View style={styles.courseActionButtons}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          style={styles.courseActionButtonsScroll}
+          contentContainerStyle={styles.courseActionButtonsContent}
+        >
           {onGpsRoundStart && (
             <TouchableOpacity
               style={styles.gpsStartButton}
@@ -1378,8 +1385,8 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
               <Text style={[styles.gpsStartText, { color: '#60A5FA' }]}>Plan</Text>
             </TouchableOpacity>
           )}
-          <Ionicons name="chevron-forward" size={24} color="#6B7280" />
-        </View>
+          <Ionicons name="chevron-forward" size={24} color="#6B7280" style={styles.courseActionChevron} />
+        </ScrollView>
       </View>
       </View>
           </>
@@ -1455,7 +1462,13 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
               />
             </TouchableOpacity>
           </View>
-          <View style={styles.courseActionButtons}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            style={styles.courseActionButtonsScroll}
+            contentContainerStyle={styles.courseActionButtonsContent}
+          >
             {onGpsRoundStart && (
               <TouchableOpacity
                 style={styles.gpsStartButton}
@@ -1465,8 +1478,8 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
                 <Text style={styles.gpsStartText}>GPS</Text>
               </TouchableOpacity>
             )}
-            <Ionicons name="chevron-forward" size={24} color="#6B7280" />
-          </View>
+            <Ionicons name="chevron-forward" size={24} color="#6B7280" style={styles.courseActionChevron} />
+          </ScrollView>
         </View>
       </View>
     </TouchableOpacity>
@@ -1554,7 +1567,13 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
                 </TouchableOpacity>
               )}
             </View>
-            <View style={styles.courseActionButtons}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              style={styles.courseActionButtonsScroll}
+              contentContainerStyle={styles.courseActionButtonsContent}
+            >
               {onGpsRoundStart && (
                 <TouchableOpacity
                   style={styles.gpsStartButton}
@@ -1594,8 +1613,8 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
                   )}
                 </TouchableOpacity>
               )}
-              <Ionicons name="chevron-forward" size={24} color="#6B7280" />
-            </View>
+              <Ionicons name="chevron-forward" size={24} color="#6B7280" style={styles.courseActionChevron} />
+            </ScrollView>
           </View>
         </View>
       </TouchableOpacity>
@@ -2187,18 +2206,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: 8,
+    gap: 8,
   },
   courseActionIcons: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
+    flexShrink: 0,
   },
-  courseActionButtons: {
+  /** Lets GPS / Plan / Play scroll instead of overflowing the card on narrow widths. */
+  courseActionButtonsScroll: {
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
+    maxWidth: '100%',
+  },
+  courseActionButtonsContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: 6,
-    flexWrap: 'nowrap',
+    flexGrow: 1,
+  },
+  courseActionChevron: {
+    alignSelf: 'center',
   },
   courseHeader: {
     flexDirection: 'row',

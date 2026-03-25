@@ -9,7 +9,8 @@ function normalizeTeeName(name) {
   return String(name || '').trim().toLowerCase();
 }
 
-function hasGpsHoleData(course) {
+/** True if the course has usable GPS/tee data (local, Firestore, or API). */
+export function hasGpsHoleData(course) {
   const holes = Array.isArray(course?.holes) ? course.holes : [];
   return holes.some((hole) => {
     const tees = Array.isArray(hole?.tees) ? hole.tees : [];
