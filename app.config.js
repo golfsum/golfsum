@@ -7,6 +7,8 @@ const mapboxDownloadToken =
   '';
 const mapboxPublicToken = process.env.EXPO_PUBLIC_MAPBOX_PUBLIC_TOKEN || '';
 const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID || 'c4865044-3a6b-42c0-93b7-64f036338f22';
+// Apple Developer Team ID — used by @bacons/apple-targets, Expo prebuild, and the Pod resource-bundle signing hook. Override per machine with APPLE_TEAM_ID if needed.
+const appleTeamId = process.env.APPLE_TEAM_ID || 'D6V59CRG3F';
 
 // Set this for the @rnmapbox/maps plugin to pick up during prebuild
 if (mapboxDownloadToken) {
@@ -52,6 +54,7 @@ module.exports = function(env) {
       supportsTablet: true,
       bundleIdentifier: 'com.golfsum.app',
       buildNumber: '1',
+      appleTeamId,
       infoPlist: {
         NSCameraUsageDescription: 'GolfSum needs camera access to photograph scorecards',
         NSPhotoLibraryUsageDescription: 'GolfSum needs photo library access to upload scorecard images',
@@ -97,6 +100,7 @@ module.exports = function(env) {
           }
         }
       ],
+      "./withPodResourceBundleSigning",
       // 2. Native Mapbox setup with download token
       [
         "@rnmapbox/maps",

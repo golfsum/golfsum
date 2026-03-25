@@ -13,6 +13,7 @@
         "buildConfiguration": "Debug"
       },
       "env": {
+        "APPLE_TEAM_ID": "D6V59CRG3F",
         "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "sk.eyJ1IjoibmRvZGRzNjQiLCJhIjoiY21ta3ZuOWxyMWdjbjJwcHptMnUzazNvOSJ9.wh3wDWj8spsJ8kQhCb2K9w"
       }
     },
@@ -24,6 +25,7 @@
         "buildConfiguration": "Release"
       },
       "env": {
+        "APPLE_TEAM_ID": "D6V59CRG3F",
         "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "sk.eyJ1IjoibmRvZGRzNjQiLCJhIjoiY21ta3ZuOWxyMWdjbjJwcHptMnUzazNvOSJ9.wh3wDWj8spsJ8kQhCb2K9w"
       }
     },
@@ -36,6 +38,7 @@
         "buildConfiguration": "Release"
       },
       "env": {
+        "APPLE_TEAM_ID": "D6V59CRG3F",
         "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "sk.eyJ1IjoibmRvZGRzNjQiLCJhIjoiY21ta3ZuOWxyMWdjbjJwcHptMnUzazNvOSJ9.wh3wDWj8spsJ8kQhCb2K9w"
       }
     }
