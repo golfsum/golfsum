@@ -7,6 +7,7 @@ const mapboxDownloadToken =
   '';
 const mapboxPublicToken = process.env.EXPO_PUBLIC_MAPBOX_PUBLIC_TOKEN || '';
 const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID || 'c4865044-3a6b-42c0-93b7-64f036338f22';
+// EAS Submit: ascAppId is set in eas.json (App Store Connect → App Information → Apple ID).
 // Apple Developer Team ID — used by @bacons/apple-targets, Expo prebuild, and the Pod resource-bundle signing hook. Override per machine with APPLE_TEAM_ID if needed.
 const appleTeamId = process.env.APPLE_TEAM_ID || 'D6V59CRG3F';
 
@@ -55,6 +56,10 @@ module.exports = function(env) {
       bundleIdentifier: 'com.golfsum.app',
       buildNumber: '1',
       appleTeamId,
+      entitlements: {
+        'com.apple.security.application-groups': ['group.com.golfsum.app'],
+
+      },
       infoPlist: {
         NSCameraUsageDescription: 'GolfSum needs camera access to photograph scorecards',
         NSPhotoLibraryUsageDescription: 'GolfSum needs photo library access to upload scorecard images',
@@ -84,6 +89,47 @@ module.exports = function(env) {
       eas: {
         ...((config.extra && config.extra.eas) || {}),
         projectId: easProjectId,
+        build: {
+          ...((config.extra && config.extra.eas && config.extra.eas.build) || {}),
+          experimental: {
+            ...((config.extra &&
+              config.extra.eas &&
+              config.extra.eas.build &&
+              config.extra.eas.build.experimental) ||
+              {}),
+            ios: {
+              ...((config.extra &&
+                config.extra.eas &&
+                config.extra.eas.build &&
+                config.extra.eas.build.experimental &&
+                config.extra.eas.build.experimental.ios) ||
+                {}),
+              appExtensions: [
+                ...((config.extra &&
+                  config.extra.eas &&
+                  config.extra.eas.build &&
+                  config.extra.eas.build.experimental &&
+                  config.extra.eas.build.experimental.ios &&
+                  config.extra.eas.build.experimental.ios.appExtensions) ||
+                  []),
+                {
+                  targetName: 'GolfSumWatch',
+                  bundleIdentifier: 'com.golfsum.app.watch',
+                  entitlements: {
+                    'com.apple.security.application-groups': ['group.com.golfsum.app'],
+                  },
+                },
+                {
+                  targetName: 'GolfSumLiveActivity',
+                  bundleIdentifier: 'com.golfsum.app.LiveActivity',
+                  entitlements: {
+                    'com.apple.security.application-groups': ['group.com.golfsum.app'],
+                  },
+                },
+              ],
+            },
+          },
+        },
       },
       mapboxPublicToken,
     },
@@ -110,7 +156,7 @@ module.exports = function(env) {
         }
       ],
       "@bacons/apple-targets",
-      "expo-widgets", 
+      ["expo-widgets", { groupIdentifier: "group.com.golfsum.app" }],
       "./withWatchApp",
       [
         "expo-image-picker",
