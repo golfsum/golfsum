@@ -145,6 +145,7 @@ module.exports = function(env) {
         }
       ],
       "./withPodResourceBundleSigning",
+      "./withSwiftConcurrency",   
       // 2. Native Mapbox setup with download token
       [
         "@rnmapbox/maps",
