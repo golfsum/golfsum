@@ -7,9 +7,10 @@
     "development": {
       "developmentClient": true,
       "distribution": "store",
+      "node": "20.18.0",
       "environment": "development",
       "ios": {
-        "image": "macos-sequoia-15.3-xcode-16.2",
+        "image": "macos-sonoma-14.6-xcode-16.1",
         "buildConfiguration": "Debug"
       },
       "env": {
@@ -20,8 +21,9 @@
     "preview": {
       "distribution": "store",
       "environment": "preview",
+      "node": "20.18.0",
       "ios": {
-        "image": "macos-sequoia-15.3-xcode-16.2",
+        "image": "macos-sonoma-14.6-xcode-16.1",
         "buildConfiguration": "Release"
       },
       "env": {
@@ -33,8 +35,9 @@
       "autoIncrement": true,
       "distribution": "store",
       "environment": "production",
+      "node": "20.18.0",
       "ios": {
-        "image": "macos-sequoia-15.3-xcode-16.2",
+        "image": "macos-sonoma-14.6-xcode-16.1",
         "buildConfiguration": "Release"
       },
       "env": {
