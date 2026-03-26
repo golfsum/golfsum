@@ -45,7 +45,6 @@ module.exports = function(env) {
     icon: './assets/icon.png',
     userInterfaceStyle: 'dark',
     // Warning: New Arch can sometimes conflict with complex Pod setups (Mapbox + Watch)
-    newArchEnabled: true, 
     splash: {
       image: './assets/splash-icon.png',
       resizeMode: 'contain',
@@ -58,7 +57,6 @@ module.exports = function(env) {
       appleTeamId,
       entitlements: {
         'com.apple.security.application-groups': ['group.com.golfsum.app'],
-
       },
       infoPlist: {
         NSCameraUsageDescription: 'GolfSum needs camera access to photograph scorecards',
@@ -174,6 +172,9 @@ module.exports = function(env) {
       "expo-notifications",
       "@react-native-community/datetimepicker",
       "expo-apple-authentication",
+      "expo-font",
+      "expo-sharing",
+      "expo-web-browser",
     ],
   };
 };
