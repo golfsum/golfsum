@@ -16,7 +16,9 @@ module.exports = function withSwiftConcurrency(config) {
     installer.pods_project.targets.each do |target|
       target.build_configurations.each do |cfg|
         cfg.build_settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
-        unless ['ExpoModulesCore', 'ExpoUI'].include?(target.name)
+        if ['ExpoModulesCore', 'ExpoUI'].include?(target.name)
+          cfg.build_settings['SWIFT_VERSION'] = '6'
+        else
           cfg.build_settings['SWIFT_VERSION'] = '5'
         end
       end
