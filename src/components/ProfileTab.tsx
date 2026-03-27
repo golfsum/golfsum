@@ -93,6 +93,24 @@ const DATE_FORMAT_KEY = '@GolfSum:DateFormat';
 const REPORT_SEEN_KEY = '@GolfSum:SeenReportUpdates';
 const MIN_ELIGIBLE_ROUNDS = 3;
 
+/** Avoid dropping woods/hybrids/etc. when Firestore omits empty arrays or partial bag objects. */
+function mergeGolfBag(
+  base: UserProfile['bag'],
+  patch?: Partial<UserProfile['bag']> | null
+): UserProfile['bag'] {
+  if (!patch) return base;
+  return {
+    ...base,
+    ...patch,
+    driver: patch.driver ?? base.driver,
+    putter: patch.putter ?? base.putter,
+    woods: patch.woods ?? base.woods,
+    hybrids: patch.hybrids ?? base.hybrids,
+    irons: patch.irons ?? base.irons,
+    wedges: patch.wedges ?? base.wedges,
+  };
+}
+
 interface Props {
   onAuthChange?: (user: User | null) => void;
   onNavigateToAverages?: () => void;
@@ -896,10 +914,7 @@ export const ProfileTab: React.FC<Props> = ({
               ...basicPreset,
               ...firestoreProfile.statPreferences,
             },
-            bag: {
-              ...getDefaultProfile().bag,
-              ...firestoreProfile.bag,
-            },
+            bag: mergeGolfBag(getDefaultProfile().bag, firestoreProfile.bag),
           };
           // Migrate string yardage ranges to numeric midpoints
           if (mergedProfile.clubDistances) {
@@ -937,10 +952,7 @@ export const ProfileTab: React.FC<Props> = ({
             ...basicPreset,
             ...loadedProfile.statPreferences,
           },
-          bag: {
-            ...getDefaultProfile().bag,
-            ...loadedProfile.bag,
-          },
+          bag: mergeGolfBag(getDefaultProfile().bag, loadedProfile.bag),
         };
         // Migrate string yardage ranges to numeric midpoints
         if (mergedProfile.clubDistances) {
@@ -1000,7 +1012,7 @@ export const ProfileTab: React.FC<Props> = ({
       ...profile,
       ...updates,
       // Ensure nested objects are preserved
-      bag: updates.bag ? { ...profile.bag, ...updates.bag } : profile.bag,
+      bag: updates.bag ? mergeGolfBag(profile.bag, updates.bag) : profile.bag,
       scoringPreferences: mergedScoringPreferences,
       statPreferences: mergedStatPreferences,
       goals: updates.goals ? { ...profile.goals, ...updates.goals } : profile.goals,

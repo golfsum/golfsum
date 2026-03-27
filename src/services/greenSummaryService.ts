@@ -5,6 +5,8 @@ type ShotLike = {
   club?: string | null;
   abbr?: string | null;
   lie?: string | null;
+  /** When set, this stroke is counted as a putt regardless of club label. */
+  shotKind?: 'full' | 'putt' | null;
   actualYards?: number | null;
   playingYards?: number | null;
   from?: { lat: number; lng: number } | null;
@@ -17,6 +19,7 @@ type HoleSummaryLike = {
 };
 
 function isPuttShot(shot: ShotLike): boolean {
+  if (shot.shotKind === 'putt') return true;
   const club = String(shot.club || shot.abbr || '').trim().toLowerCase();
   if (club.includes('putt') || club === 'pt') return true;
   return shot.lie === 'Green';

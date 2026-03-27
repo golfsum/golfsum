@@ -2,7 +2,7 @@
  * withWatchApp.js
  *
  * Syncs Swift sources from watch-src/ into targets/watch (for @bacons/apple-targets)
- * and Watch bridge files into the main iOS app folder.
+ * and Watch bridge + phone WatchSessionManager into the main iOS app folder.
  *
  * Watch target is created by @bacons/apple-targets from targets/watch/expo-target.config.js.
  */
@@ -40,16 +40,29 @@ module.exports = function withWatchApp(config) {
       const watchSrcDir = path.join(projectRoot, 'watch-src');
       const watchTargetsDir = path.join(projectRoot, 'targets', 'watch');
       const mainIosDir = path.join(iosDir, MAIN_APP_NAME);
+      const phoneBridgeDir = path.join(projectRoot, 'watch', 'ios-bridge');
+
+      // Avoid duplicate @main / stale templates from older prebuilds
+      ['index.swift', 'content.swift'].forEach((f) => {
+        const stale = path.join(watchTargetsDir, f);
+        if (fs.existsSync(stale)) {
+          fs.unlinkSync(stale);
+          console.log(`[withWatchApp] Removed stale watch file: ${f}`);
+        }
+      });
 
       // Sync Watch Swift sources -> apple-targets watch folder
       ['GolfSumWatchApp.swift', 'ContentView.swift', 'WatchSessionManager.swift'].forEach((f) =>
         copyIfChanged(path.join(watchSrcDir, f), path.join(watchTargetsDir, f))
       );
 
-      // Sync Watch ObjC bridge -> main app
-      ['GolfSumWatchBridge.h', 'GolfSumWatchBridge.m'].forEach((f) =>
-        copyIfChanged(path.join(watchSrcDir, 'bridge', f), path.join(mainIosDir, f))
-      );
+      // Phone: WCSession + RN bridge
+      ['GolfSumWatchBridge.h', 'GolfSumWatchBridge.m', 'GolfSumWatchBridge.swift', 'WatchSessionManager.swift'].forEach((f) => {
+        const src = path.join(phoneBridgeDir, f);
+        if (fs.existsSync(src)) {
+          copyIfChanged(src, path.join(mainIosDir, f));
+        }
+      });
 
       return modConfig;
     },

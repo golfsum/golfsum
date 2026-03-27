@@ -269,6 +269,49 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
         setManualLie(null);
       }
     },
+    startShotEntryFromWatch(clubName) {
+      const label = (clubName && String(clubName).trim()) || '';
+      if (mapModeRef.current !== 'gps') {
+        mapModeRef.current = 'gps';
+        setMapMode('gps');
+        shotInProgressRef.current = null;
+        setShotInProgress(null);
+        setTargetPoint(null);
+      }
+
+      let shotId;
+      try {
+        shotId = randomUUID();
+      } catch {
+        shotId = `shot-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+      }
+
+      const nextShot = {
+        id: shotId,
+        coords: null,
+        club: label || null,
+      };
+
+      shotInProgressRef.current = nextShot;
+      setShotInProgress(nextShot);
+      mapModeRef.current = 'mark';
+      setMapMode('mark');
+
+      setSelectedClub(label || null);
+      setClubPickerOpen(false);
+      setPenalty(null);
+      setTargetPoint(null);
+
+      if (shotNumber <= 1) {
+        setManualLie({ lie: 'Tee Box', color: '#60A5FA' });
+      } else if (shotNumber === 2) {
+        setManualLie({ lie: 'Fairway', color: '#4CAF7D' });
+      } else if (previousLie) {
+        setManualLie({ lie: previousLie, color: lieChoicesMap[previousLie] || '#9CA3AF' });
+      } else {
+        setManualLie(null);
+      }
+    },
     handleCameraChanged(event) {
       // Only used to reset green zoom state — shot placement is tap-only now
       // Do not update shotInProgress here
@@ -580,61 +623,57 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
                 <Text style={styles.sheetCloseText}>✕</Text>
               </TouchableOpacity>
             </View>
-            {(clubSuggestion.ranked || []).length > 0 ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.clubRail}
-              >
-                {(clubSuggestion.ranked || []).slice(0, 8).map((entry) => {
-                  const active = selectedClub === entry.club || (!selectedClub && clubSuggestion.best?.club === entry.club);
-                  return (
-                    <TouchableOpacity
-                      key={entry.club}
-                      style={[styles.clubCard, active && styles.clubCardActive]}
-                      onPress={() => selectClubForShot(entry.club)}
-                    >
-                      {clubSuggestion.best?.club === entry.club && (
-                        <Text style={styles.clubBestLabel}>BEST</Text>
-                      )}
-                      <View style={[styles.clubCardAccent, active && styles.clubCardAccentActive]} />
-                      <Text style={[styles.clubCardName, active && styles.clubCardNameActive]}>{entry.club}</Text>
-                      <Text style={[styles.clubCardYards, active && styles.clubCardYardsActive]}>{entry.yards}y</Text>
-                      <Text
-                        style={[
-                          styles.clubCardDiff,
-                          entry.diff > 0 ? styles.clubCardDiffHot : styles.clubCardDiffGood,
-                        ]}
-                      >
-                        {entry.diff > 0 ? '+' : ''}{entry.diff}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            ) : activeBagClubs.length > 0 ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.clubRail}
-              >
-                {activeBagClubs.map((club) => {
-                  const active = selectedClub === club;
-                  return (
-                    <TouchableOpacity
-                      key={club}
-                      style={[styles.clubCard, active && styles.clubCardActive]}
-                      onPress={() => selectClubForShot(club)}
-                    >
-                      <View style={[styles.clubCardAccent, active && styles.clubCardAccentActive]} />
-                      <Text style={[styles.clubCardName, active && styles.clubCardNameActive]}>{club}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            ) : (
-              <Text style={styles.emptyText}>No club distances saved yet.</Text>
-            )}
+            {(() => {
+              const ranked = clubSuggestion.ranked || [];
+              const rankedOrder = ranked.map((e) => e.club);
+              const merged = [...new Set([...rankedOrder, ...activeBagClubs])];
+              const rankedMap = new Map(ranked.map((e) => [e.club, e]));
+              if (merged.length > 0) {
+                return (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.clubRail}
+                  >
+                    {merged.map((club) => {
+                      const entry = rankedMap.get(club);
+                      const active =
+                        selectedClub === club || (!selectedClub && clubSuggestion.best?.club === club);
+                      return (
+                        <TouchableOpacity
+                          key={club}
+                          style={[styles.clubCard, active && styles.clubCardActive]}
+                          onPress={() => selectClubForShot(club)}
+                        >
+                          {clubSuggestion.best?.club === club && entry ? (
+                            <Text style={styles.clubBestLabel}>BEST</Text>
+                          ) : null}
+                          <View style={[styles.clubCardAccent, active && styles.clubCardAccentActive]} />
+                          <Text style={[styles.clubCardName, active && styles.clubCardNameActive]}>{club}</Text>
+                          {entry ? (
+                            <>
+                              <Text style={[styles.clubCardYards, active && styles.clubCardYardsActive]}>
+                                {entry.yards}y
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.clubCardDiff,
+                                  entry.diff > 0 ? styles.clubCardDiffHot : styles.clubCardDiffGood,
+                                ]}
+                              >
+                                {entry.diff > 0 ? '+' : ''}
+                                {entry.diff}
+                              </Text>
+                            </>
+                          ) : null}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                );
+              }
+              return <Text style={styles.emptyText}>No club distances saved yet.</Text>;
+            })()}
             <TouchableOpacity style={styles.modalClose} onPress={cancelShotEntry}>
               <Text style={styles.modalCloseText}>Close</Text>
             </TouchableOpacity>

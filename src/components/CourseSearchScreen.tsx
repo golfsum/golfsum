@@ -672,6 +672,11 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
         location: [course.city, course.state].filter(Boolean).join(', '),
       });
       const savedSetup = await loadSavedGpsSetup(facilityKey);
+      const lastRound = getLastRoundForCourse(resolvedCourseId);
+      const lastPlayedTee =
+        lastRound?.stats?.teeBox ||
+        lastRound?.courseSnapshot?.tee?.name ||
+        null;
 
       setGpsSetupVisible(true);
       setGpsSetupLoading(true);
@@ -691,7 +696,7 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
 
       try {
         await loadGpsSetupForCourse(resolvedCourseId, resolvedCourseName, course.latitude, course.longitude, {
-          preferredTeeName: savedSetup.teeName,
+          preferredTeeName: savedSetup.teeName || lastPlayedTee,
           preferredRoundLength: savedSetup.roundLength,
         });
       } catch (err) {
@@ -2224,7 +2229,7 @@ const styles = StyleSheet.create({
   courseActionButtonsContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
     gap: 6,
     flexGrow: 1,
   },

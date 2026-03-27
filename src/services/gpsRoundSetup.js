@@ -76,10 +76,14 @@ async function enrichTeeOptions(courseId, gpsTeeOptions) {
 }
 
 function buildSetupPayload(course, cached) {
+  const fromSnapshot =
+    Array.isArray(course?.teeOptionsSnapshot) && course.teeOptionsSnapshot.length > 0
+      ? course.teeOptionsSnapshot
+      : null;
   return {
     course,
     cached,
-    teeOptions: getGpsTeeOptions(course),
+    teeOptions: fromSnapshot || getGpsTeeOptions(course),
     holeCount: Array.isArray(course?.holes) ? course.holes.length : 0,
     routeOptions: buildRoutingOptionsFromHoles(course?.holes),
   };
@@ -156,6 +160,17 @@ export async function loadGpsRoundSetup(courseId, courseName, latitude, longitud
 
   // Enrich tee options with full tee list from Golf Course API (has all tees with ratings/slopes)
   payload.teeOptions = await enrichTeeOptions(courseId, payload.teeOptions);
+
+  // Persist full tee list on cached course so offline / next launch shows every tee, not just GPS-derived subset.
+  if (payload.course && Array.isArray(payload.teeOptions) && payload.teeOptions.length > 0) {
+    try {
+      const mergedCourse = { ...payload.course, teeOptionsSnapshot: payload.teeOptions };
+      await saveCourse(courseId, mergedCourse);
+      payload.course = mergedCourse;
+    } catch {
+      // non-fatal
+    }
+  }
 
   return payload;
 }

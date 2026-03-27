@@ -26,6 +26,7 @@ export interface WatchBridgeEvent {
 type WatchBridgeModuleShape = {
   start?: () => void;
   stop?: () => void;
+  updateWatchGpsContext?: (payload: Record<string, unknown>) => void;
 };
 
 const nativeModule = (NativeModules.GolfSumWatchBridge || null) as WatchBridgeModuleShape | null;
@@ -94,6 +95,16 @@ async function applyToInProgressRound(event: WatchBridgeEvent): Promise<void> {
 
 export function isWatchBridgeAvailable(): boolean {
   return Platform.OS === 'ios' && !!nativeModule;
+}
+
+/** Push GPS round context to the watch (applicationContext; survives when not reachable). */
+export function updateWatchGpsContext(payload: Record<string, unknown>): void {
+  if (!isWatchBridgeAvailable() || !nativeModule?.updateWatchGpsContext) return;
+  try {
+    nativeModule.updateWatchGpsContext(payload);
+  } catch (error) {
+    logger.warn('Failed to update watch GPS context:', error);
+  }
 }
 
 export async function consumeWatchEndRoundFlag(): Promise<{ at: number; holeNumber?: number; roundId?: string | null } | null> {

@@ -1,40 +1,46 @@
 import Foundation
-import WatchConnectivity
+import React
 
 @objc(GolfSumWatchBridge)
-class GolfSumWatchBridge: NSObject, WCSessionDelegate {
+class GolfSumWatchBridge: RCTEventEmitter {
 
-    @objc static let shared = GolfSumWatchBridge()
-    private var messageHandler: (([String: Any]) -> Void)?
+  private let sessionManager = WatchSessionManager.shared
 
-    @objc func setMessageHandler(_ handler: @escaping ([String: Any]) -> Void) {
-        messageHandler = handler
+  override static func requiresMainQueueSetup() -> Bool {
+    true
+  }
+
+  override func supportedEvents() -> [String]! {
+    ["GolfSumWatchMessage", "GolfSumWatchGpsCommand"]
+  }
+
+  @objc func start() {
+    sessionManager.setMessageHandler { [weak self] msg in
+      self?.dispatchIncomingMessage(msg)
     }
+    sessionManager.start()
+  }
 
-    @objc func start() {
-        guard WCSession.isSupported() else { return }
-        let session = WCSession.default
-        session.delegate = self
-        session.activate()
+  @objc func stop() {
+    // Session stays active; clearing the handler would drop GPS + legacy watch events.
+  }
+
+  /// Called from JS when GPS round yardages / hole / club list change.
+  @objc func updateWatchGpsContext(_ payload: NSDictionary) {
+    let dict = payload as? [String: Any] ?? [:]
+    sessionManager.updateApplicationContextPayload(dict)
+  }
+
+  private func dispatchIncomingMessage(_ msg: [String: Any]) {
+    if let action = msg["action"] as? String,
+       ["addShot", "addPutt", "advanceHole"].contains(action) {
+      sendEvent(withName: "GolfSumWatchGpsCommand", body: msg)
+      return
     }
-
-    @objc func sendMessage(_ message: [String: Any]) {
-        guard WCSession.default.isReachable else { return }
-        WCSession.default.sendMessage(message, replyHandler: nil, errorHandler: nil)
+    if msg["type"] != nil {
+      sendEvent(withName: "GolfSumWatchMessage", body: msg)
+      return
     }
-
-    func session(_ session: WCSession,
-                 activationDidCompleteWith activationState: WCSessionActivationState,
-                 error: Error?) {}
-
-    func sessionDidBecomeInactive(_ session: WCSession) {}
-
-    func sessionDidDeactivate(_ session: WCSession) {
-        WCSession.default.activate()
-    }
-
-    func session(_ session: WCSession,
-                 didReceiveMessage message: [String: Any]) {
-        messageHandler?(message)
-    }
+    sendEvent(withName: "GolfSumWatchGpsCommand", body: msg)
+  }
 }

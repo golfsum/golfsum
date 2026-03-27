@@ -1,0 +1,95 @@
+import Foundation
+import WatchConnectivity
+
+/// watchOS: receives application context from iPhone, sends shot / putt / hole commands.
+final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
+  static let shared = WatchSessionManager()
+
+  @Published var roundActive = false
+  @Published var hole: Int = 0
+  @Published var frt: Int = 0
+  @Published var ctr: Int = 0
+  @Published var bck: Int = 0
+  @Published var clubs: [String] = []
+  @Published var phoneReachable = false
+
+  func activate() {
+    guard WCSession.isSupported() else { return }
+    let session = WCSession.default
+    session.delegate = self
+    session.activate()
+    applyContext(session.applicationContext)
+    phoneReachable = session.isReachable
+  }
+
+  private func applyContext(_ context: [String: Any]) {
+    let active = context["active"] as? Bool ?? false
+    roundActive = active
+    hole = context["hole"] as? Int ?? 0
+    frt = context["frt"] as? Int ?? 0
+    ctr = context["ctr"] as? Int ?? 0
+    bck = context["bck"] as? Int ?? 0
+    if let list = context["clubs"] as? [String] {
+      clubs = list
+    } else {
+      clubs = []
+    }
+  }
+
+  func sendAddShot(club: String, reply: @escaping (Bool) -> Void) {
+    sendOrFail(["action": "addShot", "club": club], reply: reply)
+  }
+
+  func sendAddPutt(reply: @escaping (Bool) -> Void) {
+    sendOrFail(["action": "addPutt"], reply: reply)
+  }
+
+  func sendAdvanceHole(_ holeNumber: Int, reply: @escaping (Bool) -> Void) {
+    sendOrFail(["action": "advanceHole", "hole": holeNumber], reply: reply)
+  }
+
+  private func sendOrFail(_ message: [String: Any], reply: @escaping (Bool) -> Void) {
+    guard WCSession.isSupported() else {
+      reply(false)
+      return
+    }
+    let session = WCSession.default
+    guard session.activationState == .activated else {
+      reply(false)
+      return
+    }
+    guard session.isReachable else {
+      reply(false)
+      return
+    }
+    session.sendMessage(
+      message,
+      replyHandler: { _ in reply(true) },
+      errorHandler: { _ in reply(false) }
+    )
+  }
+
+  // MARK: - WCSessionDelegate
+
+  func session(
+    _ session: WCSession,
+    activationDidCompleteWith activationState: WCSessionActivationState,
+    error: Error?
+  ) {
+    DispatchQueue.main.async {
+      self.phoneReachable = session.isReachable
+    }
+  }
+
+  func sessionReachabilityDidChange(_ session: WCSession) {
+    DispatchQueue.main.async {
+      self.phoneReachable = session.isReachable
+    }
+  }
+
+  func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+    DispatchQueue.main.async {
+      self.applyContext(applicationContext)
+    }
+  }
+}

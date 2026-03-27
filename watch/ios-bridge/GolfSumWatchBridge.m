@@ -5,6 +5,7 @@
 
 RCT_EXTERN_METHOD(start)
 RCT_EXTERN_METHOD(stop)
+RCT_EXTERN_METHOD(updateWatchGpsContext:(NSDictionary *)payload)
 
 @end
 

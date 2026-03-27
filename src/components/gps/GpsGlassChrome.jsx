@@ -44,7 +44,6 @@ export function GpsGlassChrome({
   distanceUnit = 'yards',
 }) {
   const [chromeBottom, setChromeBottom] = useState(0);
-  const pageSize = 9;
 
   if (!hole) return null;
 
@@ -58,34 +57,27 @@ export function GpsGlassChrome({
       : [];
 
   const currentSelectorIndex = Math.max(0, Number.isFinite(currentHoleIndex) ? currentHoleIndex : 0);
-  const selectorPageStart = selectorSource.length > pageSize
-    ? Math.min(Math.floor(currentSelectorIndex / pageSize) * pageSize, Math.max(0, selectorSource.length - pageSize))
-    : 0;
-  const selectorPage = selectorSource.slice(selectorPageStart, selectorPageStart + pageSize);
-  const selectorHoleNumbers = selectorPage.length > 0
-    ? selectorPage.map((entry, index) => Number(entry?.hole ?? entry?.number ?? selectorPageStart + index + 1))
+  const selectorHoleNumbers = selectorSource.length > 0
+    ? selectorSource.map((entry, index) => Number(entry?.hole ?? entry?.number ?? index + 1))
     : undefined;
   const selectorLoggedHoles = selectorHoleNumbers && selectorHoleNumbers.length > 0
     ? (loggedHoles || [])
         .map((holeIndex) => Number(holeIndex))
         .filter((holeIndex) => Number.isFinite(holeIndex))
-        .filter((holeIndex) => holeIndex >= selectorPageStart && holeIndex < selectorPageStart + selectorPage.length)
+        .filter((holeIndex) => holeIndex >= 0 && holeIndex < selectorSource.length)
         .map((holeIndex) => {
           const pageEntry = selectorSource[holeIndex];
           return Number(pageEntry?.hole ?? pageEntry?.number ?? holeIndex + 1);
         })
     : loggedHoles;
-  const selectorSelectedHole = selectorPage.length > 0
-    ? (currentSelectorIndex - selectorPageStart) + 1
-    : (currentSelectorIndex + 1);
-  const handleSelectHolePage = (pageHoleNumber) => {
+  const selectorSelectedHole = currentSelectorIndex + 1;
+  const handleSelectHolePage = (position1Based) => {
     if (!onSelectHole) return;
-    const nextIndex = selectorPageStart + (Number(pageHoleNumber) - 1);
-    onSelectHole(nextIndex);
+    onSelectHole(position1Based - 1);
   };
   const selectorHoleScores = selectorHoleNumbers && selectorHoleNumbers.length > 0
     ? selectorHoleNumbers.reduce((acc, holeNumber, pageIndex) => {
-        const scoreEntry = holeScores[holeNumber] || holeScores[selectorPageStart + pageIndex] || holeScores[pageIndex];
+        const scoreEntry = holeScores[holeNumber] || holeScores[pageIndex];
         if (scoreEntry) acc[holeNumber] = scoreEntry;
         return acc;
       }, {})
@@ -168,7 +160,7 @@ export function GpsGlassChrome({
       >
         <View style={styles.selectorRowInner}>
           <HoleSelectorBar
-            totalHoles={selectorPage.length || selectorSource.length || 18}
+            totalHoles={selectorSource.length || 18}
             holeNumbers={selectorHoleNumbers}
             selectedHole={selectorSelectedHole}
             onSelect={handleSelectHolePage}

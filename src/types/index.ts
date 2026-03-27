@@ -61,6 +61,8 @@ export interface GpsShotLog {
   holeNumber: number;
   shotNumber: number;
   club: string;
+  /** Present when the stroke is a logged putt (e.g. Apple Watch). */
+  shotType?: 'putt';
   lie: string | null;
   actualYards: number | null;
   playingYards: number | null;

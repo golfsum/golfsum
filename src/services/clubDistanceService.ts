@@ -252,6 +252,15 @@ export function getActiveBagClubs(profile?: UserProfile | null): string[] {
   return clubs.filter((club) => normalizeClubKey(club) !== 'putter');
 }
 
+/** Full bag club names for Apple Watch picker (active bag + Putter when enabled in profile). */
+export function getWatchClubNamesForBridge(profile?: UserProfile | null): string[] {
+  const clubs = getActiveBagClubs(profile);
+  if (profile?.bag?.putter) {
+    return [...clubs, 'Putter'];
+  }
+  return clubs;
+}
+
 export function getBestClubForPar3(
   gpsDistanceYards: number | null | undefined,
   activeBag: string[],
