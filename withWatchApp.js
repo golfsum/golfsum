@@ -1,23 +1,19 @@
 /**
  * withWatchApp.js
  *
- * 1. Syncs Swift source files from watch-src/ and widget/live-activity source folders into ios/
- * 2. Calls scripts/add_watch_target.rb via execSync to add Watch + Widget
- *    targets to the Xcode project using the Xcodeproj gem.
+ * Syncs Swift sources from watch-src/ and live-activity-src/ into targets/watch
+ * and targets/widget (for @bacons/apple-targets), and Watch bridge files into the
+ * main iOS app folder.
  *
- * Live Activity-specific source syncing has been removed here so we keep
- * Apple Watch + Widget support without copying ActivityKit files into ios/.
- *
- * This runs during expo prebuild — no separate prebuildCommand needed.
+ * Watch + widget Xcode targets are created by @bacons/apple-targets from
+ * each targets subfolder expo-target.config.js. Do not run add_watch_target.rb;
+ * duplicate targets break prebuild (buildConfigurationList / removeFromProject).
  */
 
 const { withDangerousMod } = require('@expo/config-plugins');
-const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const WATCH_APP_NAME = 'GolfSumWatch';
-const LIVE_ACTIVITY_NAME = 'GolfSumLiveActivity';
 const MAIN_APP_NAME = 'GolfSum';
 
 function copyIfChanged(src, dst) {
@@ -46,13 +42,13 @@ module.exports = function withWatchApp(config) {
 
       const watchSrcDir = path.join(projectRoot, 'watch-src');
       const laSrcDir = path.join(projectRoot, 'live-activity-src');
-      const watchIosDir = path.join(iosDir, WATCH_APP_NAME);
-      const laIosDir = path.join(iosDir, LIVE_ACTIVITY_NAME);
+      const watchTargetsDir = path.join(projectRoot, 'targets', 'watch');
+      const widgetTargetsDir = path.join(projectRoot, 'targets', 'widget');
       const mainIosDir = path.join(iosDir, MAIN_APP_NAME);
 
-      // Sync Watch Swift sources
+      // Sync Watch Swift sources -> apple-targets watch folder
       ['GolfSumWatchApp.swift', 'ContentView.swift', 'WatchSessionManager.swift'].forEach((f) =>
-        copyIfChanged(path.join(watchSrcDir, f), path.join(watchIosDir, f))
+        copyIfChanged(path.join(watchSrcDir, f), path.join(watchTargetsDir, f))
       );
 
       // Sync Watch ObjC bridge -> main app
@@ -60,47 +56,14 @@ module.exports = function withWatchApp(config) {
         copyIfChanged(path.join(watchSrcDir, 'bridge', f), path.join(mainIosDir, f))
       );
 
-      // Sync Widget-only Swift sources
-      // Intentionally excluding Live Activity-specific files:
-      // - GolfSumLiveActivityAttributes.swift
-      // - GolfSumLiveActivity.swift
-      [
-        'GolfSumWidget.swift',
-        'GolfSumLiveActivityBundle.swift',
-      ].forEach((f) =>
-        copyIfChanged(path.join(laSrcDir, f), path.join(laIosDir, f))
+      // Sync Widget-only Swift sources -> apple-targets widget folder
+      ['GolfSumWidget.swift', 'GolfSumLiveActivityBundle.swift'].forEach((f) =>
+        copyIfChanged(path.join(laSrcDir, f), path.join(widgetTargetsDir, f))
       );
 
-      // Sync Widget-only bridge files -> main app
-      // Intentionally excluding:
-      // - GolfSumLiveActivityBridge.h
-      // - GolfSumLiveActivityBridge.m
-      // - GolfSumLiveActivityManager.swift
-      [
-        'GolfSumWidgetBridge.swift',
-      ].forEach((f) =>
+      ['GolfSumWidgetBridge.swift'].forEach((f) =>
         copyIfChanged(path.join(laSrcDir, 'bridge', f), path.join(mainIosDir, f))
       );
-
-      // Run Ruby script to add Xcode targets
-      const rubyScript = path.join(projectRoot, 'scripts', 'add_watch_target.rb');
-
-      if (!fs.existsSync(rubyScript)) {
-        console.warn('[withWatchApp] Ruby script not found — skipping target setup');
-        return modConfig;
-      }
-
-      console.log('[withWatchApp] Running add_watch_target.rb...');
-      try {
-        execSync(`ruby "${rubyScript}"`, {
-          stdio: 'inherit',
-          cwd: iosDir, // run from ios/ so Dir.glob('*.xcodeproj') finds the project
-        });
-        console.log('[withWatchApp] Ruby script completed');
-      } catch (err) {
-        console.error('[withWatchApp] Ruby script failed:', err.message);
-        // Don't throw — let the build continue and show the error in logs
-      }
 
       return modConfig;
     },

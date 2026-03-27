@@ -145,18 +145,18 @@ module.exports = function(env) {
         }
       ],
       "./withPodResourceBundleSigning",
-      "./withSwiftConcurrency",   
-      // 2. Native Mapbox setup with download token
+      "./withSwiftConcurrency",
+      // Sync watch-src / live-activity-src into targets/* before @bacons/apple-targets runs
+      "./withWatchApp",
+      // Native Mapbox — RNMAPBOX_MAPS_DOWNLOAD_TOKEN is set at top of this file (or EAS env)
       [
-        "@rnmapbox/maps",
+        '@rnmapbox/maps',
         {
-          "RNMapboxMapsImpl": "mapbox",
-          "RNMapboxMapsDownloadToken": mapboxDownloadToken
-        }
+          RNMapboxMapsImpl: 'mapbox',
+        },
       ],
       "@bacons/apple-targets",
       ["expo-widgets", { groupIdentifier: "group.com.golfsum.app" }],
-      "./withWatchApp",
       [
         "expo-image-picker",
         {
