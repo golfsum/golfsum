@@ -117,13 +117,6 @@ module.exports = function(env) {
                     'com.apple.security.application-groups': ['group.com.golfsum.app'],
                   },
                 },
-                {
-                  targetName: 'GolfSumLiveActivity',
-                  bundleIdentifier: 'com.golfsum.app.LiveActivity',
-                  entitlements: {
-                    'com.apple.security.application-groups': ['group.com.golfsum.app'],
-                  },
-                },
               ],
             },
           },
@@ -156,7 +149,6 @@ module.exports = function(env) {
         },
       ],
       "@bacons/apple-targets",
-      ["expo-widgets", { groupIdentifier: "group.com.golfsum.app" }],
       [
         "expo-image-picker",
         {

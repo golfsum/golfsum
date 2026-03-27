@@ -1,6 +1,4 @@
-import { NativeModules, Platform } from 'react-native';
-
-type LiveActivityPayload = {
+export type LiveActivityPayload = {
   courseName: string;
   teeLabel: string;
   holeNumber: number;
@@ -9,51 +7,15 @@ type LiveActivityPayload = {
   backYards: string;
 };
 
-type LiveActivityModule = {
-  isSupported?: () => Promise<boolean>;
-  upsert?: (
-    courseName: string,
-    teeLabel: string,
-    holeNumber: number,
-    frontYards: string,
-    centerYards: string,
-    backYards: string
-  ) => Promise<boolean>;
-  end?: () => Promise<boolean>;
-};
-
-const moduleRef = NativeModules.GolfSumLiveActivityBridge as LiveActivityModule | undefined;
-
+/** Live Activities / widget extension removed; native bridge is not available. */
 export async function isLiveActivitySupported(): Promise<boolean> {
-  if (Platform.OS !== 'ios' || !moduleRef?.isSupported) return false;
-  try {
-    return await moduleRef.isSupported();
-  } catch {
-    return false;
-  }
+  return false;
 }
 
-export async function upsertLiveActivity(payload: LiveActivityPayload): Promise<boolean> {
-  if (Platform.OS !== 'ios' || !moduleRef?.upsert) return false;
-  try {
-    return await moduleRef.upsert(
-      payload.courseName,
-      payload.teeLabel,
-      payload.holeNumber,
-      payload.frontYards,
-      payload.centerYards,
-      payload.backYards
-    );
-  } catch {
-    return false;
-  }
+export async function upsertLiveActivity(_payload: LiveActivityPayload): Promise<boolean> {
+  return false;
 }
 
 export async function endLiveActivity(): Promise<boolean> {
-  if (Platform.OS !== 'ios' || !moduleRef?.end) return false;
-  try {
-    return await moduleRef.end();
-  } catch {
-    return false;
-  }
+  return false;
 }
