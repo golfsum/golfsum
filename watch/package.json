@@ -1,0 +1,13 @@
+{
+  "name": "golfsum-watch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Helper scripts for GolfSum Apple Watch integration (watchOS + iPhone bridge).",
+  "scripts": {
+    "ios:prebuild": "expo prebuild -p ios",
+    "ios:run": "expo run:ios",
+    "typecheck": "tsc --noEmit",
+    "watch:readme": "node -e \"console.log('See watch/README.md for Xcode watch target + TestFlight setup.')\""
+  }
+}
+
