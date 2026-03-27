@@ -10,7 +10,7 @@
       "node": "24.14.1",
       "environment": "development",
       "ios": {
-        "image": "macos-sonoma-14.6-xcode-16.1",
+        "image": "latest",
         "buildConfiguration": "Debug"
       },
       "env": {
@@ -23,7 +23,7 @@
       "environment": "preview",
       "node": "20.19.4",
       "ios": {
-        "image": "macos-sonoma-14.6-xcode-16.1",
+        "image": "latest",
         "buildConfiguration": "Release"
       },
       "env": {
@@ -37,7 +37,7 @@
       "environment": "production",
       "node": "20.19.4",
       "ios": {
-        "image": "macos-sonoma-14.6-xcode-16.1",
+        "image": "latest",
         "buildConfiguration": "Release"
       },
       "env": {
