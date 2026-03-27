@@ -7,6 +7,8 @@
 export const GPS_BAR = {
   BOTTOM_ACTION: 48,
   YARDAGE: 0,
+  /** Band above bottom bar while placing a shot (matches GpsRoundHud placement strip). */
+  PLACEMENT_YARDAGE_BAND: 40,
 } as const;
 
 /** Stacking order for GPS overlays. */

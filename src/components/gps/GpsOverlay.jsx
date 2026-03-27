@@ -6,14 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import {
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { randomUUID } from 'expo-crypto';
 import { haversineYards } from '../../services/haversine';
@@ -139,6 +132,11 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
     onShotLogged,
     shotNumber = 1,
     previousLie = null,
+    /** Controlled club choice for the next shot (idle HUD). */
+    presetClub = null,
+    /** When expanded club list is open in the HUD (blocks map gestures / coaching). */
+    sheetOpen = false,
+    onRequestExpandClubPicker,
   },
   ref
 ) {
@@ -151,7 +149,6 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
   const shotInProgressRef = useRef(null);
   const [mapMode, setMapMode] = useState('gps'); // 'gps' | 'mark' | 'edit'
   const mapModeRef = useRef('gps');
-  const [clubPickerOpen, setClubPickerOpen] = useState(false);
   const [selectedClub, setSelectedClub] = useState(null);
   const [manualLie, setManualLie] = useState(null);
   const [penalty, setPenalty] = useState(null); // null | 'OB' | 'Water' | 'Unplayable'
@@ -185,7 +182,7 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
 
   useImperativeHandle(ref, () => ({
     openClubPicker() {
-      setClubPickerOpen(true);
+      onRequestExpandClubPicker?.();
     },
     getMapMode() {
       return mapModeRef.current;
@@ -214,11 +211,6 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
       shotInProgressRef.current = nextShot;
       setShotInProgress(nextShot);
       setSelectedClub(nextShot?.club || null);
-      if (mapModeRef.current === 'mark') {
-        setClubPickerOpen(true);
-      } else {
-        setClubPickerOpen(false);
-      }
       return true;
     },
     startShotEntry() {
@@ -252,9 +244,9 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
       mapModeRef.current = 'mark';
       setMapMode('mark');
 
-      // Clear previous shot state so each shot starts completely fresh
-      setSelectedClub(null);
-      setClubPickerOpen(false);
+      // Club is chosen in the HUD before placing; `presetClub` is CTR-based suggestion from parent.
+      const initialClub = presetClub || activeBagClubs[0] || null;
+      setSelectedClub(initialClub);
       setPenalty(null);
       setTargetPoint(null);
 

@@ -261,6 +261,73 @@ export function getWatchClubNamesForBridge(profile?: UserProfile | null): string
   return clubs;
 }
 
+/** One row for the in-round shot club picker (typical carry vs hole CTR yardage). */
+export type ShotClubPickerRow = {
+  club: string;
+  typicalYards: number | null;
+  /** Signed: CTR − typical (negative = club flies farther than needed). */
+  diffFromCtr: number | null;
+};
+
+/**
+ * Pick suggested club closest to target CTR yards; if no distances in profile, first bag club.
+ * Rows are sorted best-match first (when distances exist), then alphabetical fallback.
+ */
+export function buildShotClubPickerRows(
+  ctrYards: number | null | undefined,
+  userClubs: Record<string, number> | null | undefined,
+  activeBagClubs: string[]
+): { suggested: string | null; rows: ShotClubPickerRow[]; hasAnyTypical: boolean } {
+  const bag = activeBagClubs.filter(Boolean);
+  if (!bag.length) {
+    return { suggested: null, rows: [], hasAnyTypical: false };
+  }
+
+  const map = userClubs || {};
+  const typicalFor = (club: string): number | null => {
+    const direct = map[club];
+    if (Number.isFinite(direct) && direct > 0) return Number(direct);
+    const key = normalizeClubKey(club);
+    const entry = Object.entries(map).find(([k]) => normalizeClubKey(k) === key);
+    if (entry && Number.isFinite(entry[1]) && entry[1] > 0) return Number(entry[1]);
+    return null;
+  };
+
+  const ctr = Number(ctrYards);
+  const rows: ShotClubPickerRow[] = bag.map((club) => {
+    const typicalYards = typicalFor(club);
+    const diffFromCtr =
+      typicalYards != null && Number.isFinite(ctr) && ctr > 0 ? Math.round(ctr - typicalYards) : null;
+    return { club, typicalYards, diffFromCtr };
+  });
+
+  const hasAnyTypical = rows.some((r) => r.typicalYards != null);
+
+  let suggested: string | null;
+  if (!hasAnyTypical || !Number.isFinite(ctr) || ctr <= 0) {
+    suggested = bag[0] ?? null;
+  } else {
+    const ranked = rows
+      .filter((r): r is ShotClubPickerRow & { typicalYards: number } => r.typicalYards != null)
+      .map((r) => ({ ...r, abs: Math.abs(ctr - r.typicalYards) }))
+      .sort((a, b) => (a.abs !== b.abs ? a.abs - b.abs : a.club.localeCompare(b.club)));
+    suggested = ranked[0]?.club ?? bag[0] ?? null;
+  }
+
+  const rowsSorted = [...rows].sort((a, b) => {
+    if (a.typicalYards != null && b.typicalYards != null && Number.isFinite(ctr) && ctr > 0) {
+      const da = Math.abs(ctr - a.typicalYards);
+      const db = Math.abs(ctr - b.typicalYards);
+      if (da !== db) return da - db;
+    }
+    if (a.typicalYards != null && b.typicalYards == null) return -1;
+    if (a.typicalYards == null && b.typicalYards != null) return 1;
+    return a.club.localeCompare(b.club);
+  });
+
+  return { suggested, rows: rowsSorted, hasAnyTypical };
+}
+
 export function getBestClubForPar3(
   gpsDistanceYards: number | null | undefined,
   activeBag: string[],

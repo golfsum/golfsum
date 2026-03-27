@@ -2209,7 +2209,7 @@ const styles = StyleSheet.create({
   courseActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     marginTop: 8,
     gap: 8,
   },
@@ -2231,7 +2231,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-start',
     gap: 6,
-    flexGrow: 1,
+    paddingRight: 4,
   },
   courseActionChevron: {
     alignSelf: 'center',
