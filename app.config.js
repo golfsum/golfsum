@@ -138,7 +138,6 @@ module.exports = function(env) {
         }
       ],
       "./withPodResourceBundleSigning",
-      "./withSwiftConcurrency",
       // Sync watch-src / live-activity-src into targets/* before @bacons/apple-targets runs
       "./withWatchApp",
       // Native Mapbox — RNMAPBOX_MAPS_DOWNLOAD_TOKEN is set at top of this file (or EAS env)
@@ -168,6 +167,8 @@ module.exports = function(env) {
       "expo-font",
       "expo-sharing",
       "expo-web-browser",
+      // Keep this LAST so no subsequent plugin can overwrite Swift pod settings.
+      "./withSwiftConcurrency",
     ],
   };
 };
