@@ -16,7 +16,8 @@
       "env": {
         "APPLE_TEAM_ID": "D6V59CRG3F",
         "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "sk.eyJ1IjoibmRvZGRzNjQiLCJhIjoiY21ta3ZuOWxyMWdjbjJwcHptMnUzazNvOSJ9.wh3wDWj8spsJ8kQhCb2K9w"
-      }
+      },
+      "channel": "development"
     },
     "preview": {
       "distribution": "store",
@@ -29,7 +30,8 @@
       "env": {
         "APPLE_TEAM_ID": "D6V59CRG3F",
         "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "sk.eyJ1IjoibmRvZGRzNjQiLCJhIjoiY21ta3ZuOWxyMWdjbjJwcHptMnUzazNvOSJ9.wh3wDWj8spsJ8kQhCb2K9w"
-      }
+      },
+      "channel": "preview"
     },
     "production": {
       "autoIncrement": true,
@@ -43,7 +45,8 @@
       "env": {
         "APPLE_TEAM_ID": "D6V59CRG3F",
         "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "sk.eyJ1IjoibmRvZGRzNjQiLCJhIjoiY21ta3ZuOWxyMWdjbjJwcHptMnUzazNvOSJ9.wh3wDWj8spsJ8kQhCb2K9w"
-      }
+      },
+      "channel": "production"
     }
   },
   "submit": {

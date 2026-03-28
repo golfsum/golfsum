@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { colors, radius } from '../../theme/tokens';
 
 function getBorderStyle(state) {
@@ -34,13 +34,17 @@ function getMatchBorder(matchQuality) {
   return null;
 }
 
-export function SuggestedClubChip({ suggestion, onPress, compact = false }) {
+export function SuggestedClubChip({ suggestion, onPress, pickedClubLabel = null, compact = false }) {
   const chipState = suggestion?.state || 'no_history';
   const borderStyle = getMatchBorder(suggestion?.clubMatchQuality) || getBorderStyle(chipState);
-  const clubText = chipState === 'tied' && suggestion?.tiedWithLabel
-    ? `${suggestion.label} or ${suggestion.tiedWithLabel}`
-    : suggestion?.label || 'Driver';
-  const metaText = suggestion?.clubDistanceSource && typeof suggestion?.fallbackYards === 'number'
+  const clubText = pickedClubLabel
+    ? pickedClubLabel
+    : chipState === 'tied' && suggestion?.tiedWithLabel
+      ? `${suggestion.label} or ${suggestion.tiedWithLabel}`
+      : suggestion?.label || 'Driver';
+  const metaText = pickedClubLabel
+    ? null
+    : suggestion?.clubDistanceSource && typeof suggestion?.fallbackYards === 'number'
     ? suggestion.clubDistanceSource === 'gps'
       ? suggestion.clubDistanceSampleCount >= 10
         ? `${Math.round(suggestion.fallbackYards)}y avg`
@@ -54,12 +58,19 @@ export function SuggestedClubChip({ suggestion, onPress, compact = false }) {
       ? `${Math.round(suggestion.fallbackYards)}y`
       : null;
 
+  const Wrapper = onPress ? TouchableOpacity : View;
+  const wrapperProps = onPress
+    ? { onPress, activeOpacity: 0.88 }
+    : {};
+
   return (
-    <TouchableOpacity style={[styles.chip, compact && styles.chipCompact, !compact && borderStyle]} onPress={onPress} activeOpacity={0.88}>
-      <Text style={[styles.label, compact && styles.labelCompact]}>SUGGESTED</Text>
+    <Wrapper style={[styles.chip, compact && styles.chipCompact, !compact && borderStyle]} {...wrapperProps}>
+      <Text style={[styles.label, compact && styles.labelCompact]}>
+        {pickedClubLabel ? 'SELECTED' : 'SUGGESTED'}
+      </Text>
       <Text style={[styles.club, compact && styles.clubCompact]} numberOfLines={1}>{clubText}</Text>
       {!compact && metaText ? <Text style={styles.meta}>{metaText}</Text> : null}
-    </TouchableOpacity>
+    </Wrapper>
   );
 }
 

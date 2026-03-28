@@ -33,7 +33,8 @@ export const GPS_Z = {
 /** Gaps measured upward from the top of the bottom action bar (same coordinate space as `bottom` on map overlays). */
 export const GPS_ABOVE_BAR = {
   WORDMARK: 8,
-  RIGHT_MAP_STACK: 12,
+  /** Extra lift so right-edge Green / Plan stack clears the HUD bottom bar hit area. */
+  RIGHT_MAP_STACK: 26,
   /** Fallback when style omits safe-area (static StyleSheet row) */
   WORDMARK_STATIC: 6,
 } as const;

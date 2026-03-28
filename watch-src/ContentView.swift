@@ -61,7 +61,7 @@ struct ContentView: View {
     VStack(spacing: 12) {
       Button("Add Shot") {
         if session.clubs.isEmpty {
-          flash("No clubs on phone")
+          flash(session.roundActive ? "Waiting for phone data" : "No active round")
           return
         }
         showClubPicker = true

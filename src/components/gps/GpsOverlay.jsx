@@ -6,10 +6,18 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import {
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { randomUUID } from 'expo-crypto';
 import { haversineYards } from '../../services/haversine';
+import { lookupYardsInClubMap } from '../../services/clubDistanceService';
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout';
 import { colors, radius } from '../../theme/tokens';
 import { GPS_MAP_OVERLAY } from '../../constants/gpsLayout';
@@ -125,6 +133,8 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
     teePoi,
     holePar,
     userClubs = null,
+    /** Profile manual carry distances only — shown on picker cards. */
+    manualDisplayYards = null,
     activeBagClubs = [],
     tournamentMode = false,
     detectLieAtCoordinate,
@@ -150,10 +160,16 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
   const [mapMode, setMapMode] = useState('gps'); // 'gps' | 'mark' | 'edit'
   const mapModeRef = useRef('gps');
   const [selectedClub, setSelectedClub] = useState(null);
+  const selectedClubRef = useRef(null);
+  const [clubPickerOpen, setClubPickerOpen] = useState(false);
   const [manualLie, setManualLie] = useState(null);
   const [penalty, setPenalty] = useState(null); // null | 'OB' | 'Water' | 'Unplayable'
   const logShotRef = useRef(null);
   const cycleLieRef = useRef(null);
+
+  useEffect(() => {
+    selectedClubRef.current = selectedClub;
+  }, [selectedClub]);
 
   useEffect(() => {
     let cancelled = false;
@@ -182,6 +198,7 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
 
   useImperativeHandle(ref, () => ({
     openClubPicker() {
+      setClubPickerOpen(true);
       onRequestExpandClubPicker?.();
     },
     getMapMode() {
@@ -241,14 +258,20 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
 
       shotInProgressRef.current = nextShot;
       setShotInProgress(nextShot);
-      mapModeRef.current = 'mark';
-      setMapMode('mark');
-
-      // Club is chosen in the HUD before placing; `presetClub` is CTR-based suggestion from parent.
-      const initialClub = presetClub || activeBagClubs[0] || null;
-      setSelectedClub(initialClub);
       setPenalty(null);
       setTargetPoint(null);
+
+      const prePicked = selectedClubRef.current || presetClub || null;
+      if (prePicked) {
+        setSelectedClub(prePicked);
+        setClubPickerOpen(false);
+        mapModeRef.current = 'mark';
+        setMapMode('mark');
+      } else {
+        setClubPickerOpen(true);
+        mapModeRef.current = 'gps';
+        setMapMode('gps');
+      }
 
       // Smart lie defaults: shot 1 = Tee, shot 2 = Fairway, shot 3+ = inherit previous
       if (shotNumber <= 1) {
@@ -411,6 +434,35 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
     userClubs,
   ]);
 
+  const clubsOrdered = useMemo(() => {
+    const list = [...(activeBagClubs || [])];
+    list.sort((a, b) => {
+      const ya = lookupYardsInClubMap(a, userClubs) ?? -1;
+      const yb = lookupYardsInClubMap(b, userClubs) ?? -1;
+      if (ya !== yb) return yb - ya;
+      return a.localeCompare(b);
+    });
+    return list;
+  }, [activeBagClubs, userClubs]);
+
+  const liveTargetYards = useMemo(() => {
+    if (targetPoint && Number.isFinite(targetDistance)) {
+      return tournamentMode ? targetDistance : targetPlaying?.adjustedYards ?? targetDistance;
+    }
+    if (userPos && Number.isFinite(greenDistance)) {
+      return tournamentMode ? greenDistance : greenPlaying?.adjustedYards ?? greenDistance;
+    }
+    return null;
+  }, [
+    greenDistance,
+    greenPlaying?.adjustedYards,
+    targetDistance,
+    targetPlaying?.adjustedYards,
+    targetPoint,
+    tournamentMode,
+    userPos,
+  ]);
+
   const activeClub = selectedClub || clubSuggestion.best?.club || null;
   const autoLie = useMemo(() => {
     if (!targetPoint || !detectLieAtCoordinate) return null;
@@ -468,6 +520,14 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
     setPenalty(null);
   };
 
+  const dismissClubPicker = () => {
+    if (shotInProgressRef.current) {
+      cancelShotEntry();
+    } else {
+      setClubPickerOpen(false);
+    }
+  };
+
   const finalizeShot = (club) => {
     const currentShot = shotInProgressRef.current;
     const shotCoords = currentShot?.coords
@@ -512,17 +572,17 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
   const selectClubForShot = (club) => {
     setSelectedClub(club);
     setClubPickerOpen(false);
-    if (mapModeRef.current !== 'edit') {
+    const inProgress = Boolean(shotInProgressRef.current);
+    if (inProgress && mapModeRef.current !== 'edit') {
       mapModeRef.current = 'mark';
       setMapMode('mark');
     }
   };
 
   const logShot = () => {
-    // CONFIRMING → IDLE (fallback for Done button)
     const currentShot = shotInProgressRef.current;
     const shotCoords = currentShot?.coords || targetPoint;
-    if (!activeClub) {
+    if (!selectedClub) {
       setClubPickerOpen(true);
       return;
     }
@@ -530,7 +590,7 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
       setClubPickerOpen(true);
       return;
     }
-    finalizeShot(activeClub);
+    finalizeShot(selectedClub);
   };
 
   // Keep refs in sync for imperative access
@@ -551,15 +611,15 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
 
   // Report overlay state to parent (single effect with all computed values)
   useEffect(() => {
-    // While adding a shot, mapMode is the source of truth: gps vs mark.
-    const shotFlow =
-      mapModeRef.current === 'gps'
-        ? selectedClub
-          ? 'mark'
-          : clubPickerOpen
-            ? 'club'
-            : 'idle'
-        : mapModeRef.current;
+    const inProgress = Boolean(shotInProgressRef.current);
+    let shotFlow = 'idle';
+    if (mapModeRef.current === 'mark' || mapModeRef.current === 'edit') {
+      shotFlow = mapModeRef.current;
+    } else if (inProgress) {
+      shotFlow = clubPickerOpen || !selectedClub ? 'club' : 'mark';
+    } else if (clubPickerOpen) {
+      shotFlow = 'club';
+    }
     onOverlayStateChange?.({
       anySheet: clubPickerOpen,
       shotFlow,
@@ -570,7 +630,19 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
       targetDistance: targetDistance,
       targetPlaying: tournamentMode ? targetDistance : targetPlaying?.adjustedYards ?? targetDistance,
     });
-  }, [activeClub, activeLie, clubPickerOpen, onOverlayStateChange, selectedClub, targetDistance, targetPlaying?.adjustedYards, targetPoint, tournamentMode, mapMode]);
+  }, [
+    activeClub,
+    activeLie,
+    clubPickerOpen,
+    onOverlayStateChange,
+    selectedClub,
+    shotInProgress?.id,
+    targetDistance,
+    targetPlaying?.adjustedYards,
+    targetPoint,
+    tournamentMode,
+    mapMode,
+  ]);
 
   return (
     <>
@@ -597,9 +669,9 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
         </MapboxGL.ShapeSource>
       )}
 
-      <Modal visible={clubPickerOpen} transparent animationType="fade" onRequestClose={cancelShotEntry}>
+      <Modal visible={clubPickerOpen} transparent animationType="slide" onRequestClose={dismissClubPicker}>
         <View style={styles.modalBackdrop}>
-          <TouchableOpacity style={styles.modalScrim} activeOpacity={1} onPress={cancelShotEntry} />
+          <TouchableOpacity style={styles.modalScrim} activeOpacity={1} onPress={dismissClubPicker} />
           <View style={styles.modalSheet}>
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
@@ -607,66 +679,87 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
                 <Text style={styles.modalTitle}>Select Club</Text>
                 <Text style={styles.sheetSubtitle}>
                   {tournamentMode
-                    ? `GPS ${targetDistance ?? '--'} yds`
-                    : `Playing ${targetPlaying?.adjustedYards ?? targetDistance ?? '--'} yds`}
+                    ? `GPS ${liveTargetYards != null ? Math.round(liveTargetYards) : '--'} yds`
+                    : `Playing ${liveTargetYards != null ? Math.round(liveTargetYards) : '--'} yds`}
                 </Text>
               </View>
-              <TouchableOpacity style={styles.sheetClose} onPress={cancelShotEntry}>
+              <TouchableOpacity style={styles.sheetClose} onPress={dismissClubPicker}>
                 <Text style={styles.sheetCloseText}>✕</Text>
               </TouchableOpacity>
             </View>
-            {(() => {
-              const ranked = clubSuggestion.ranked || [];
-              const rankedOrder = ranked.map((e) => e.club);
-              const merged = [...new Set([...rankedOrder, ...activeBagClubs])];
-              const rankedMap = new Map(ranked.map((e) => [e.club, e]));
-              if (merged.length > 0) {
-                return (
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.clubRail}
-                  >
-                    {merged.map((club) => {
-                      const entry = rankedMap.get(club);
-                      const active =
-                        selectedClub === club || (!selectedClub && clubSuggestion.best?.club === club);
-                      return (
-                        <TouchableOpacity
-                          key={club}
-                          style={[styles.clubCard, active && styles.clubCardActive]}
-                          onPress={() => selectClubForShot(club)}
+            {clubsOrdered.length === 0 ? (
+              <View style={styles.clubPickerEmpty}>
+                <Text style={styles.emptyText}>
+                  No clubs in your bag. Add clubs in Profile settings.
+                </Text>
+                <TouchableOpacity style={styles.emptyCloseBtn} onPress={dismissClubPicker}>
+                  <Text style={styles.emptyCloseBtnText}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.clubScrollWrap}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.clubRail}
+                >
+                  {clubsOrdered.map((club) => {
+                    const manualY = lookupYardsInClubMap(club, manualDisplayYards);
+                    const diff =
+                      manualY != null && Number.isFinite(liveTargetYards)
+                        ? Math.round(liveTargetYards - manualY)
+                        : null;
+                    const active = selectedClub === club;
+                    const isBest = clubSuggestion.best?.club === club;
+                    return (
+                      <TouchableOpacity
+                        key={club}
+                        style={[styles.clubCard, active && styles.clubCardActive]}
+                        onPress={() => selectClubForShot(club)}
+                      >
+                        {isBest ? <Text style={styles.clubBestLabel}>BEST</Text> : null}
+                        <View style={[styles.clubCardAccent, active && styles.clubCardAccentActive]} />
+                        <Text style={[styles.clubCardName, active && styles.clubCardNameActive]} numberOfLines={2}>
+                          {club}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.clubCardYards,
+                            active && styles.clubCardYardsActive,
+                            manualY == null && styles.clubCardYardsMuted,
+                          ]}
                         >
-                          {clubSuggestion.best?.club === club && entry ? (
-                            <Text style={styles.clubBestLabel}>BEST</Text>
-                          ) : null}
-                          <View style={[styles.clubCardAccent, active && styles.clubCardAccentActive]} />
-                          <Text style={[styles.clubCardName, active && styles.clubCardNameActive]}>{club}</Text>
-                          {entry ? (
-                            <>
-                              <Text style={[styles.clubCardYards, active && styles.clubCardYardsActive]}>
-                                {entry.yards}y
-                              </Text>
-                              <Text
-                                style={[
-                                  styles.clubCardDiff,
-                                  entry.diff > 0 ? styles.clubCardDiffHot : styles.clubCardDiffGood,
-                                ]}
-                              >
-                                {entry.diff > 0 ? '+' : ''}
-                                {entry.diff}
-                              </Text>
-                            </>
-                          ) : null}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-                );
-              }
-              return <Text style={styles.emptyText}>No club distances saved yet.</Text>;
-            })()}
-            <TouchableOpacity style={styles.modalClose} onPress={cancelShotEntry}>
+                          {manualY != null ? `${manualY}y` : '-- y'}
+                        </Text>
+                        {diff != null ? (
+                          <Text
+                            style={[
+                              styles.clubCardDiff,
+                              diff > 0 ? styles.clubCardDiffHot : styles.clubCardDiffGood,
+                            ]}
+                          >
+                            {diff > 0 ? '+' : ''}
+                            {diff}
+                          </Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+                <View style={styles.clubRailFade} pointerEvents="none">
+                  <Svg width={36} height={100} style={styles.clubRailFadeSvg}>
+                    <Defs>
+                      <LinearGradient id="clubRailFadeGrad" x1="0" y1="0" x2="1" y2="0">
+                        <Stop offset="0" stopColor={colors.bg.primary} stopOpacity={0} />
+                        <Stop offset="1" stopColor={colors.bg.primary} stopOpacity={0.97} />
+                      </LinearGradient>
+                    </Defs>
+                    <Rect x="0" y="0" width="36" height="100" fill="url(#clubRailFadeGrad)" />
+                  </Svg>
+                </View>
+              </View>
+            )}
+            <TouchableOpacity style={styles.modalClose} onPress={dismissClubPicker}>
               <Text style={styles.modalCloseText}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -944,7 +1037,42 @@ const styles = StyleSheet.create({
   clubRail: {
     paddingHorizontal: 16,
     paddingBottom: 20,
+    paddingRight: 28,
     gap: 8,
+  },
+  clubScrollWrap: {
+    position: 'relative',
+    minHeight: 100,
+  },
+  clubRailFade: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 20,
+    width: 36,
+    justifyContent: 'center',
+  },
+  clubRailFadeSvg: {
+    flex: 1,
+  },
+  clubPickerEmpty: {
+    paddingHorizontal: 18,
+    paddingBottom: 16,
+    gap: 14,
+  },
+  emptyCloseBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+  },
+  emptyCloseBtnText: {
+    color: '#E5E7EB',
+    fontSize: 14,
+    fontWeight: '700',
   },
   clubCard: {
     width: 62,
@@ -997,6 +1125,9 @@ const styles = StyleSheet.create({
   },
   clubCardYardsActive: {
     color: 'rgba(255,255,255,0.6)',
+  },
+  clubCardYardsMuted: {
+    color: 'rgba(255,255,255,0.35)',
   },
   clubCardDiff: {
     fontSize: 10,

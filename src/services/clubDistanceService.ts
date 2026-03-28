@@ -252,6 +252,57 @@ export function getActiveBagClubs(profile?: UserProfile | null): string[] {
   return clubs.filter((club) => normalizeClubKey(club) !== 'putter');
 }
 
+/** Profile manual distances only, keyed by formatted club labels (for in-round display). */
+export function buildManualYardageDisplayMap(
+  manualDistances?: Record<string, number> | null
+): Record<string, number> {
+  const manual = normalizeManualDistances(manualDistances);
+  const out: Record<string, number> = {};
+  Object.entries(manual).forEach(([k, v]) => {
+    out[formatClubLabel(k)] = v;
+  });
+  return out;
+}
+
+export function lookupYardsInClubMap(
+  club: string,
+  map: Record<string, number> | null | undefined
+): number | null {
+  if (!map || !club) return null;
+  const direct = map[club];
+  if (Number.isFinite(direct) && direct > 0) return Number(direct);
+  const key = normalizeClubKey(club);
+  const entry = Object.entries(map).find(([k]) => normalizeClubKey(k) === key);
+  if (entry && Number.isFinite(entry[1]) && entry[1] > 0) return Number(entry[1]);
+  return null;
+}
+
+/**
+ * Deduplicate bag club names (case-insensitive). Prefer the entry that has a positive yardage from getYards.
+ */
+export function dedupeActiveBagClubs(
+  bagClubNames: string[],
+  getYards: (clubLabel: string) => number | null | undefined
+): string[] {
+  const items = bagClubNames.map((name) => ({
+    name,
+    distance: getYards(name),
+  }));
+  const reduced = items.reduce<Array<{ name: string; distance?: number | null }>>((acc, club) => {
+    const existing = acc.find((c) => c.name.toLowerCase() === club.name.toLowerCase());
+    if (!existing) return [...acc, club];
+    const ex = existing.distance;
+    const cu = club.distance;
+    const exOk = ex != null && Number.isFinite(ex) && ex > 0;
+    const cuOk = cu != null && Number.isFinite(cu) && cu > 0;
+    if (!exOk && cuOk) {
+      return acc.map((c) => (c.name.toLowerCase() === club.name.toLowerCase() ? club : c));
+    }
+    return acc;
+  }, []);
+  return reduced.map((c) => c.name);
+}
+
 /** Full bag club names for Apple Watch picker (active bag + Putter when enabled in profile). */
 export function getWatchClubNamesForBridge(profile?: UserProfile | null): string[] {
   const clubs = getActiveBagClubs(profile);

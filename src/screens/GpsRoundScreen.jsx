@@ -20,7 +20,16 @@ import { endLiveActivity, isLiveActivitySupported, upsertLiveActivity } from '..
 import { getRounds } from '../services/roundsService';
 import { buildInRoundNudge, buildInRoundNudgeContext } from '../services/inRoundNudgeService';
 import { getSuggestion } from '../services/courseStatsService';
-import { buildEffectiveClubDistanceMap, getActiveBagClubs, getBestClubForPar3, getClubAverages, getWatchClubNamesForBridge } from '../services/clubDistanceService';
+import {
+  buildEffectiveClubDistanceMap,
+  buildManualYardageDisplayMap,
+  dedupeActiveBagClubs,
+  getActiveBagClubs,
+  getBestClubForPar3,
+  getClubAverages,
+  getWatchClubNamesForBridge,
+  lookupYardsInClubMap,
+} from '../services/clubDistanceService';
 import { checkDistanceJump, checkShotCount, getMidpoint } from '../services/missedShotDetector';
 import { buildHazardCarryModel, buildHoleStrategyModel, getPreferredLeaveYards } from '../services/holeStrategyModel';
 import ReportModal from '../components/ReportModal';
@@ -543,6 +552,8 @@ export function GpsRoundScreen({
     return () => loop.stop();
   }, [pulseAnim]);
   const [userClubs, setUserClubs] = useState(null);
+  /** Profile-entered carry distances only (picker card display). */
+  const [manualClubDisplayYards, setManualClubDisplayYards] = useState({});
   const [userPlayerRating, setUserPlayerRating] = useState(null);
   const [activeBagClubs, setActiveBagClubs] = useState([]);
   const [watchClubList, setWatchClubList] = useState([]);
@@ -604,6 +615,7 @@ export function GpsRoundScreen({
   const [greenMapOnly, setGreenMapOnly] = useState(false);
   const [greenTarget, setGreenTarget] = useState('center'); // 'front' | 'center' | 'back'
   const [showSuggestionModal, setShowSuggestionModal] = useState(false);
+  const [suggestionTipExpanded, setSuggestionTipExpanded] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [reportContext, setReportContext] = useState(null);
   const [holeFlagsByHole, setHoleFlagsByHole] = useState(() => (
@@ -750,6 +762,35 @@ export function GpsRoundScreen({
     [selectedTeeMarker]
   );
   const currentHoleShots = loggedShotsByHole[currentHoleIndex] || [];
+  const debouncedGpsRef = useRef(null);
+  const [debouncedUserPos, setDebouncedUserPos] = useState(null);
+
+  useEffect(() => {
+    if (!userPos?.lat || !userPos?.lng) {
+      debouncedGpsRef.current = null;
+      setDebouncedUserPos(null);
+      return;
+    }
+    const prev = debouncedGpsRef.current;
+    if (!prev) {
+      debouncedGpsRef.current = userPos;
+      setDebouncedUserPos(userPos);
+      return;
+    }
+    const moved = haversineYards(prev.lat, prev.lng, userPos.lat, userPos.lng);
+    if (moved >= 5) {
+      debouncedGpsRef.current = userPos;
+      setDebouncedUserPos(userPos);
+    }
+  }, [userPos]);
+
+  useEffect(() => {
+    if (!userPos?.lat || !userPos?.lng) return;
+    debouncedGpsRef.current = userPos;
+    setDebouncedUserPos(userPos);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- snap on hole/shot only, not every GPS tick
+  }, [currentHoleIndex, currentHoleShots.length]);
+
   const distanceMode = useMemo(() => {
     if (userNearHole && userPos) return 'live';
     if (teeBack) return gpsQuality === 'none' ? 'plan' : 'tee';
@@ -794,6 +835,50 @@ export function GpsRoundScreen({
     );
   }, [greenCenter, yardageOrigin]);
 
+  /** GPS anchor for club suggestion, carry risk, and hazard wind scaling (debounced; snaps on hole / shot). */
+  const suggestionAnchorPos = useMemo(() => {
+    if (debouncedUserPos && gpsQuality !== 'none') return debouncedUserPos;
+    if (userPos && gpsQuality !== 'none') return userPos;
+    return yardageOrigin;
+  }, [debouncedUserPos, gpsQuality, userPos, yardageOrigin]);
+
+  const suggestionRawYardsToGreenCenter = useMemo(() => {
+    if (!suggestionAnchorPos || !greenCenter) return null;
+    const y = haversineYards(
+      suggestionAnchorPos.lat,
+      suggestionAnchorPos.lng,
+      greenCenter.Latitude,
+      greenCenter.Longitude,
+    );
+    return Number.isFinite(y) ? y : null;
+  }, [greenCenter, suggestionAnchorPos]);
+
+  const suggestionShotBearingDeg = useMemo(() => {
+    if (!greenCenter || !suggestionAnchorPos) return null;
+    return bearingDeg(
+      suggestionAnchorPos.lat,
+      suggestionAnchorPos.lng,
+      greenCenter.Latitude,
+      greenCenter.Longitude,
+    );
+  }, [greenCenter, suggestionAnchorPos]);
+
+  const suggestionPlayingDistance = useMemo(() => {
+    if (tournamentMode || !Number.isFinite(suggestionRawYardsToGreenCenter) || suggestionShotBearingDeg == null) {
+      return null;
+    }
+    const targetYards = Math.round(suggestionRawYardsToGreenCenter);
+    const base = getPlayingAdjustment(targetYards, weather, suggestionShotBearingDeg);
+    const rawElevAdj = elevationDiffToYardageAdjustment(elevationDiffFt || 0);
+    const elevAdj = Math.abs(rawElevAdj) >= 5 ? rawElevAdj : 0;
+    return {
+      adjustedYards: Math.max(0, Math.round(targetYards + (base?.windAdj ?? 0) + (base?.tempAdj ?? 0) + elevAdj)),
+      tempAdj: base?.tempAdj ?? 0,
+      windAdj: base?.windAdj ?? 0,
+      elevAdj,
+    };
+  }, [elevationDiffFt, suggestionRawYardsToGreenCenter, suggestionShotBearingDeg, tournamentMode, weather]);
+
   const centerYards = useMemo(() => {
     const fromPos = yardageOrigin;
     if (!fromPos || !activeGreenPoi) return null;
@@ -823,12 +908,14 @@ export function GpsRoundScreen({
   }, [targetYards, elevationDiffFt, shotBearingDeg, tournamentMode, weather]);
   const distanceSuggestedClub = useMemo(
     () => getBestClubForPar3(
-      tournamentMode ? centerYards : playingDistance?.adjustedYards,
+      tournamentMode
+        ? (Number.isFinite(suggestionRawYardsToGreenCenter) ? Math.round(suggestionRawYardsToGreenCenter) : null)
+        : suggestionPlayingDistance?.adjustedYards,
       activeBagClubs,
       clubAverages,
       userClubs,
     ),
-    [activeBagClubs, centerYards, clubAverages, playingDistance?.adjustedYards, tournamentMode, userClubs]
+    [activeBagClubs, clubAverages, suggestionPlayingDistance?.adjustedYards, suggestionRawYardsToGreenCenter, tournamentMode, userClubs],
   );
   const dispersionMode = useMemo(
     () => getDispersionMode(currentHoleShots.length),
@@ -942,7 +1029,9 @@ export function GpsRoundScreen({
     {
       par: currentHole?.par || 4,
       holeLength: selectedTeeYardage || currentHole?.yardage || null,
-      gpsDistanceYards: tournamentMode ? centerYards : playingDistance?.adjustedYards ?? centerYards ?? null,
+      gpsDistanceYards: tournamentMode
+        ? (Number.isFinite(suggestionRawYardsToGreenCenter) ? Math.round(suggestionRawYardsToGreenCenter) : centerYards)
+        : suggestionPlayingDistance?.adjustedYards ?? playingDistance?.adjustedYards ?? centerYards ?? null,
       fallbackClub: distanceSuggestedClub ? {
         club: distanceSuggestedClub.club,
         yards: distanceSuggestedClub.displayYards,
@@ -964,10 +1053,24 @@ export function GpsRoundScreen({
     playingDistance?.adjustedYards,
     recentRounds,
     selectedTeeYardage,
+    suggestionPlayingDistance?.adjustedYards,
+    suggestionRawYardsToGreenCenter,
     tournamentMode,
     userClubs,
     userPlayerRating,
   ]);
+  const clubChipSuggestion = useMemo(() => {
+    if (holeSuggestion?.state && holeSuggestion.state !== 'no_history') return holeSuggestion;
+    const label = distanceSuggestedClub?.club || activeBagClubs[0] || 'Club';
+    return {
+      state: 'no_history',
+      label,
+      clubMatchQuality: distanceSuggestedClub?.matchQuality ?? null,
+      fallbackYards: distanceSuggestedClub?.displayYards ?? null,
+      clubDistanceSource: distanceSuggestedClub?.source,
+      clubDistanceSampleCount: distanceSuggestedClub?.sampleCount ?? 0,
+    };
+  }, [activeBagClubs, distanceSuggestedClub, holeSuggestion]);
   const preferredLeaveYards = useMemo(
     () => getPreferredLeaveYards({ holeSuggestion, bestDistanceBand: nudgeContext?.bestDistanceBand }),
     [holeSuggestion, nudgeContext]
@@ -1009,14 +1112,26 @@ export function GpsRoundScreen({
   const hazardCarries = useMemo(
     () => buildHazardCarryModel({
       hole: currentHole,
-      userPos,
+      userPos: suggestionAnchorPos,
       weather,
-      shotBearingDeg,
+      shotBearingDeg: suggestionShotBearingDeg ?? shotBearingDeg,
       elevationYards: elevationDiffToYardageAdjustment(elevationDiffFt || 0),
-      centerYards,
+      centerYards: Number.isFinite(suggestionRawYardsToGreenCenter) && suggestionRawYardsToGreenCenter > 0
+        ? Math.round(suggestionRawYardsToGreenCenter)
+        : centerYards,
       routePoints,
     }),
-    [centerYards, currentHole, elevationDiffFt, routePoints, shotBearingDeg, userPos, weather]
+    [
+      centerYards,
+      currentHole,
+      elevationDiffFt,
+      routePoints,
+      shotBearingDeg,
+      suggestionAnchorPos,
+      suggestionRawYardsToGreenCenter,
+      suggestionShotBearingDeg,
+      weather,
+    ]
   );
   const teeMarkerLooksWrong = useMemo(
     () => isTeeMarkerSuspect(selectedTeeMarker, greenCenter ? { lat: greenCenter.Latitude, lng: greenCenter.Longitude } : null),
@@ -1093,6 +1208,32 @@ export function GpsRoundScreen({
     }
     return distanceSuggestedClub || null;
   }, [distanceSuggestedClub, holeSuggestion?.label, userClubs]);
+
+  const carryRiskClubYards = useMemo(() => {
+    const sel = overlayState.selectedClub;
+    if (sel && userClubs) {
+      const matched = Object.entries(userClubs).find(([club]) => normalizeClubLabel(club) === normalizeClubLabel(sel));
+      if (matched && Number.isFinite(Number(matched[1])) && Number(matched[1]) > 0) return Number(matched[1]);
+    }
+    return effectiveSuggestedClub?.yards ?? distanceSuggestedClub?.displayYards ?? null;
+  }, [distanceSuggestedClub?.displayYards, effectiveSuggestedClub?.yards, overlayState.selectedClub, userClubs]);
+
+  const hazardCarriesFiltered = useMemo(() => {
+    if (!hazardCarries.length) return hazardCarries;
+    const cap = carryRiskClubYards;
+    if (!Number.isFinite(cap) || cap <= 0) return [];
+    return hazardCarries.filter((h) => {
+      const carry = Number(h.carry);
+      if (!Number.isFinite(carry)) return false;
+      if (h.kind === 'green-bunker') {
+        const ytg = h.yardsToGreen;
+        if (Number.isFinite(ytg) && ytg > 120) return false;
+        return Math.abs(carry - cap) <= 12;
+      }
+      return carry <= cap;
+    });
+  }, [carryRiskClubYards, hazardCarries]);
+
   const inlineCoachingCard = useMemo(() => {
     if (!holeSuggestion || liveLie?.lie !== 'Tee Box') return null;
     return holeSuggestion.state === 'data_backed' || holeSuggestion.state === 'tied' || holeSuggestion.state === 'building'
@@ -1111,7 +1252,7 @@ export function GpsRoundScreen({
       playingYards: playingDistance?.adjustedYards ?? null,
       tournamentMode,
       weather,
-      hazardCarries,
+      hazardCarries: hazardCarriesFiltered,
       currentRoundShots,
       greenSummary: currentHoleSummary,
       context: nudgeContext,
@@ -1123,7 +1264,7 @@ export function GpsRoundScreen({
     currentHoleIndex,
     currentHoleSummary,
     currentRoundShots,
-    hazardCarries,
+    hazardCarriesFiltered,
     liveLie?.lie,
     nudgeContext,
     coachingEnabled,
@@ -1151,28 +1292,53 @@ export function GpsRoundScreen({
   const detectLieAtCoordinate = useCallback((coord) => (
     detectLiveLie(coord, currentHole, teeBack, greenCenter)
   ), [currentHole, greenCenter, teeBack]);
+
+  const yardsUserToGreenCenterLive = useMemo(() => {
+    if (!userPos?.lat || !greenCenter) return null;
+    const y = haversineYards(userPos.lat, userPos.lng, greenCenter.Latitude, greenCenter.Longitude);
+    return Number.isFinite(y) ? y : null;
+  }, [greenCenter, userPos]);
+
+  const showLiveShotPreviewLine = useMemo(() => {
+    if (!userPos?.lat || !currentHoleShots.length) return false;
+    if (!Number.isFinite(yardsUserToGreenCenterLive)) return false;
+    return yardsUserToGreenCenterLive <= 500 || isUserNearHole(userPos, currentHole);
+  }, [currentHole, currentHoleShots.length, userPos, yardsUserToGreenCenterLive]);
+
   const shotPathGeo = useMemo(() => {
     if (!MapboxGL || !currentHoleShots.length) return null;
-    const coordinates = currentHoleShots
+    const shotCoords = currentHoleShots
       .map((shot) => shot.from)
       .filter((point) => point?.lng && point?.lat)
       .map((point) => [point.lng, point.lat]);
-    if (userPos?.lng && userPos?.lat) {
-      coordinates.push([userPos.lng, userPos.lat]);
-    }
-    if (coordinates.length < 2) return null;
-    return {
-      type: 'FeatureCollection',
-      features: [{
+    const features = [];
+    if (shotCoords.length >= 2) {
+      features.push({
         type: 'Feature',
         geometry: {
           type: 'LineString',
-          coordinates,
+          coordinates: shotCoords,
         },
         properties: { kind: 'shot-track' },
-      }],
+      });
+    }
+    if (showLiveShotPreviewLine && userPos?.lng && userPos?.lat && shotCoords.length >= 1) {
+      const last = shotCoords[shotCoords.length - 1];
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: [last, [userPos.lng, userPos.lat]],
+        },
+        properties: { kind: 'shot-track-live' },
+      });
+    }
+    if (!features.length) return null;
+    return {
+      type: 'FeatureCollection',
+      features,
     };
-  }, [currentHoleShots, userPos]);
+  }, [currentHoleShots, showLiveShotPreviewLine, userPos]);
   const currentShotDisplay = useMemo(() => {
     const lastShot = currentHoleShots[currentHoleShots.length - 1] || null;
     if (overlayState.shotFlow === 'mark' || overlayState.shotFlow === 'edit') {
@@ -1301,10 +1467,14 @@ export function GpsRoundScreen({
     Promise.all([getUserProfile(), getClubAverages()])
       .then(([profile, averages]) => {
         if (active) {
-          setClubAverages(averages || {});
-          setActiveBagClubs(getActiveBagClubs(profile));
+          const av = averages || {};
+          const effective = buildEffectiveClubDistanceMap(profile?.clubDistances ?? null, av);
+          setClubAverages(av);
+          setManualClubDisplayYards(buildManualYardageDisplayMap(profile?.clubDistances ?? null));
+          const rawBag = getActiveBagClubs(profile);
+          setActiveBagClubs(dedupeActiveBagClubs(rawBag, (name) => lookupYardsInClubMap(name, effective)));
           setWatchClubList(getWatchClubNamesForBridge(profile));
-          setUserClubs(buildEffectiveClubDistanceMap(profile?.clubDistances ?? null, averages || {}));
+          setUserClubs(effective);
           setUserPlayerRating(typeof profile?.playerRating === 'number' ? profile.playerRating : null);
           setDistanceUnit(profile?.distanceUnit ?? 'yards');
         }
@@ -1315,6 +1485,7 @@ export function GpsRoundScreen({
           setActiveBagClubs([]);
           setWatchClubList([]);
           setUserClubs(null);
+          setManualClubDisplayYards({});
           setUserPlayerRating(null);
         }
       });
@@ -1637,6 +1808,7 @@ export function GpsRoundScreen({
     if (greenMapOnly && Number.isFinite(tapLng) && Number.isFinite(tapLat) && greenCenter) {
       const distToGreen = haversineYards(tapLat, tapLng, greenCenter.Latitude, greenCenter.Longitude);
       if (distToGreen < 60) {
+        setSuggestionTipExpanded(false);
         setPinCoords({ lat: tapLat, lng: tapLng });
         return;
       }
@@ -1651,6 +1823,10 @@ export function GpsRoundScreen({
       return;
     }
     if (mapMode !== 'gps') return;
+
+    if (!overlayState.anySheet && overlayState.shotFlow === 'idle') {
+      setSuggestionTipExpanded(false);
+    }
 
     if (overlayState.anySheet || overlayState.shotFlow !== 'idle') return;
 
@@ -1709,6 +1885,10 @@ export function GpsRoundScreen({
       measureLineFrom,
     });
   }, [activeGreenPoi, currentHoleShots, greenCenter, greenMapOnly, measurePin, overlayState.anySheet, overlayState.shotFlow, resetHoleCamera, teeBack, userPos]);
+
+  useEffect(() => {
+    setSuggestionTipExpanded(false);
+  }, [currentHoleIndex, overlayState.selectedClub]);
 
   const handleCameraChanged = useCallback((event) => {
     overlayRef.current?.handleCameraChanged?.(event);
@@ -1806,35 +1986,31 @@ export function GpsRoundScreen({
   }, [detectLieAtCoordinate, isReasonableShot, userPos, visibleHoles]);
 
   const handleWatchPutt = useCallback(() => {
-    if (!userPos) {
-      Alert.alert('GPS unavailable', 'Wait for a GPS fix before logging a putt from the Watch.');
-      return;
-    }
-    const id = `putt-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    commitShotToHole(currentHoleIndex, {
-      id,
-      club: 'Putter',
-      lie: 'Green',
-      lieColor: '#34D399',
-      shotKind: 'putt',
-      from: { lat: userPos.lat, lng: userPos.lng },
-      to: greenCenter ? { lat: greenCenter.Latitude, lng: greenCenter.Longitude } : null,
-      actualYards: null,
-      playingYards: greenCenter
-        ? haversineYards(userPos.lat, userPos.lng, greenCenter.Latitude, greenCenter.Longitude)
-        : null,
-      loggedAt: new Date().toISOString(),
-    });
     setHoleSummariesByHole((prev) => {
       const cur = prev[currentHoleIndex] || {};
-      if (typeof cur.putts === 'number') {
-        return {
-          ...prev,
-          [currentHoleIndex]: { ...cur, putts: cur.putts + 1 },
-        };
-      }
-      return prev;
+      const basePutts = typeof cur.putts === 'number' ? cur.putts : 0;
+      return {
+        ...prev,
+        [currentHoleIndex]: { ...cur, putts: basePutts + 1 },
+      };
     });
+    if (userPos) {
+      const id = `putt-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      commitShotToHole(currentHoleIndex, {
+        id,
+        club: 'Putter',
+        lie: 'Green',
+        lieColor: '#34D399',
+        shotKind: 'putt',
+        from: { lat: userPos.lat, lng: userPos.lng },
+        to: greenCenter ? { lat: greenCenter.Latitude, lng: greenCenter.Longitude } : null,
+        actualYards: null,
+        playingYards: greenCenter
+          ? haversineYards(userPos.lat, userPos.lng, greenCenter.Latitude, greenCenter.Longitude)
+          : null,
+        loggedAt: new Date().toISOString(),
+      });
+    }
   }, [commitShotToHole, currentHoleIndex, greenCenter, userPos]);
 
   const insertRetrospectiveShot = useCallback((holeIndex, insertAfterNum, shotInput) => {
@@ -1982,13 +2158,19 @@ export function GpsRoundScreen({
   useEffect(() => {
     if (Platform.OS !== 'ios') return undefined;
     const active = !loading && !!course && !error;
+    const holeNum = Math.max(
+      1,
+      Math.round(Number(currentHole?.hole ?? currentHoleIndex + 1)) || 1,
+    );
+    const clubsForWatch = (watchClubList || []).filter((c) => typeof c === 'string' && c.length > 0);
     updateWatchGpsContext({
       active,
-      hole: currentHole?.hole ?? currentHoleIndex + 1,
+      roundActive: active,
+      hole: holeNum,
       frt: yardageToWatchInt(yardages.front),
       ctr: yardageToWatchInt(yardages.center),
       bck: yardageToWatchInt(yardages.back),
-      clubs: watchClubList,
+      clubs: clubsForWatch,
     });
   }, [
     loading,
@@ -2001,6 +2183,21 @@ export function GpsRoundScreen({
     yardages.back,
     watchClubList,
   ]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return undefined;
+    return () => {
+      updateWatchGpsContext({
+        active: false,
+        roundActive: false,
+        hole: 0,
+        frt: 0,
+        ctr: 0,
+        bck: 0,
+        clubs: [],
+      });
+    };
+  }, []);
 
   const handleConfirmDistanceJump = useCallback(() => {
     if (!missedShotBanner?.shot) return;
@@ -2557,7 +2754,7 @@ export function GpsRoundScreen({
               </View>
             </MapboxGL.MarkerView>
           ))}
-          {hazardCarries.map((hazard, index) => (
+          {hazardCarriesFiltered.map((hazard, index) => (
             <MapboxGL.MarkerView
               key={hazard.id}
               id={`haz-${hazard.id}`}
@@ -2701,6 +2898,7 @@ export function GpsRoundScreen({
             teePoi={teeBack}
             holePar={currentHole?.par}
             userClubs={userClubs}
+            manualDisplayYards={manualClubDisplayYards}
             activeBagClubs={activeBagClubs}
             tournamentMode={tournamentMode}
             detectLieAtCoordinate={detectLieAtCoordinate}
@@ -2969,17 +3167,26 @@ export function GpsRoundScreen({
 
       <View style={styles.gpsHudWrap} pointerEvents="box-none">
       <GpsRoundHud
-        suggestion={holeSuggestion}
+        suggestion={clubChipSuggestion}
+        showSuggestionChip={activeBagClubs.length > 0}
+        suggestionChipPickedLabel={overlayState.shotFlow === 'idle' ? overlayState.selectedClub : null}
         holeNumber={currentHole?.hole || currentHoleIndex + 1}
         displayNudge={displayNudge}
-        showNudgeCard={Boolean(displayNudge)}
+        showNudgeCard={Boolean(displayNudge) && suggestionTipExpanded}
+        suggestionActive={suggestionTipExpanded}
         nudgeOverlayBottom={coachingOverlayBottom}
         onPressSuggestion={() => {
-          if (holeSuggestion?.state && holeSuggestion.state !== 'no_history') {
-            setShowSuggestionModal(true);
+          setSuggestionTipExpanded(false);
+          overlayRef.current?.openClubPicker?.();
+        }}
+        onLongPressSuggestion={() => {
+          if (displayNudge) {
+            setSuggestionTipExpanded((open) => !open);
             return;
           }
-          overlayRef.current?.openClubPicker?.();
+          if (holeSuggestion?.state && holeSuggestion.state !== 'no_history') {
+            setShowSuggestionModal(true);
+          }
         }}
         bottomBarHeight={GPS_BAR.BOTTOM_ACTION}
         yardageBarHeight={GPS_BAR.YARDAGE}
@@ -3082,7 +3289,11 @@ export function GpsRoundScreen({
       <View
         style={[
           styles.rightMapStack,
-          { bottom: insets.bottom + GPS_BAR.BOTTOM_ACTION + GPS_ABOVE_BAR.RIGHT_MAP_STACK },
+          {
+            bottom: insets.bottom + GPS_BAR.BOTTOM_ACTION + GPS_ABOVE_BAR.RIGHT_MAP_STACK
+              + (overlayState.shotFlow === 'mark' || overlayState.shotFlow === 'edit' ? GPS_BAR.PLACEMENT_YARDAGE_BAND : 0)
+              + (manualMode ? 44 : 0),
+          },
         ]}
         pointerEvents="box-none"
       >

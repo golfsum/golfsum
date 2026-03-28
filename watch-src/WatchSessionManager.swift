@@ -1,7 +1,7 @@
 import Foundation
 import WatchConnectivity
 
-/// watchOS: receives application context from iPhone, sends shot / putt / hole commands.
+/// watchOS: receives application context + immediate messages from iPhone, sends shot / putt / hole commands.
 final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
   static let shared = WatchSessionManager()
 
@@ -18,17 +18,34 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     let session = WCSession.default
     session.delegate = self
     session.activate()
-    applyContext(session.applicationContext)
-    phoneReachable = session.isReachable
+    DispatchQueue.main.async {
+      self.applyIncomingState(session.applicationContext)
+      self.phoneReachable = session.isReachable
+    }
   }
 
-  private func applyContext(_ context: [String: Any]) {
-    let active = context["active"] as? Bool ?? false
+  private func boolFrom(_ value: Any?) -> Bool {
+    if let b = value as? Bool { return b }
+    if let n = value as? NSNumber { return n.boolValue }
+    return false
+  }
+
+  private func intFrom(_ value: Any?) -> Int {
+    if let i = value as? Int { return i }
+    if let i = value as? Int32 { return Int(i) }
+    if let d = value as? Double { return Int(d.rounded()) }
+    if let n = value as? NSNumber { return n.intValue }
+    return 0
+  }
+
+  /// Merge keys from phone: `active` and/or `roundActive`, hole, frt, ctr, bck, clubs.
+  private func applyIncomingState(_ context: [String: Any]) {
+    let active = boolFrom(context["roundActive"]) || boolFrom(context["active"])
     roundActive = active
-    hole = context["hole"] as? Int ?? 0
-    frt = context["frt"] as? Int ?? 0
-    ctr = context["ctr"] as? Int ?? 0
-    bck = context["bck"] as? Int ?? 0
+    hole = intFrom(context["hole"])
+    frt = intFrom(context["frt"])
+    ctr = intFrom(context["ctr"])
+    bck = intFrom(context["bck"])
     if let list = context["clubs"] as? [String] {
       clubs = list
     } else {
@@ -78,6 +95,9 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
   ) {
     DispatchQueue.main.async {
       self.phoneReachable = session.isReachable
+      if activationState == .activated {
+        self.applyIncomingState(session.applicationContext)
+      }
     }
   }
 
@@ -89,7 +109,16 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
 
   func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
     DispatchQueue.main.async {
-      self.applyContext(applicationContext)
+      self.applyIncomingState(applicationContext)
+    }
+  }
+
+  func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+    DispatchQueue.main.async {
+      if let action = message["action"] as? String, action == "roundState" {
+        self.applyIncomingState(message)
+        return
+      }
     }
   }
 }

@@ -85,9 +85,10 @@ export function GpsGlassChrome({
 
   const playingValue = tournamentMode ? yardages.center : playingDistance?.adjustedYards ?? yardages.center;
   const playingGpsYards = Number.isFinite(selectedTeeYardage) ? selectedTeeYardage : yardages.center;
-  const windAdj = playingDistance?.windAdj ?? 0;
-  const tempAdj = playingDistance?.tempAdj ?? 0;
-  const elevAdj = playingDistance?.elevAdj ?? 0;
+  const windAdj = playingDistance?.windAdj;
+  const tempAdj = playingDistance?.tempAdj;
+  const elevAdj = playingDistance?.elevAdj;
+  const formatWte = (v) => (Number.isFinite(v) ? `${v >= 0 ? '+' : ''}${Math.round(v)}` : '—');
   const suffix = unitSuffix(distanceUnit);
   const playingDetailText = `GPS ${Number.isFinite(playingGpsYards) ? yardsToDisplay(playingGpsYards, distanceUnit) : '--'} ${suffix === 'y' ? 'yds' : 'm'}`;
   const distanceFromLabel = lastShotFrom
@@ -187,9 +188,11 @@ export function GpsGlassChrome({
           <Text style={styles.playingValue}>{displayPlaying}</Text>
           <Text style={styles.playingSub}>{distanceFromLabel}</Text>
           {!lastShotFrom ? <Text style={styles.playingSub}>{playingDetailText}</Text> : null}
-          <Text style={styles.playingAdjust}>
-            W {windAdj >= 0 ? '+' : ''}{windAdj} • T {tempAdj >= 0 ? '+' : ''}{tempAdj} • E {elevAdj >= 0 ? '+' : ''}{elevAdj}
-          </Text>
+          {!tournamentMode ? (
+            <Text style={styles.playingAdjust}>
+              W {formatWte(windAdj)} • T {formatWte(tempAdj)} • E {formatWte(elevAdj)}
+            </Text>
+          ) : null}
           <View style={styles.fcbRow}>
             <View style={styles.fcbCell}>
               <Text style={styles.fcbLabel} numberOfLines={1}>FRT</Text>

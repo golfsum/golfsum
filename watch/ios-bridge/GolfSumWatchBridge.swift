@@ -32,6 +32,9 @@ class GolfSumWatchBridge: RCTEventEmitter {
   }
 
   private func dispatchIncomingMessage(_ msg: [String: Any]) {
+    if let action = msg["action"] as? String, action == "roundState" {
+      return
+    }
     if let action = msg["action"] as? String,
        ["addShot", "addPutt", "advanceHole"].contains(action) {
       sendEvent(withName: "GolfSumWatchGpsCommand", body: msg)

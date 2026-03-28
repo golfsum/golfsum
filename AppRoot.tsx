@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -141,7 +141,7 @@ export default function App() {
     return () => sub.remove();
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const teardown = initializeWatchReceiver((event: WatchBridgeEvent) => {
       setRefreshTrigger(prev => prev + 1);
       if (event.type === 'end_round') {

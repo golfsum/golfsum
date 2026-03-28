@@ -44,7 +44,7 @@
     "expo-sharing": "~55.0.14",
     "expo-status-bar": "~55.0.4",
     "expo-store-review": "~55.0.9",
-    "expo-updates": "~55.0.15",
+    "expo-updates": "~55.0.16",
     "expo-web-browser": "~55.0.10",
     "firebase": "^12.7.0",
     "mapbox-gl": "^2.15.0",

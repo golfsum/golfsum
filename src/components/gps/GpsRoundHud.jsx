@@ -16,7 +16,10 @@ export function GpsRoundHud({
   showNudgeCard = false,
   nudgeOverlayBottom = 0,
   onPressSuggestion,
+  onLongPressSuggestion,
   suggestionActive = false,
+  showSuggestionChip = false,
+  suggestionChipPickedLabel = null,
   bottomBarHeight,
   yardageBarHeight,
   currentPutts,
@@ -161,19 +164,29 @@ export function GpsRoundHud({
           </View>
         ) : (
           <View style={[styles.bottomActionBar, { height: bottomBarHeight }]}>
-            {suggestion?.state && suggestion.state !== 'no_history' ? (
+            {showSuggestionChip && suggestion ? (
               <TouchableOpacity
                 style={[styles.suggestionInlineCard, suggestionActive && styles.suggestedWrapActive]}
                 onPress={onPressSuggestion}
+                onLongPress={onLongPressSuggestion}
+                delayLongPress={380}
                 activeOpacity={0.88}
               >
-                <SuggestedClubChip suggestion={suggestion} onPress={onPressSuggestion} compact />
+                <SuggestedClubChip
+                  suggestion={suggestion}
+                  pickedClubLabel={suggestionChipPickedLabel}
+                  compact
+                />
               </TouchableOpacity>
             ) : null}
 
             <View style={styles.puttStepper}>
-              <TouchableOpacity style={styles.puttStepperButton} onPress={onDecrementPutts}>
-                <Text style={styles.puttStepperButtonText}>-</Text>
+              <TouchableOpacity
+                style={[styles.puttStepperButton, currentPutts <= 0 && styles.puttStepperButtonDisabled]}
+                onPress={onDecrementPutts}
+                disabled={currentPutts <= 0}
+              >
+                <Text style={[styles.puttStepperButtonText, currentPutts <= 0 && styles.puttStepperButtonTextDisabled]}>-</Text>
               </TouchableOpacity>
               <View style={styles.puttStepperValueWrap}>
                 <Text style={styles.puttStepperValue}>{currentPutts}</Text>
@@ -407,6 +420,12 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
     fontSize: 18,
     fontWeight: '700',
+  },
+  puttStepperButtonDisabled: {
+    opacity: 0.35,
+  },
+  puttStepperButtonTextDisabled: {
+    color: 'rgba(255,255,255,0.35)',
   },
   puttStepperValueWrap: {
     alignItems: 'center',
