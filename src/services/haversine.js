@@ -47,3 +47,25 @@ export function bearingDeg(lat1, lon1, lat2, lon2) {
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
+/**
+ * Project a coordinate by a bearing and distance (yards).
+ * Small-distance approximation: accurate enough for green-edge offsets.
+ */
+export function projectPointYards(lat, lon, bearing, distanceYards) {
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lon) ||
+    !Number.isFinite(bearing) ||
+    !Number.isFinite(distanceYards)
+  ) {
+    return null;
+  }
+  const yardsPerDegreeLat = 121440;
+  const r = toRad(bearing);
+  const dLat = Math.cos(r) * distanceYards;
+  const dLon = Math.sin(r) * distanceYards;
+  const nextLat = lat + (dLat / yardsPerDegreeLat);
+  const nextLon = lon + (dLon / (yardsPerDegreeLat * Math.cos(toRad(lat))));
+  return { lat: nextLat, lng: nextLon };
+}
+

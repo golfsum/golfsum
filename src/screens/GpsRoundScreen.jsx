@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getCourse, saveCourse } from '../services/courseCache';
 import { fetchCourseHolesFromBackend } from '../services/golfApi';
 import { requestGpsPermission, watchUserPosition, classifyGpsQuality } from '../services/gps';
-import { haversineYards } from '../services/haversine';
+import { bearingDeg, haversineYards, projectPointYards } from '../services/haversine';
 import { rs } from '../utils/responsive';
 import { MAPBOX_PUBLIC_TOKEN } from '../config/mapbox';
 import { buildStaticHoleMapUrl, greenPoiFromHole, teePoiFromHole } from '../utils/gpsHoleMapSnapshot';
@@ -507,6 +507,29 @@ function getHazardPillOffsetStyle(hazard, index = 0) {
   };
 }
 
+function orderGreenEdgesByTee({ teePoi, centerPoi, edgeA, edgeB }) {
+  if (!edgeA || !edgeB) return { front: edgeA || null, back: edgeB || null };
+  const tee = teePoi
+    ? { lat: teePoi.Latitude, lng: teePoi.Longitude }
+    : null;
+  if (tee) {
+    const da = haversineYards(tee.lat, tee.lng, edgeA.Latitude, edgeA.Longitude);
+    const db = haversineYards(tee.lat, tee.lng, edgeB.Latitude, edgeB.Longitude);
+    if (Number.isFinite(da) && Number.isFinite(db) && da !== db) {
+      return da < db ? { front: edgeA, back: edgeB } : { front: edgeB, back: edgeA };
+    }
+  }
+  // Fallback: assume "front" is the edge closer to the green center.
+  if (centerPoi) {
+    const ca = haversineYards(centerPoi.Latitude, centerPoi.Longitude, edgeA.Latitude, edgeA.Longitude);
+    const cb = haversineYards(centerPoi.Latitude, centerPoi.Longitude, edgeB.Latitude, edgeB.Longitude);
+    if (Number.isFinite(ca) && Number.isFinite(cb) && ca !== cb) {
+      return ca < cb ? { front: edgeA, back: edgeB } : { front: edgeB, back: edgeA };
+    }
+  }
+  return { front: edgeA, back: edgeB };
+}
+
 export function GpsRoundScreen({
   courseId,
   courseName,
@@ -530,7 +553,7 @@ export function GpsRoundScreen({
   const [currentHoleIndex, setCurrentHoleIndex] = useState(() => (
     resumedRoundData?.currentHoleIndex != null
       ? resumedRoundData.currentHoleIndex
-      : Math.max(0, (startingHole || 1) - 1)
+      : 0
   ));
   // userPos is now part of gpsState (batched with accuracy + quality)
   const [yardages, setYardages] = useState({ front: '--', center: '--', back: '--' });
@@ -797,14 +820,12 @@ export function GpsRoundScreen({
     return 'plan';
   }, [userNearHole, userPos, teeBack, gpsQuality]);
 
-  /** Ball position for playing yardages: live GPS after shots, else last shot start, else tee / user. */
+  /** Ball position for playing yardages: last logged landing (to) when available, else tee / user. */
   const yardageOrigin = useMemo(() => {
     const hasShots = currentHoleShots.length > 0;
-    if (hasShots && userPos && gpsQuality !== 'none') {
-      return { lat: userPos.lat, lng: userPos.lng };
-    }
     if (hasShots) {
       const lastShot = currentHoleShots[currentHoleShots.length - 1];
+      if (lastShot?.to) return { lat: lastShot.to.lat, lng: lastShot.to.lng };
       if (lastShot?.from) return { lat: lastShot.from.lat, lng: lastShot.from.lng };
     }
     if (distanceMode === 'live' && userPos) return { lat: userPos.lat, lng: userPos.lng };
@@ -813,12 +834,35 @@ export function GpsRoundScreen({
   }, [currentHoleShots, distanceMode, gpsQuality, teeBack, userPos]);
 
   const lastShotFrom = useMemo(() => (currentHoleShots.length > 0 ? yardageOrigin : null), [currentHoleShots.length, yardageOrigin]);
-  const greenCenter = useMemo(
-    () => findPoi(currentHole, 'Green', 'C'),
-    [currentHole]
-  );
-  const greenFront = useMemo(() => findPoi(currentHole, 'Green', 'F'), [currentHole]);
-  const greenBack = useMemo(() => findPoi(currentHole, 'Green', 'B'), [currentHole]);
+  const greenCenter = useMemo(() => findPoi(currentHole, 'Green', 'C'), [currentHole]);
+  const rawGreenFront = useMemo(() => findPoi(currentHole, 'Green', 'F'), [currentHole]);
+  const rawGreenBack = useMemo(() => findPoi(currentHole, 'Green', 'B'), [currentHole]);
+  const { greenFront, greenBack } = useMemo(() => {
+    // Prefer real edge POIs; if mislabeled by API, sort by tee distance so FRT < CTR < BCK.
+    const ordered = orderGreenEdgesByTee({
+      teePoi: selectedTeePoi || teeBack,
+      centerPoi: greenCenter,
+      edgeA: rawGreenFront,
+      edgeB: rawGreenBack,
+    });
+    let front = ordered.front;
+    let back = ordered.back;
+
+    // If missing edges entirely, fall back to a small projection around center.
+    if (!front && !back && greenCenter && (selectedTeePoi || teeBack)) {
+      const tee = selectedTeePoi
+        ? { lat: selectedTeePoi.Latitude, lng: selectedTeePoi.Longitude }
+        : { lat: teeBack.Latitude, lng: teeBack.Longitude };
+      const brg = bearingDeg(tee.lat, tee.lng, greenCenter.Latitude, greenCenter.Longitude);
+      const frontPt = projectPointYards(greenCenter.Latitude, greenCenter.Longitude, (brg + 180) % 360, 15);
+      const backPt = projectPointYards(greenCenter.Latitude, greenCenter.Longitude, brg, 15);
+      if (frontPt && backPt) {
+        front = { Latitude: frontPt.lat, Longitude: frontPt.lng };
+        back = { Latitude: backPt.lat, Longitude: backPt.lng };
+      }
+    }
+    return { greenFront: front || null, greenBack: back || null };
+  }, [greenCenter, rawGreenBack, rawGreenFront, selectedTeePoi, teeBack]);
   const activeGreenPoi = useMemo(() => {
     if (pinCoords) return { Latitude: pinCoords.lat, Longitude: pinCoords.lng };
     if (greenTarget === 'front' && greenFront) return greenFront;
@@ -1459,8 +1503,12 @@ export function GpsRoundScreen({
   }, [courseId, teeColor]);
 
   useEffect(() => {
-    setCurrentHoleIndex(Math.max(0, Math.min(visibleHoles.length - 1, (startingHole || 1) - 1)));
-  }, [startingHole, courseId, visibleHoles.length]);
+    // `currentHoleIndex` is relative to `visibleHoles`, not absolute 1-18.
+    const absolute = Math.max(1, Number(startingHole) || 1);
+    const offset = holeWindow.custom ? 1 : (holeWindow.startIndex + 1);
+    const next = Math.max(0, (absolute - offset));
+    setCurrentHoleIndex(Math.max(0, Math.min(visibleHoles.length - 1, next)));
+  }, [startingHole, courseId, holeWindow.custom, holeWindow.startIndex, visibleHoles.length]);
 
   useEffect(() => {
     let active = true;
@@ -2157,7 +2205,9 @@ export function GpsRoundScreen({
 
   useEffect(() => {
     if (Platform.OS !== 'ios') return undefined;
-    const active = !loading && !!course && !error;
+    // Consider the round "active" whenever this screen is mounted.
+    // Course loading can fail (offline, API hiccup) but the watch should still show an active round.
+    const active = true;
     const holeNum = Math.max(
       1,
       Math.round(Number(currentHole?.hole ?? currentHoleIndex + 1)) || 1,
@@ -2173,8 +2223,6 @@ export function GpsRoundScreen({
       clubs: clubsForWatch,
     });
   }, [
-    loading,
-    course,
     error,
     currentHole?.hole,
     currentHoleIndex,

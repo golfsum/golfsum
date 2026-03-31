@@ -83,6 +83,7 @@ const RoundCardComponent: React.FC<RoundCardProps> = ({
   const scrambling = scramblingStats ? scramblingStats.percent : null;
   const gpsGreenSummaries = round.gpsHoleSummaries ?? [];
   const gpsTrackedGreens = gpsGreenSummaries.length;
+  const isGpsRound = (round.gpsShotCount ?? round.gpsShots?.length ?? 0) > 0;
   const firstPuttValues = gpsGreenSummaries
     .map((summary) => summary.firstPuttDistance)
     .filter((value): value is number => value !== null && value !== undefined);
@@ -219,6 +220,12 @@ const RoundCardComponent: React.FC<RoundCardProps> = ({
               </Text>
             )}
             <View style={styles.roundCardBadgeRow}>
+              {isGpsRound && (
+                <View style={styles.gpsBadge}>
+                  <Ionicons name="navigate" size={12} color="#22C55E" />
+                  <Text style={styles.gpsBadgeText}>GPS</Text>
+                </View>
+              )}
               {round.isCustomCourse && (
                 <View style={styles.customCourseBadge}>
                   <Ionicons name="create-outline" size={12} color="#3B82F6" />

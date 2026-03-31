@@ -30,6 +30,7 @@ import { logger } from '../utils/logger';
 import { MilestoneEvent } from '../services/milestoneDetector';
 import { getCurrentUser } from '../services/firebaseAuthService';
 import { NativeCoursePlanningScreen, NativeGpsRoundReviewScreen } from './nativeScreens';
+import { GpsRoundReviewScreen } from '../screens/GpsRoundReviewScreen';
 
 type AppMainContentProps = {
   currentScreen: AppScreen;
@@ -193,6 +194,16 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
       <NativeGpsRoundReviewScreen
         round={props.selectedRound}
         onBack={() => props.onSetCurrentScreen('round-detail')}
+      />
+    );
+  }
+
+  if (props.currentScreen === 'gps-round-summary' && props.selectedRound) {
+    return (
+      <GpsRoundReviewScreen
+        round={props.selectedRound}
+        courseData={undefined}
+        onBack={() => props.onSetCurrentScreen('tabs')}
       />
     );
   }

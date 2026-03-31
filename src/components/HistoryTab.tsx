@@ -1121,6 +1121,16 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     flexShrink: 0,
   },
+  gpsBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: `${colors.semantic.success}22`,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    flexShrink: 0,
+  },
   shotgunBadge: {
     backgroundColor: `${colors.semantic.warning}33`,
   },
@@ -1134,6 +1144,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: colors.semantic.info,
+  },
+  gpsBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.semantic.success,
   },
   shotgunBadgeText: {
     color: colors.semantic.warning,

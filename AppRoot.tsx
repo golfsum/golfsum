@@ -46,6 +46,7 @@ import {
   type GpsInProgressRound,
 } from './src/services/inProgressRoundService';
 import { savePausedGpsAsPartialRound } from './src/services/savePausedGpsAsPartialRound';
+import { saveCompletedGpsRoundToHistory } from './src/services/saveCompletedGpsRoundToHistory';
 import {
   closePauseEvent,
   createEstimatedPauseEvent,
@@ -591,22 +592,40 @@ export default function App() {
     setCurrentScreen('score-entry');
   };
 
-  const handleFinishGpsRound = (data: PendingGpsRoundData) => {
-    setPendingGpsRoundData(data);
-    setSelectedCourseId(data.courseId);
-    setSelectedCourseData(null);
-    setQuickStartSettings({
-      teeName: data.teeName,
-      startingHole: data.startingHole || 1,
-      endingHole: data.endingHole || 18,
-      roundLength: data.roundLength || '18',
-      routeHoleNumbers: data.routeHoleNumbers,
-      routeLabel: data.routeLabel,
-    });
-    setResumeDraft(null);
-    setGpsRoundCourse(null);
-    setGpsResumeData(null);
-    setCurrentScreen('score-entry');
+  const handleFinishGpsRound = async (data: PendingGpsRoundData) => {
+    // Save GPS rounds directly to history (avoid routing through score-entry / old scorecard flow).
+    try {
+      const saved = await saveCompletedGpsRoundToHistory(data);
+      setSelectedRound(saved);
+      setGpsRoundCourse(null);
+      setGpsResumeData(null);
+      setPendingGpsRoundData(null);
+      setQuickStartSettings({});
+      setResumeDraft(null);
+      setSelectedCourseId(null);
+      setSelectedCourseData(null);
+      setRefreshTrigger(prev => prev + 1);
+      setCurrentScreen('gps-round-summary');
+    } catch (e) {
+      logger.error('Failed to save GPS round', e);
+      Alert.alert('Save failed', 'Could not save this GPS round. Please try again.');
+      // Fallback to the previous flow so the user can still preserve their data.
+      setPendingGpsRoundData(data);
+      setSelectedCourseId(data.courseId);
+      setSelectedCourseData(null);
+      setQuickStartSettings({
+        teeName: data.teeName,
+        startingHole: data.startingHole || 1,
+        endingHole: data.endingHole || 18,
+        roundLength: data.roundLength || '18',
+        routeHoleNumbers: data.routeHoleNumbers,
+        routeLabel: data.routeLabel,
+      });
+      setResumeDraft(null);
+      setGpsRoundCourse(null);
+      setGpsResumeData(null);
+      setCurrentScreen('score-entry');
+    }
   };
 
   const handleResumePausedGpsRound = async (bucket: string | null) => {

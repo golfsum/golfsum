@@ -118,8 +118,15 @@ export function GpsGlassChrome({
             <Ionicons name="arrow-back" size={20} color="#E5E7EB" />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <Text style={styles.courseName} numberOfLines={1}>{courseName || 'GPS Round'}</Text>
-            <Text style={styles.subMeta} numberOfLines={1}>
+            <Text
+              style={styles.courseName}
+              numberOfLines={2}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+            >
+              {courseName || 'GPS Round'}
+            </Text>
+            <Text style={styles.subMeta} numberOfLines={2}>
               {cachedLabel} • {selectedTeeName || '--'}{routeLabel ? ` • ${routeLabel}` : ''} • {selectedTeeYardage ? `${yardsToDisplay(selectedTeeYardage, distanceUnit)}${suffix}` : '--'}
             </Text>
             <Text style={styles.selectorHoleContextTop} numberOfLines={1}>{selectorHoleContext}</Text>

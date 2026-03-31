@@ -10,6 +10,7 @@ export type AppScreen =
   | 'course-analytics'
   | 'pro-upgrade'
   | 'gps-round'
+  | 'gps-round-summary'
   | 'gps-round-review'
   | 'course-planning';
 

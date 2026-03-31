@@ -1,4 +1,5 @@
 import Foundation
+import UserNotifications
 import WatchConnectivity
 
 /// watchOS: receives application context + immediate messages from iPhone, sends shot / putt / hole commands.
@@ -12,9 +13,11 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
   @Published var bck: Int = 0
   @Published var clubs: [String] = []
   @Published var phoneReachable = false
+  private var hasNotifiedRoundStart = false
 
   func activate() {
     guard WCSession.isSupported() else { return }
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     let session = WCSession.default
     session.delegate = self
     session.activate()
@@ -41,6 +44,12 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
   /// Merge keys from phone: `active` and/or `roundActive`, hole, frt, ctr, bck, clubs.
   private func applyIncomingState(_ context: [String: Any]) {
     let active = boolFrom(context["roundActive"]) || boolFrom(context["active"])
+    if active && !roundActive {
+      notifyRoundStartedIfNeeded()
+    }
+    if !active {
+      hasNotifiedRoundStart = false
+    }
     roundActive = active
     hole = intFrom(context["hole"])
     frt = intFrom(context["frt"])
@@ -51,6 +60,17 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     } else {
       clubs = []
     }
+  }
+
+  private func notifyRoundStartedIfNeeded() {
+    guard !hasNotifiedRoundStart else { return }
+    hasNotifiedRoundStart = true
+    let content = UNMutableNotificationContent()
+    content.title = "Round started"
+    content.body = "GolfSum is tracking your round. Open the app to log shots."
+    content.sound = .default
+    let request = UNNotificationRequest(identifier: "golfsum.round.started", content: content, trigger: nil)
+    UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
   }
 
   func sendAddShot(club: String, reply: @escaping (Bool) -> Void) {
