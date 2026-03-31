@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getCourse, saveCourse } from '../services/courseCache';
 import { fetchCourseHolesFromBackend } from '../services/golfApi';
 import { requestGpsPermission, watchUserPosition, classifyGpsQuality } from '../services/gps';
-import { bearingDeg, haversineYards, projectPointYards } from '../services/haversine';
+import { haversineYards, projectPointYards } from '../services/haversine';
 import { rs } from '../utils/responsive';
 import { MAPBOX_PUBLIC_TOKEN } from '../config/mapbox';
 import { buildStaticHoleMapUrl, greenPoiFromHole, teePoiFromHole } from '../utils/gpsHoleMapSnapshot';
