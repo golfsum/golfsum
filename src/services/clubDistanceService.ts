@@ -278,6 +278,49 @@ export function lookupYardsInClubMap(
 }
 
 /**
+ * Stable bag order for UI rails (driver → woods/hybrids → irons → wedges → other → putter),
+ * then longest-to-shortest carry within each tier when yardages exist.
+ */
+export function sortBagClubsForDisplay(
+  clubs: string[],
+  yardMap?: Record<string, number> | null
+): string[] {
+  const typical = (label: string): number => {
+    const y = lookupYardsInClubMap(label, yardMap ?? null);
+    return y != null && Number.isFinite(y) ? y : -1;
+  };
+
+  const tier = (label: string): { t: number; sub: number } => {
+    const k = normalizeClubKey(label);
+    const ty = typical(label);
+    const byCarryDesc = ty > 0 ? -ty : 0;
+
+    if (k === 'driver' || k === '1w') return { t: 0, sub: 0 };
+    if (k.includes('wood') || /^\d+w$/.test(k)) return { t: 1, sub: byCarryDesc };
+    if (k.includes('hybrid') || /^\d+h$/.test(k)) return { t: 2, sub: byCarryDesc };
+    if (k.includes('iron') || /^\d+i$/.test(k)) {
+      const m = k.match(/(\d+)/);
+      const num = m ? Number(m[1]) : 0;
+      return { t: 3, sub: num ? -num : byCarryDesc };
+    }
+    if (['pw', 'aw', 'gw', 'sw', 'lw'].includes(k)) {
+      const order = { pw: 50, aw: 40, gw: 30, sw: 20, lw: 10 } as Record<string, number>;
+      return { t: 4, sub: -(order[k] ?? 0) * 1000 + byCarryDesc };
+    }
+    if (k === 'putter') return { t: 100, sub: 0 };
+    return { t: 50, sub: byCarryDesc };
+  };
+
+  return [...clubs].filter(Boolean).sort((a, b) => {
+    const ta = tier(a);
+    const tb = tier(b);
+    if (ta.t !== tb.t) return ta.t - tb.t;
+    if (ta.sub !== tb.sub) return ta.sub - tb.sub;
+    return a.localeCompare(b);
+  });
+}
+
+/**
  * Deduplicate bag club names (case-insensitive). Prefer the entry that has a positive yardage from getYards.
  */
 export function dedupeActiveBagClubs(

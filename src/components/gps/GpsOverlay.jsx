@@ -17,7 +17,7 @@ import {
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { randomUUID } from 'expo-crypto';
 import { haversineYards } from '../../services/haversine';
-import { lookupYardsInClubMap } from '../../services/clubDistanceService';
+import { lookupYardsInClubMap, sortBagClubsForDisplay } from '../../services/clubDistanceService';
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout';
 import { colors, radius } from '../../theme/tokens';
 import { GPS_MAP_OVERLAY } from '../../constants/gpsLayout';
@@ -135,6 +135,10 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
     userClubs = null,
     /** Profile manual carry distances only — shown on picker cards. */
     manualDisplayYards = null,
+    /** Same playing yards as main HUD when overlay distance would be unreliable (GPS jump, etc.). */
+    sheetPlayingYards = null,
+    /** Short coaching line for the club picker (nudge / hole history). */
+    caddieTipText = null,
     activeBagClubs = [],
     tournamentMode = false,
     detectLieAtCoordinate,
@@ -264,6 +268,9 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
       const prePicked = selectedClubRef.current || presetClub || null;
       if (prePicked) {
         setSelectedClub(prePicked);
+        const shotWithClub = { ...nextShot, club: prePicked };
+        shotInProgressRef.current = shotWithClub;
+        setShotInProgress(shotWithClub);
         setClubPickerOpen(false);
         mapModeRef.current = 'mark';
         setMapMode('mark');
@@ -434,16 +441,10 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
     userClubs,
   ]);
 
-  const clubsOrdered = useMemo(() => {
-    const list = [...(activeBagClubs || [])];
-    list.sort((a, b) => {
-      const ya = lookupYardsInClubMap(a, userClubs) ?? -1;
-      const yb = lookupYardsInClubMap(b, userClubs) ?? -1;
-      if (ya !== yb) return yb - ya;
-      return a.localeCompare(b);
-    });
-    return list;
-  }, [activeBagClubs, userClubs]);
+  const clubsOrdered = useMemo(
+    () => sortBagClubsForDisplay([...(activeBagClubs || [])], userClubs),
+    [activeBagClubs, userClubs],
+  );
 
   const liveTargetYards = useMemo(() => {
     if (targetPoint && Number.isFinite(targetDistance)) {
@@ -462,6 +463,23 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
     tournamentMode,
     userPos,
   ]);
+
+  const sheetSubtitleYards = useMemo(() => {
+    const sheet = Number(sheetPlayingYards);
+    const live = liveTargetYards;
+    const liveOk = Number.isFinite(live) && live > 0 && live <= 900;
+    const sheetOk = Number.isFinite(sheet) && sheet > 0 && sheet <= 900;
+    if (sheetOk && (!liveOk || live > 900)) return sheet;
+    return liveOk ? live : sheetOk ? sheet : null;
+  }, [liveTargetYards, sheetPlayingYards]);
+
+  /** Prefer measured target when user placed a preview point; else sheet-safe yards. */
+  const chipRefYards = useMemo(() => {
+    if (targetPoint && Number.isFinite(liveTargetYards) && liveTargetYards > 0 && liveTargetYards <= 900) {
+      return liveTargetYards;
+    }
+    return sheetSubtitleYards;
+  }, [liveTargetYards, sheetSubtitleYards, targetPoint]);
 
   const activeClub = selectedClub || clubSuggestion.best?.club || null;
   const autoLie = useMemo(() => {
@@ -572,8 +590,11 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
   const selectClubForShot = (club) => {
     setSelectedClub(club);
     setClubPickerOpen(false);
-    const inProgress = Boolean(shotInProgressRef.current);
-    if (inProgress && mapModeRef.current !== 'edit') {
+    const currentShot = shotInProgressRef.current;
+    if (currentShot && mapModeRef.current !== 'edit') {
+      const updated = { ...currentShot, club };
+      shotInProgressRef.current = updated;
+      setShotInProgress(updated);
       mapModeRef.current = 'mark';
       setMapMode('mark');
     }
@@ -679,9 +700,14 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
                 <Text style={styles.modalTitle}>Select Club</Text>
                 <Text style={styles.sheetSubtitle}>
                   {tournamentMode
-                    ? `GPS ${liveTargetYards != null ? Math.round(liveTargetYards) : '--'} yds`
-                    : `Playing ${liveTargetYards != null ? Math.round(liveTargetYards) : '--'} yds`}
+                    ? `GPS ${sheetSubtitleYards != null ? Math.round(sheetSubtitleYards) : '--'} yds`
+                    : `Playing ${sheetSubtitleYards != null ? Math.round(sheetSubtitleYards) : '--'} yds`}
                 </Text>
+                {caddieTipText ? (
+                  <Text style={styles.sheetCaddieTip} numberOfLines={4}>
+                    {caddieTipText}
+                  </Text>
+                ) : null}
               </View>
               <TouchableOpacity style={styles.sheetClose} onPress={dismissClubPicker}>
                 <Text style={styles.sheetCloseText}>✕</Text>
@@ -704,10 +730,12 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
                   contentContainerStyle={styles.clubRail}
                 >
                   {clubsOrdered.map((club) => {
-                    const manualY = lookupYardsInClubMap(club, manualDisplayYards);
+                    const manualY =
+                      lookupYardsInClubMap(club, manualDisplayYards)
+                      ?? lookupYardsInClubMap(club, userClubs);
                     const diff =
-                      manualY != null && Number.isFinite(liveTargetYards)
-                        ? Math.round(liveTargetYards - manualY)
+                      manualY != null && Number.isFinite(chipRefYards)
+                        ? Math.round(chipRefYards - manualY)
                         : null;
                     const active = selectedClub === club;
                     const isBest = clubSuggestion.best?.club === club;
@@ -1021,6 +1049,13 @@ const styles = StyleSheet.create({
     color: colors.brand.primary,
     fontSize: 11,
     marginTop: 2,
+  },
+  sheetCaddieTip: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 8,
+    maxWidth: '88%',
   },
   sheetClose: {
     width: 26,

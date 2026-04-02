@@ -1327,6 +1327,55 @@ export function GpsRoundScreen({
     if (inlineCoachingCard && activeNudge.title === 'Course note') return null;
     return activeNudge;
   }, [activeNudge, inlineCoachingCard]);
+
+  const holeCoachingTipForSheets = useMemo(() => {
+    if (!coachingEnabled || showGreenSheet) return null;
+    const n = buildInRoundNudge({
+      holeNumber: currentHole?.hole || currentHoleIndex + 1,
+      holePar: currentHole?.par || 4,
+      liveLie: liveLie?.lie || null,
+      selectedClub: overlayState.selectedClub || null,
+      suggestedClub: effectiveSuggestedClub?.club || null,
+      centerYards,
+      playingYards: playingDistance?.adjustedYards ?? null,
+      tournamentMode,
+      weather,
+      hazardCarries: hazardCarriesFiltered,
+      currentRoundShots,
+      greenSummary: currentHoleSummary,
+      context: nudgeContext,
+    });
+    if (!n || n.type === 'tee-club') return null;
+    return n;
+  }, [
+    centerYards,
+    coachingEnabled,
+    currentHole?.hole,
+    currentHole?.par,
+    currentHoleIndex,
+    currentHoleSummary,
+    currentRoundShots,
+    effectiveSuggestedClub?.club,
+    hazardCarriesFiltered,
+    liveLie?.lie,
+    nudgeContext,
+    overlayState.selectedClub,
+    playingDistance?.adjustedYards,
+    showGreenSheet,
+    tournamentMode,
+    weather,
+  ]);
+
+  const clubSheetCaddieText = useMemo(() => {
+    const parts = [];
+    if (holeCoachingTipForSheets?.body) parts.push(holeCoachingTipForSheets.body);
+    if (holeCoachingTipForSheets?.support) parts.push(holeCoachingTipForSheets.support);
+    if (parts.length) return parts.join('\n');
+    if (holeSuggestion?.state && holeSuggestion.state !== 'no_history' && holeSuggestion.body) {
+      return [holeSuggestion.body, holeSuggestion.support].filter(Boolean).join('\n');
+    }
+    return null;
+  }, [holeCoachingTipForSheets, holeSuggestion]);
   // Stack height above home indicator: yardage strip + main bar + device inset.
   const coachingOverlayBottom =
     insets.bottom +
@@ -1828,21 +1877,40 @@ export function GpsRoundScreen({
     });
   }, []);
 
-  const handleGreenMapToggle = useCallback(() => {
+  const handleGreenViewPress = useCallback(() => {
     if (!cameraRef.current || !greenCenter) return;
     if (greenMapOnly) {
-      resetHoleCamera(true);
-      setGreenMapOnly(false);
+      const nextModeTarget = greenTarget === 'front' ? 'center' : greenTarget === 'center' ? 'back' : 'front';
+      setGreenTarget(nextModeTarget);
+      const poi =
+        nextModeTarget === 'front' && greenFront
+          ? greenFront
+          : nextModeTarget === 'back' && greenBack
+            ? greenBack
+            : greenCenter;
+      cameraRef.current?.setCamera({
+        centerCoordinate: [poi.Longitude, poi.Latitude],
+        zoomLevel: 18.5,
+        animationDuration: 700,
+        animationMode: 'flyTo',
+      });
       return;
     }
+    const poi = activeGreenPoi || greenCenter;
     cameraRef.current?.setCamera({
-      centerCoordinate: [greenCenter.Longitude, greenCenter.Latitude],
+      centerCoordinate: [poi.Longitude, poi.Latitude],
       zoomLevel: 18.5,
       animationDuration: 700,
       animationMode: 'flyTo',
     });
     setGreenMapOnly(true);
-  }, [greenCenter, greenMapOnly, resetHoleCamera]);
+  }, [activeGreenPoi, greenBack, greenCenter, greenFront, greenMapOnly, greenTarget]);
+
+  const handleMapOverviewPress = useCallback(() => {
+    if (!greenMapOnly) return;
+    resetHoleCamera(true);
+    setGreenMapOnly(false);
+  }, [greenMapOnly, resetHoleCamera]);
 
   const [measurePin, setMeasurePin] = useState(null);
   const [pinCoords, setPinCoords] = useState(null);
@@ -1942,7 +2010,7 @@ export function GpsRoundScreen({
     overlayRef.current?.handleCameraChanged?.(event);
     // Reset green zoom state if user manually zooms out
     const zoom = event?.properties?.zoom;
-    if (Number.isFinite(zoom) && zoom < 16.5 && greenMapOnly) {
+    if (Number.isFinite(zoom) && zoom < 14 && greenMapOnly) {
       setGreenMapOnly(false);
     }
   }, [greenMapOnly]);
@@ -2947,6 +3015,12 @@ export function GpsRoundScreen({
             holePar={currentHole?.par}
             userClubs={userClubs}
             manualDisplayYards={manualClubDisplayYards}
+            sheetPlayingYards={
+              tournamentMode
+                ? (Number.isFinite(targetYards) ? targetYards : centerYards)
+                : (playingDistance?.adjustedYards ?? centerYards)
+            }
+            caddieTipText={clubSheetCaddieText}
             activeBagClubs={activeBagClubs}
             tournamentMode={tournamentMode}
             detectLieAtCoordinate={detectLieAtCoordinate}
@@ -3361,12 +3435,21 @@ export function GpsRoundScreen({
             ) : null}
           </TouchableOpacity>
         ) : null}
-        <TouchableOpacity style={[styles.greenPill, greenMapOnly && styles.greenPillActive]} onPress={handleGreenMapToggle}>
+        <TouchableOpacity
+          style={[styles.greenPill, greenMapOnly && styles.greenPillActive]}
+          onPress={handleGreenViewPress}
+        >
           <Ionicons name="golf-outline" size={14} color={greenMapOnly ? '#fff' : colors.brand.primary} />
           <Text style={[styles.greenPillText, greenMapOnly && styles.greenPillTextActive]}>
-            {greenMapOnly ? 'Overview' : greenTarget === 'front' ? 'Front' : greenTarget === 'back' ? 'Back' : 'Green'}
+            {greenTarget === 'front' ? 'Front' : greenTarget === 'back' ? 'Back' : 'Green'}
           </Text>
         </TouchableOpacity>
+        {greenMapOnly ? (
+          <TouchableOpacity style={[styles.greenPill, styles.overviewPill]} onPress={handleMapOverviewPress}>
+            <Ionicons name="expand-outline" size={14} color="#fff" />
+            <Text style={[styles.greenPillText, styles.greenPillTextActive]}>Overview</Text>
+          </TouchableOpacity>
+        ) : null}
         {liveLie?.lie === 'Green' && (
           <TouchableOpacity style={styles.greenMarkButton} onPress={() => setShowGreenSheet(true)}>
             <Text style={styles.greenMarkText}>Mark Green</Text>
@@ -4336,6 +4419,10 @@ const styles = StyleSheet.create({
   },
   greenPillTextActive: {
     color: '#fff',
+  },
+  overviewPill: {
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderColor: 'rgba(255,255,255,0.22)',
   },
   dispersionPill: {
     position: 'relative',
