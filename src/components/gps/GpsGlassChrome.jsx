@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useRef, useState } from 'react';
+import { Animated, LayoutAnimation, Platform, StyleSheet, Text, TouchableOpacity, UIManager, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { HoleSelectorBar } from './HoleSelectorBar';
 import { haversineYards } from '../../services/haversine';
@@ -7,6 +7,10 @@ import { colors, radius, spacing } from '../../theme/tokens';
 import { rs } from '../../utils/responsive';
 import { GPS_CHROME, GPS_Z } from '../../constants/gpsLayout';
 import { unitSuffix, yardsToDisplay } from '../../utils/units';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 export function GpsGlassChrome({
   courseName,
@@ -21,14 +25,9 @@ export function GpsGlassChrome({
   loggedHoles = [],
   onSelectHole,
   onBack,
-  onGpsPress,
-  gpsLabel = 'GPS',
-  gpsIcon = 'navigate',
   onCardPress,
-  onFinishRound,
   weatherText = '',
   weatherIcon = null,
-  showOffCourse = true,
   yardages = { front: '--', center: '--', back: '--' },
   playingDistance = null,
   tournamentMode = false,
@@ -43,6 +42,7 @@ export function GpsGlassChrome({
   currentHoleShotCount = 0,
   distanceUnit = 'yards',
 }) {
+  const [headerExpanded, setHeaderExpanded] = useState(false);
   const [chromeBottom, setChromeBottom] = useState(0);
 
   if (!hole) return null;
@@ -115,105 +115,96 @@ export function GpsGlassChrome({
     : holeScores;
 
   const playingValue = tournamentMode ? yardages.center : playingDistance?.adjustedYards ?? yardages.center;
-  const playingGpsYards = Number.isFinite(selectedTeeYardage) ? selectedTeeYardage : yardages.center;
-  const windAdj = playingDistance?.windAdj;
-  const tempAdj = playingDistance?.tempAdj;
-  const elevAdj = playingDistance?.elevAdj;
-  const formatWte = (v) => (Number.isFinite(v) ? `${v >= 0 ? '+' : ''}${Math.round(v)}` : '—');
   const suffix = unitSuffix(distanceUnit);
   const teeBase = Number.isFinite(teeYardage) ? Math.round(teeYardage) : null;
+  const displayCenter = Number.isFinite(yardages.center) ? Math.round(yardages.center) : '--';
+  const displayFront = isOffCourse && teeBack && greenFront
+    ? Math.round(haversineYards(teeBack.Latitude, teeBack.Longitude, greenFront.Latitude, greenFront.Longitude))
+    : (Number.isFinite(yardages.front) ? Math.round(yardages.front) : '--');
+  const displayBack = isOffCourse && teeBack && greenBack
+    ? Math.round(haversineYards(teeBack.Latitude, teeBack.Longitude, greenBack.Latitude, greenBack.Longitude))
+    : (Number.isFinite(yardages.back) ? Math.round(yardages.back) : '--');
   const scorecardYardageText = teeBase ? `Scorecard Yardage: ${yardsToDisplay(teeBase, distanceUnit)}${suffix}` : null;
   const distanceFromLabel = lastShotFrom
     ? `From shot ${Math.max(1, Number(currentHoleShotCount) || 1)}`
     : 'From your position';
-  const displayFront = isOffCourse && teeBack && greenFront
-    ? Math.round(haversineYards(teeBack.Latitude, teeBack.Longitude, greenFront.Latitude, greenFront.Longitude))
-    : (Number.isFinite(yardages.front) ? Math.round(yardages.front) : '--');
-  const displayCenter = Number.isFinite(yardages.center) ? Math.round(yardages.center) : '--';
-  const displayBack = isOffCourse && teeBack && greenBack
-    ? Math.round(haversineYards(teeBack.Latitude, teeBack.Longitude, greenBack.Latitude, greenBack.Longitude))
-    : (Number.isFinite(yardages.back) ? Math.round(yardages.back) : '--');
   const displayPlaying = Number.isFinite(playingValue) ? Math.round(playingValue) : '--';
-  const selectorHoleContext = `H${hole.hole} · P${hole.par} · ${selectedTeeYardage ? `${yardsToDisplay(selectedTeeYardage, distanceUnit)}${suffix}` : '--'} · HCP ${hole.handicap ?? '-'}`;
+  const windAdj = playingDistance?.windAdj;
+  const tempAdj = playingDistance?.tempAdj;
+  const elevAdj = playingDistance?.elevAdj;
+  const formatWte = (v) => (Number.isFinite(v) ? `${v >= 0 ? '+' : ''}${Math.round(v)}` : '—');
+
+  const holeSubtitle = `H${hole.hole} · P${hole.par} · ${selectedTeeYardage ? `${yardsToDisplay(selectedTeeYardage, distanceUnit)}${suffix}` : '--'}`;
+
+  const toggleExpanded = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setHeaderExpanded((prev) => !prev);
+  };
 
   return (
     <View style={styles.chrome} pointerEvents="box-none">
-      <View style={[styles.headerBar, { marginTop: topInset + 4, paddingTop: 4 }]}>
+      <View
+        style={[styles.headerBar, { marginTop: topInset + 4, paddingTop: 4 }]}
+        onLayout={headerExpanded ? undefined : (e) => setChromeBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
+      >
         <View style={styles.headerTopRow}>
           <TouchableOpacity onPress={onBack} style={styles.backBtn} activeOpacity={0.78}>
             <Ionicons name="arrow-back" size={20} color="#E5E7EB" />
           </TouchableOpacity>
-          <View style={styles.headerCenter}>
+          <TouchableOpacity style={styles.headerCenter} onPress={toggleExpanded} activeOpacity={0.7}>
             <Text
               style={styles.courseName}
-              numberOfLines={2}
+              numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.8}
             >
               {courseName || 'GPS Round'}
             </Text>
-            <Text style={styles.subMeta} numberOfLines={2}>
-              {cachedLabel} • {selectedTeeName || '--'}{routeLabel ? ` • ${routeLabel}` : ''} • {selectedTeeYardage ? `${yardsToDisplay(selectedTeeYardage, distanceUnit)}${suffix}` : '--'}
-            </Text>
-            <Text style={styles.selectorHoleContextTop} numberOfLines={1}>{selectorHoleContext}</Text>
-          </View>
-          {(onCardPress || onGpsPress || onFinishRound || showOffCourse) ? (
-            <View style={styles.actionStack}>
-              <View style={styles.actionRow}>
-                {onGpsPress ? (
-                  <TouchableOpacity style={[styles.modePill, gpsLabel === 'GPS' && styles.modePillActive]} onPress={onGpsPress} activeOpacity={0.8}>
-                    <Ionicons name={gpsIcon} size={11} color="#FFFFFF" />
-                    <Text style={styles.modeText}>{gpsLabel}</Text>
-                  </TouchableOpacity>
-                ) : null}
-                {showOffCourse ? (
-                  <View style={styles.offCourseBadge}>
-                    <Text style={styles.offCourseText}>Off Course</Text>
-                  </View>
-                ) : null}
-                {onCardPress ? (
-                  <TouchableOpacity style={styles.modePill} onPress={onCardPress} activeOpacity={0.8}>
-                    <Ionicons name="grid-outline" size={11} color="rgba(255,255,255,0.65)" />
-                    <Text style={styles.modeTextMuted}>Card</Text>
-                  </TouchableOpacity>
-                ) : null}
-                {onFinishRound ? (
-                  <TouchableOpacity style={styles.finishPill} onPress={onFinishRound} activeOpacity={0.8}>
-                    <Text style={styles.finishText}>End</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
+            <View style={styles.subtitleRow}>
+              <Text style={styles.subtitle} numberOfLines={1}>{holeSubtitle}</Text>
+              <Ionicons
+                name={headerExpanded ? 'chevron-up' : 'chevron-down'}
+                size={12}
+                color="rgba(255,255,255,0.5)"
+                style={styles.chevron}
+              />
             </View>
+          </TouchableOpacity>
+          {onCardPress ? (
+            <TouchableOpacity style={styles.cardBtn} onPress={onCardPress} activeOpacity={0.8}>
+              <Ionicons name="grid-outline" size={13} color="rgba(255,255,255,0.65)" />
+              <Text style={styles.cardBtnText}>Card</Text>
+            </TouchableOpacity>
           ) : null}
         </View>
-      </View>
 
-      <View
-        style={styles.selectorRow}
-        onLayout={(e) => setChromeBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
-      >
-        <View style={styles.selectorRowInner}>
-          <HoleSelectorBar
-            totalHoles={barHoleIndices.length || selectorSource.length || 18}
-            holeNumbers={selectorHoleNumbers}
-            selectedHole={selectorSelectedHole}
-            onSelect={handleSelectHolePage}
-            holesWithData={selectorLoggedHoles}
-            holeScores={selectorHoleScores}
-            style={styles.selector}
-            contentContainerStyle={styles.selectorContent}
-          />
-        </View>
-      </View>
-
-      {weatherText ? (
-        <View style={[styles.weatherWrap, { marginTop: GPS_CHROME.WEATHER_BELOW_HEADER_GAP }]}>
-          <View style={styles.weatherPill}>
-            {weatherIcon ? weatherIcon : <Ionicons name="navigate" size={12} color="#fff" />}
-            <Text style={styles.weatherText}>{weatherText}</Text>
+        {headerExpanded ? (
+          <View
+            style={styles.expandedContent}
+            onLayout={(e) => setChromeBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
+          >
+            <View style={styles.selectorRowInner}>
+              <HoleSelectorBar
+                totalHoles={barHoleIndices.length || selectorSource.length || 18}
+                holeNumbers={selectorHoleNumbers}
+                selectedHole={selectorSelectedHole}
+                onSelect={handleSelectHolePage}
+                holesWithData={selectorLoggedHoles}
+                holeScores={selectorHoleScores}
+                style={styles.selector}
+                contentContainerStyle={styles.selectorContent}
+              />
+            </View>
+            <View style={styles.infoStrip}>
+              <View style={styles.infoStripLeft}>
+                {weatherIcon ? weatherIcon : <Ionicons name="navigate" size={12} color="#fff" />}
+                <Text style={styles.infoStripText}>{weatherText || '--'}</Text>
+              </View>
+              <Text style={styles.infoStripPlaying}>PLAYING {displayPlaying}{suffix}</Text>
+            </View>
           </View>
-        </View>
-      ) : null}
+        ) : null}
+      </View>
 
       <View style={[styles.rightColumn, { top: Math.max(chromeBottom, topInset + GPS_CHROME.HEADER_FALLBACK_HEIGHT) + GPS_CHROME.RIGHT_COLUMN_BELOW_CHROME_GAP }]}>
         <View style={styles.yardageCard}>
@@ -272,17 +263,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  actionStack: {
-    alignItems: 'flex-end',
-    gap: 4,
-    minWidth: 0,
-    marginTop: 0,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
   backBtn: {
     width: 34,
     height: 34,
@@ -302,13 +282,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: rs(16),
   },
-  subMeta: {
-    color: 'rgba(255,255,255,0.4)',
-    fontSize: rs(9),
-    marginTop: 0,
-    lineHeight: rs(10),
+  subtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 1,
   },
-  modePill: {
+  subtitle: {
+    color: 'rgba(255,255,255,0.68)',
+    fontSize: rs(10),
+    fontWeight: '600',
+  },
+  chevron: {
+    marginTop: 1,
+  },
+  cardBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -319,62 +307,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
   },
-  modePillActive: {
-    backgroundColor: 'rgba(26,200,85,0.18)',
-    borderColor: 'rgba(26,200,85,0.5)',
-  },
-  modeText: {
-    color: '#FFFFFF',
-    fontSize: rs(11),
-    fontWeight: '700',
-  },
-  modeTextMuted: {
+  cardBtnText: {
     color: 'rgba(255,255,255,0.7)',
     fontSize: rs(11),
     fontWeight: '700',
   },
-  finishPill: {
-    height: 34,
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    borderRadius: 17,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
-  },
-  finishText: {
-    color: '#FFFFFF',
-    fontSize: rs(11),
-    fontWeight: '700',
-  },
-  offCourseBadge: {
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255,180,0,0.5)',
-    backgroundColor: 'rgba(255,180,0,0.2)',
-  },
-  offCourseText: {
-    color: '#FFB400',
-    fontSize: rs(10),
-    fontWeight: '600',
-  },
-  selectorRow: {
-    marginTop: 0,
-    marginHorizontal: 10,
-    backgroundColor: 'rgba(6,6,6,0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-  },
-  selector: {
-    backgroundColor: 'transparent',
-    flex: 1,
-  },
-  selectorContent: {
-    paddingHorizontal: spacing.sm,
+  expandedContent: {
+    marginTop: 6,
   },
   selectorRowInner: {
     flexDirection: 'row',
@@ -383,33 +322,41 @@ const styles = StyleSheet.create({
     paddingLeft: 6,
     paddingRight: 4,
     paddingVertical: 4,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: radius.md,
   },
-  selectorHoleContextTop: {
-    color: 'rgba(255,255,255,0.68)',
-    fontSize: rs(10),
-    fontWeight: '600',
-    flexShrink: 0,
-    marginTop: 1,
+  selector: {
+    backgroundColor: 'transparent',
+    flex: 1,
   },
-  weatherWrap: {
-    alignItems: 'flex-start',
-    paddingLeft: 10,
+  selectorContent: {
+    paddingHorizontal: spacing.sm,
   },
-  weatherPill: {
+  infoStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 5,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  infoStripLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.78)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
   },
-  weatherText: {
+  infoStripText: {
     color: '#F3F4F6',
     fontSize: rs(10),
     fontWeight: '700',
+  },
+  infoStripPlaying: {
+    color: '#1ac855',
+    fontSize: rs(10),
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   rightColumn: {
     position: 'absolute',

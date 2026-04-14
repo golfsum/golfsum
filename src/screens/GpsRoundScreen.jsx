@@ -2696,15 +2696,8 @@ export function GpsRoundScreen({
         lastShotFrom={lastShotFrom}
         currentHoleShotCount={currentHoleShots.length}
         onSelectHole={(visibleIndex) => handleSelectHole(visibleIndex)}
-        onBack={handleBackPress}
-        onGpsPress={() => {
-          if (manualMode) { setManualMode(false); setManualYardage(''); }
-          else if (gpsQuality === 'none') { setManualMode(true); }
-        }}
-        gpsLabel={manualMode ? 'MANUAL' : 'GPS'}
-        gpsIcon={manualMode ? 'hand-left-outline' : gpsQuality === 'none' ? 'navigate-outline' : 'navigate'}
+        onBack={handleEndRoundPress}
         onCardPress={() => setShowScorecard(true)}
-        onFinishRound={handleEndRoundPress}
         weatherText={!tournamentMode
           ? `${Number.isFinite(weather?.windMph) ? `${Math.round(weather.windMph)} mph` : '--'}  ${Number.isFinite(weather?.tempF) ? `${Math.round(weather.tempF)}F` : '--'}  ${Number.isFinite(weather?.humidity) ? `${Math.round(weather.humidity)}%` : '--'}`
           : 'Tournament mode'}
@@ -2713,7 +2706,6 @@ export function GpsRoundScreen({
         tournamentMode={tournamentMode}
         holeScores={holeScoresForSelector}
         isOffCourse={isOffCourse}
-        showOffCourse={isOffCourse}
         teeYardage={selectedTeeYardage}
         distanceUnit={distanceUnit}
         />
@@ -3464,6 +3456,28 @@ export function GpsRoundScreen({
             <Text style={[styles.greenPillText, { color: showGhostOverlay ? '#60A5FA' : '#6B7280' }]}>Plan</Text>
           </TouchableOpacity>
         )}
+        <View style={styles.mapBtnRow}>
+          <TouchableOpacity
+            style={[styles.mapBtnPill, manualMode ? null : gpsQuality !== 'none' ? styles.mapBtnPillActive : null]}
+            onPress={() => {
+              if (manualMode) { setManualMode(false); setManualYardage(''); }
+              else if (gpsQuality === 'none') { setManualMode(true); }
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name={manualMode ? 'hand-left-outline' : gpsQuality === 'none' ? 'navigate-outline' : 'navigate'}
+              size={13}
+              color="#FFFFFF"
+            />
+            <Text style={styles.mapBtnText}>{manualMode ? 'MANUAL' : 'GPS'}</Text>
+          </TouchableOpacity>
+          {isOffCourse ? (
+            <View style={styles.mapOffCourseBadge}>
+              <Text style={styles.mapOffCourseText}>Off Course</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
 
       <ScoreEntrySheet
@@ -4396,6 +4410,45 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: GPS_RIGHT_STACK.GAP,
     zIndex: GPS_Z.RIGHT_MAP_STACK,
+  },
+  mapBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  mapBtnPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(6,6,6,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  mapBtnPillActive: {
+    backgroundColor: 'rgba(26,200,85,0.18)',
+    borderColor: 'rgba(26,200,85,0.5)',
+  },
+  mapBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  mapOffCourseBadge: {
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(255,180,0,0.5)',
+    backgroundColor: 'rgba(255,180,0,0.2)',
+  },
+  mapOffCourseText: {
+    color: '#FFB400',
+    fontSize: 10,
+    fontWeight: '600',
   },
   greenPill: {
     flexDirection: 'row',
