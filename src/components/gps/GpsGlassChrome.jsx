@@ -121,20 +121,15 @@ export function GpsGlassChrome({
   const elevAdj = playingDistance?.elevAdj;
   const formatWte = (v) => (Number.isFinite(v) ? `${v >= 0 ? '+' : ''}${Math.round(v)}` : '—');
   const suffix = unitSuffix(distanceUnit);
-  const playingDetailText = `GPS ${Number.isFinite(playingGpsYards) ? yardsToDisplay(playingGpsYards, distanceUnit) : '--'} ${suffix === 'y' ? 'yds' : 'm'}`;
+  const teeBase = Number.isFinite(teeYardage) ? Math.round(teeYardage) : null;
+  const scorecardYardageText = teeBase ? `Scorecard Yardage: ${yardsToDisplay(teeBase, distanceUnit)}${suffix}` : null;
   const distanceFromLabel = lastShotFrom
     ? `From shot ${Math.max(1, Number(currentHoleShotCount) || 1)}`
-    : isOffCourse
-      ? 'From tee'
-      : 'From your position';
-
-  const teeBase = Number.isFinite(teeYardage) ? Math.round(teeYardage) : null;
+    : 'From your position';
   const displayFront = isOffCourse && teeBack && greenFront
     ? Math.round(haversineYards(teeBack.Latitude, teeBack.Longitude, greenFront.Latitude, greenFront.Longitude))
     : (Number.isFinite(yardages.front) ? Math.round(yardages.front) : '--');
-  const displayCenter = isOffCourse
-    ? (teeBase || (Number.isFinite(yardages.center) ? Math.round(yardages.center) : '--'))
-    : (Number.isFinite(yardages.center) ? Math.round(yardages.center) : '--');
+  const displayCenter = Number.isFinite(yardages.center) ? Math.round(yardages.center) : '--';
   const displayBack = isOffCourse && teeBack && greenBack
     ? Math.round(haversineYards(teeBack.Latitude, teeBack.Longitude, greenBack.Latitude, greenBack.Longitude))
     : (Number.isFinite(yardages.back) ? Math.round(yardages.back) : '--');
@@ -225,7 +220,7 @@ export function GpsGlassChrome({
           <Text style={styles.playingLabel}>PLAYING</Text>
           <Text style={styles.playingValue}>{displayPlaying}</Text>
           <Text style={styles.playingSub}>{distanceFromLabel}</Text>
-          {!lastShotFrom ? <Text style={styles.playingSub}>{playingDetailText}</Text> : null}
+          {scorecardYardageText ? <Text style={styles.playingSub}>{scorecardYardageText}</Text> : null}
           {!tournamentMode ? (
             <Text style={styles.playingAdjust}>
               W {formatWte(windAdj)} • T {formatWte(tempAdj)} • E {formatWte(elevAdj)}
@@ -385,8 +380,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingLeft: 8,
-    paddingRight: 6,
+    paddingLeft: 6,
+    paddingRight: 4,
     paddingVertical: 4,
   },
   selectorHoleContextTop: {

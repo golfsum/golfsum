@@ -165,7 +165,7 @@ module.exports = function(env) {
       "@react-native-community/datetimepicker",
       "expo-apple-authentication",
       "expo-font",
-      "expo-sharing",
+
       "expo-web-browser",
       // Keep this LAST so no subsequent plugin can overwrite Swift pod settings.
       "./withSwiftConcurrency",
