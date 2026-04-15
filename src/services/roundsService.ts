@@ -248,72 +248,242 @@ function buildSeedStaticMapUrl(shots: GpsShotLog[], width = 700, height = 400): 
   return `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/${staticPath}/${width}x${height}@2x?access_token=${MAPBOX_PUBLIC_TOKEN}&attribution=false`;
 }
 
-function buildHavenShotLog(
-  holeNumber: number,
-  teeClub: string,
-  approachClub: string | null,
-  holeYardage: number,
-  par: number,
-  roundIndex: number,
-  dateIso?: string,
-): GpsShotLog[] {
+const HAVEN_LAYOUT_BEARINGS = [74, 258, 121, 198, 28, 342, 86, 147, 276, 214, 319, 58, 176, 104, 241, 167, 308, 34];
+const HAVEN_HOLE_HANDICAPS = [1, 3, 15, 5, 11, 7, 17, 9, 13, 2, 4, 16, 6, 8, 18, 10, 12, 14];
+
+function buildHavenTeeOrigin(holeNumber: number): { lat: number; lng: number } {
   const holeRow = Math.floor((holeNumber - 1) / 6);
   const holeCol = (holeNumber - 1) % 6;
-  const tee = {
+  return {
     lat: 31.8718 + (holeRow * 0.00042) + ((holeCol - 2.5) * 0.00019),
     lng: -111.0024 + (holeCol * 0.00042) + ((holeRow - 1) * 0.00017),
   };
-  const bearing = (38 + (holeNumber * 17)) % 360;
-  const teeDistance = par === 3
-    ? Math.max(holeYardage - 8, 85)
-    : Math.max(Math.round(holeYardage * (par === 5 ? 0.54 : 0.61)), 130);
-  const approachDistance = par === 3
-    ? Math.max(holeYardage - teeDistance - 6, 6)
-    : Math.max(holeYardage - teeDistance - 18, 64);
-  const teeLateral = [10, 7, -5][roundIndex % 3] + ((holeNumber % 4 === 0) ? -4 : 0);
-  const approachLateral = [4, 2, -3][roundIndex % 3] + ((holeNumber % 5 === 0) ? 3 : 0);
-  const teeLanding = buildSyntheticShotPoint(tee, bearing, teeDistance, teeLateral);
-  const approachLanding = buildSyntheticShotPoint(tee, bearing, Math.max(holeYardage - 18, teeDistance + 8), approachLateral);
-  const greenLanding = buildSyntheticShotPoint(tee, bearing, holeYardage, 0);
+}
 
-  return [
-    {
-      id: `haven_${holeNumber}_1_${Math.random().toString(36).slice(2, 8)}`,
+function getHavenBearing(holeNumber: number): number {
+  return HAVEN_LAYOUT_BEARINGS[holeNumber - 1] ?? ((38 + (holeNumber * 17)) % 360);
+}
+
+function getShotDistanceForClub(club: string | null | undefined): number {
+  return CLUB_DISTANCES[club || ''] ?? 150;
+}
+
+function getMissLateral(
+  miss: RoundHole['fairwayHit'] | RoundHole['greenHit'] | null | undefined,
+  roundIndex: number,
+  bias = 0,
+): number {
+  switch (miss) {
+    case true:
+      return [2, -3, 4][roundIndex % 3] + bias;
+    case 'right':
+      return [22, 30, 18][roundIndex % 3] + bias;
+    case 'double-right':
+      return [34, 42, 28][roundIndex % 3] + bias;
+    case 'left':
+      return [-14, -18, -10][roundIndex % 3] + bias;
+    case 'double-left':
+      return [-26, -30, -20][roundIndex % 3] + bias;
+    case 'short':
+      return [6, 4, 2][roundIndex % 3] + bias;
+    case 'long':
+      return [-4, -2, -6][roundIndex % 3] + bias;
+    default:
+      return bias;
+  }
+}
+
+function buildPuttShots(
+  holeNumber: number,
+  start: { lat: number; lng: number },
+  greenCenter: { lat: number; lng: number },
+  bearing: number,
+  putts: number,
+  startingShotNumber: number,
+  dateIso?: string,
+): GpsShotLog[] {
+  if (!putts || putts < 1) return [];
+  if (putts === 1) {
+    return [{
+      id: `haven_${holeNumber}_putt_1_${Math.random().toString(36).slice(2, 8)}`,
       holeNumber,
-      shotNumber: 1,
-      club: teeClub,
-      lie: 'Tee Box',
-      actualYards: teeDistance,
-      playingYards: teeDistance,
-      from: tee,
-      to: teeLanding,
-      loggedAt: dateIso,
-    },
-    {
-      id: `haven_${holeNumber}_2_${Math.random().toString(36).slice(2, 8)}`,
-      holeNumber,
-      shotNumber: 2,
-      club: approachClub || teeClub,
-      lie: par === 3 ? 'Fairway' : 'Fairway',
-      actualYards: approachDistance,
-      playingYards: approachDistance,
-      from: teeLanding,
-      to: approachLanding,
-      loggedAt: dateIso,
-    },
-    {
-      id: `haven_${holeNumber}_3_${Math.random().toString(36).slice(2, 8)}`,
-      holeNumber,
-      shotNumber: 3,
+      shotNumber: startingShotNumber,
       club: 'Putter',
+      shotType: 'putt',
       lie: 'Green',
-      actualYards: Math.max(8, Math.min(14, Math.round(holeYardage * 0.04))),
-      playingYards: Math.max(8, Math.min(14, Math.round(holeYardage * 0.04))),
-      from: approachLanding,
-      to: greenLanding,
+      actualYards: null,
+      playingYards: null,
+      from: start,
+      to: greenCenter,
+      loggedAt: dateIso,
+    }];
+  }
+
+  const firstLag = buildSyntheticShotPoint(start, bearing, Math.max(5, 10 - putts), 0);
+  const secondLag = buildSyntheticShotPoint(greenCenter, (bearing + 180) % 360, 2, 0);
+  const puttShots: GpsShotLog[] = [
+    {
+      id: `haven_${holeNumber}_putt_1_${Math.random().toString(36).slice(2, 8)}`,
+      holeNumber,
+      shotNumber: startingShotNumber,
+      club: 'Putter',
+      shotType: 'putt',
+      lie: 'Green',
+      actualYards: null,
+      playingYards: null,
+      from: start,
+      to: putts > 2 ? firstLag : secondLag,
       loggedAt: dateIso,
     },
   ];
+
+  if (putts > 2) {
+    puttShots.push({
+      id: `haven_${holeNumber}_putt_2_${Math.random().toString(36).slice(2, 8)}`,
+      holeNumber,
+      shotNumber: startingShotNumber + 1,
+      club: 'Putter',
+      shotType: 'putt',
+      lie: 'Green',
+      actualYards: null,
+      playingYards: null,
+      from: firstLag,
+      to: secondLag,
+      loggedAt: dateIso,
+    });
+  }
+
+  puttShots.push({
+    id: `haven_${holeNumber}_putt_final_${Math.random().toString(36).slice(2, 8)}`,
+    holeNumber,
+    shotNumber: startingShotNumber + (putts > 2 ? 2 : 1),
+    club: 'Putter',
+    shotType: 'putt',
+    lie: 'Green',
+    actualYards: null,
+    playingYards: null,
+    from: putts > 2 ? secondLag : secondLag,
+    to: greenCenter,
+    loggedAt: dateIso,
+  });
+
+  return puttShots;
+}
+
+function buildHavenShotLog(
+  holeNumber: number,
+  holePlan: {
+    par: number;
+    score: number;
+    putts: number;
+    fairwayHit?: RoundHole['fairwayHit'];
+    greenHit?: RoundHole['greenHit'];
+    teeClub: string;
+    approachClub?: string | null;
+    upDown?: boolean | null;
+  },
+  holeYardage: number,
+  roundIndex: number,
+  dateIso?: string,
+): GpsShotLog[] {
+  const tee = buildHavenTeeOrigin(holeNumber);
+  const bearing = getHavenBearing(holeNumber);
+  const greenCenter = buildSyntheticShotPoint(tee, bearing, holeYardage, 0);
+  const shots: GpsShotLog[] = [];
+  let shotNumber = 1;
+
+  const pushShot = (
+    club: string,
+    lie: string,
+    yards: number | null,
+    from: { lat: number; lng: number },
+    to: { lat: number; lng: number },
+    extras?: Partial<GpsShotLog>,
+  ) => {
+    shots.push({
+      id: `haven_${holeNumber}_${shotNumber}_${Math.random().toString(36).slice(2, 8)}`,
+      holeNumber,
+      shotNumber,
+      club,
+      lie,
+      actualYards: yards,
+      playingYards: yards,
+      from,
+      to,
+      loggedAt: dateIso,
+      ...extras,
+    });
+    shotNumber += 1;
+  };
+
+  const teeBias = holePlan.fairwayHit === 'right' ? 6 : 0;
+  const teeBaseline = holePlan.par === 3
+    ? Math.max(holeYardage - 18, 110)
+    : Math.min(
+        Math.max(175, getShotDistanceForClub(holePlan.teeClub) + [-6, 8, 0][roundIndex % 3]),
+        holeYardage - (holePlan.par === 5 ? 185 : 105),
+      );
+  const teeLateral = holePlan.par === 3 ? 0 : getMissLateral(holePlan.fairwayHit, roundIndex, teeBias);
+  const teeLanding = buildSyntheticShotPoint(tee, bearing, teeBaseline, teeLateral);
+  pushShot(holePlan.teeClub, 'Tee Box', teeBaseline, tee, teeLanding);
+
+  let currentPoint = teeLanding;
+  let remaining = Math.max(12, holeYardage - teeBaseline);
+
+  if (holePlan.par === 5 && remaining > 120) {
+    const layupClub = remaining > 230 ? '5w' : '6i';
+    const layupTarget = Math.max(80, remaining - (holePlan.approachClub ? getShotDistanceForClub(holePlan.approachClub) : 105));
+    const layupDistance = Math.max(70, Math.min(getShotDistanceForClub(layupClub) + [-8, 4, 10][roundIndex % 3], remaining - layupTarget));
+    const layupLateral = getMissLateral(
+      holePlan.fairwayHit === 'right' ? 'right' : true,
+      roundIndex,
+      holePlan.fairwayHit === 'right' ? 8 : 2,
+    );
+    const layupLanding = buildSyntheticShotPoint(currentPoint, bearing, layupDistance, layupLateral);
+    pushShot(layupClub, holePlan.fairwayHit === 'right' ? 'Right Rough' : 'Fairway', layupDistance, currentPoint, layupLanding);
+    currentPoint = layupLanding;
+    remaining = Math.max(10, remaining - layupDistance);
+  }
+
+  const approachClub = holePlan.approachClub || (remaining > 185 ? '6i' : remaining > 155 ? '7i' : remaining > 130 ? '8i' : remaining > 115 ? '9i' : remaining > 95 ? 'PW' : 'GW');
+  const approachDistance = Math.max(12, Math.min(getShotDistanceForClub(approachClub) + [-5, 0, 6][roundIndex % 3], remaining));
+  let approachLanding = buildSyntheticShotPoint(currentPoint, bearing, approachDistance, 0);
+
+  if (holePlan.greenHit === true) {
+    const shortLeave = Math.max(4, (holePlan.putts === 1 ? 4 : 10) + (roundIndex % 3));
+    approachLanding = buildSyntheticShotPoint(greenCenter, (bearing + 180) % 360, shortLeave, [2, -1, 1][roundIndex % 3]);
+    pushShot(approachClub, holePlan.par === 3 ? 'Tee Box' : (holePlan.fairwayHit === 'right' ? 'Right Rough' : 'Fairway'), Math.max(approachDistance, Math.max(20, remaining - shortLeave)), currentPoint, approachLanding);
+    shots.push(...buildPuttShots(holeNumber, approachLanding, greenCenter, bearing, holePlan.putts, shotNumber, dateIso));
+    return shots;
+  }
+
+  const greenMiss = holePlan.greenHit ?? 'short';
+  const missForward = greenMiss === 'short'
+    ? Math.max(remaining - [12, 18, 10][roundIndex % 3], Math.max(20, remaining - 30))
+    : greenMiss === 'long'
+      ? Math.min(remaining + [9, 14, 8][roundIndex % 3], remaining + 18)
+      : remaining;
+  const missLateral = getMissLateral(greenMiss, roundIndex, holePlan.fairwayHit === 'right' ? 4 : 0);
+  approachLanding = buildSyntheticShotPoint(currentPoint, bearing, missForward, missLateral);
+  pushShot(
+    approachClub,
+    holePlan.par === 3 ? 'Tee Box' : (holePlan.fairwayHit === 'right' ? 'Right Rough' : 'Fairway'),
+    Math.max(20, Math.min(approachDistance, missForward)),
+    currentPoint,
+    approachLanding,
+  );
+
+  const chipDistance = holePlan.upDown ? [16, 22, 12][roundIndex % 3] : [24, 30, 18][roundIndex % 3];
+  const chipLanding = buildSyntheticShotPoint(greenCenter, (bearing + 180) % 360, holePlan.putts === 1 ? 2 : 6, [1, -1, 2][roundIndex % 3]);
+  pushShot(
+    chipDistance <= 18 ? 'SW' : 'GW',
+    greenMiss === 'right' ? 'Right Rough' : greenMiss === 'left' ? 'Left Rough' : 'Fringe',
+    chipDistance,
+    approachLanding,
+    chipLanding,
+  );
+  shots.push(...buildPuttShots(holeNumber, chipLanding, greenCenter, bearing, holePlan.putts, shotNumber, dateIso));
+  return shots;
 }
 
 function summarizeRoundStats(holes: RoundHole[]): RoundStats {
@@ -474,7 +644,7 @@ function buildHavenSeedRounds(): Omit<SavedRound, 'id'>[] {
   }> = [
     { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '9i', approachDistance: '125-150' },
     { par: 4, score: 5, putts: 2, fairwayHit: 'right', greenHit: 'short', teeClub: 'Driver', approachClub: '8i', approachDistance: '125-150', upDown: true },
-    { par: 3, score: 3, putts: 1, greenHit: true, teeClub: '8i', approachClub: '8i', approachDistance: '125-150' },
+    { par: 3, score: 3, putts: 1, greenHit: 'right', teeClub: '8i', approachClub: 'SW', approachDistance: '125-150', upDown: true },
     { par: 5, score: 6, putts: 2, fairwayHit: 'right', greenHit: 'short', teeClub: 'Driver', approachClub: '5i', approachDistance: '175-200', upDown: false },
     { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: 'PW', approachDistance: '100-125' },
     { par: 4, score: 5, putts: 2, fairwayHit: 'right', greenHit: 'right', teeClub: 'Driver', approachClub: '9i', approachDistance: '100-125', upDown: false },
@@ -486,17 +656,22 @@ function buildHavenSeedRounds(): Omit<SavedRound, 'id'>[] {
     { par: 3, score: 3, putts: 1, greenHit: true, teeClub: '9i', approachClub: '9i', approachDistance: '100-125' },
     { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '8i', approachDistance: '125-150' },
     { par: 4, score: 5, putts: 2, fairwayHit: 'left', greenHit: 'right', teeClub: 'Driver', approachClub: '7i', approachDistance: '150-175', upDown: false },
-    { par: 3, score: 3, putts: 1, greenHit: true, teeClub: '8i', approachClub: '8i', approachDistance: '125-150' },
+    { par: 3, score: 3, putts: 1, greenHit: 'short', teeClub: '8i', approachClub: 'SW', approachDistance: '125-150', upDown: true },
     { par: 5, score: 6, putts: 2, fairwayHit: true, greenHit: 'short', teeClub: 'Driver', approachClub: '5i', approachDistance: '175-200', upDown: true },
     { par: 4, score: 4, putts: 2, fairwayHit: 'right', greenHit: true, teeClub: '3w', approachClub: 'PW', approachDistance: '100-125' },
     { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '9i', approachDistance: '125-150' },
   ];
 
-  const yardages = [378, 392, 165, 521, 405, 381, 174, 548, 397, 412, 515, 169, 401, 388, 158, 536, 406, 394];
+  const yardages = [382, 394, 162, 518, 408, 386, 171, 542, 401, 410, 509, 167, 414, 389, 160, 533, 404, 398];
   const rounds = [
-    { daysAgo: 4, score: 80, putts: 31, fairways: 8, greens: 10, upDownMade: 4, upDownAttempts: 7, notes: 'Haven seed round 1' },
-    { daysAgo: 2, score: 81, putts: 32, fairways: 7, greens: 9, upDownMade: 3, upDownAttempts: 8, notes: 'Haven seed round 2' },
-    { daysAgo: 1, score: 79, putts: 30, fairways: 9, greens: 11, upDownMade: 5, upDownAttempts: 7, notes: 'Haven seed round 3' },
+    { daysAgo: 6, score: 80, putts: 31, fairways: 7, greens: 8, upDownMade: 4, upDownAttempts: 8, notes: 'Solid Haven round. Driver carried well but the stock miss stayed right.' },
+    { daysAgo: 3, score: 81, putts: 32, fairways: 6, greens: 8, upDownMade: 3, upDownAttempts: 8, notes: 'A few more right misses off the tee, but enough short-game saves to stay near 80.' },
+    { daysAgo: 1, score: 79, putts: 30, fairways: 8, greens: 10, upDownMade: 5, upDownAttempts: 7, notes: 'Best Haven sample. Same right-miss tendency, but sharper wedges and cleaner putting.' },
+  ];
+  const scoreAdjustments: Array<Record<number, number>> = [
+    {},
+    { 6: 1 },
+    { 14: -1 },
   ];
 
   return rounds.map((roundSeed, roundIndex) => {
@@ -507,8 +682,8 @@ function buildHavenSeedRounds(): Omit<SavedRound, 'id'>[] {
     const holes: RoundHole[] = holeTemplates.map((hole, holeIndex) => ({
       number: holeIndex + 1,
       par: hole.par,
-      handicapIndex: holeIndex + 1,
-      score: hole.score + (roundIndex === 1 && holeIndex === 5 ? 1 : 0),
+      handicapIndex: HAVEN_HOLE_HANDICAPS[holeIndex] ?? holeIndex + 1,
+      score: hole.score + (scoreAdjustments[roundIndex]?.[holeIndex + 1] ?? 0),
       putts: hole.putts,
       fairwayHit: hole.par === 3 ? null : hole.fairwayHit ?? null,
       greenHit: hole.greenHit ?? null,
@@ -524,10 +699,17 @@ function buildHavenSeedRounds(): Omit<SavedRound, 'id'>[] {
     const gpsShots = holeTemplates.flatMap((hole, holeIndex) =>
       buildHavenShotLog(
         holeIndex + 1,
-        hole.teeClub,
-        hole.approachClub ?? null,
+        {
+          ...hole,
+          score: holes[holeIndex].score,
+          putts: holes[holeIndex].putts || 0,
+          fairwayHit: holes[holeIndex].fairwayHit,
+          greenHit: holes[holeIndex].greenHit,
+          teeClub: holes[holeIndex].teeClub || hole.teeClub,
+          approachClub: holes[holeIndex].approachClub ?? hole.approachClub ?? null,
+          upDown: holes[holeIndex].upDown ?? hole.upDown ?? null,
+        },
         yardages[holeIndex],
-        hole.par,
         roundIndex,
         date.toISOString(),
       )
@@ -575,7 +757,7 @@ function buildHavenSeedRounds(): Omit<SavedRound, 'id'>[] {
       weather: {
         temp: '74F',
         conditions: 'Clear',
-        wind: '8 mph',
+        wind: roundIndex === 1 ? '10 mph' : '8 mph',
       },
       notes: roundSeed.notes,
       isSeededTestRound: true,
@@ -600,7 +782,7 @@ function buildHavenSeedRounds(): Omit<SavedRound, 'id'>[] {
           number: hole.number,
           par: hole.par,
           yardage: yardages[idx],
-          handicapIndex: idx + 1,
+          handicapIndex: HAVEN_HOLE_HANDICAPS[idx] ?? idx + 1,
         })),
         source: CourseSource.API,
         version: 1,
@@ -667,134 +849,16 @@ function withStorageLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 const buildSampleRounds = (): SavedRound[] => {
-  const baseHoles: RoundHole[] = [
-    { number: 1, par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '8i', approachDistance: '125-150' },
-    { number: 2, par: 4, score: 5, putts: 1, fairwayHit: 'right', greenHit: 'short', upDown: true, teeClub: 'Driver', approachClub: '7i', approachDistance: '150-175' },
-    { number: 3, par: 3, score: 3, putts: 1, greenHit: true, teeClub: '6i', approachClub: '6i', approachDistance: '175-200' },
-    { number: 4, par: 5, score: 6, putts: 2, fairwayHit: true, greenHit: 'left', upDown: false, teeClub: 'Driver', approachClub: '4i', approachDistance: '200-225' },
-    { number: 5, par: 4, score: 4, putts: 2, fairwayHit: 'left', greenHit: true, teeClub: '3w', approachClub: '9i', approachDistance: '100-125' },
-    { number: 6, par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: 'PW', approachDistance: '75-100' },
-    { number: 7, par: 3, score: 4, putts: 2, greenHit: 'right', upDown: false, teeClub: '7i', approachClub: '7i', approachDistance: '150-175' },
-    { number: 8, par: 5, score: 5, putts: 1, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '5i', approachDistance: '175-200' },
-    { number: 9, par: 4, score: 5, putts: 2, fairwayHit: 'right', greenHit: 'short', upDown: true, teeClub: 'Driver', approachClub: '8i', approachDistance: '125-150' },
-    { number: 10, par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '9i', approachDistance: '100-125' },
-    { number: 11, par: 5, score: 5, putts: 2, fairwayHit: 'left', greenHit: 'left', upDown: true, teeClub: 'Driver', approachClub: '5i', approachDistance: '175-200' },
-    { number: 12, par: 3, score: 3, putts: 1, greenHit: true, teeClub: '8i', approachClub: '8i', approachDistance: '125-150' },
-    { number: 13, par: 4, score: 5, putts: 2, fairwayHit: true, greenHit: 'right', upDown: false, teeClub: 'Driver', approachClub: '7i', approachDistance: '150-175' },
-    { number: 14, par: 4, score: 4, putts: 2, fairwayHit: 'right', greenHit: true, teeClub: '3w', approachClub: 'PW', approachDistance: '75-100' },
-    { number: 15, par: 3, score: 3, putts: 1, greenHit: true, teeClub: '9i', approachClub: '9i', approachDistance: '100-125' },
-    { number: 16, par: 5, score: 6, putts: 2, fairwayHit: true, greenHit: 'long', upDown: false, teeClub: 'Driver', approachClub: '4i', approachDistance: '200-225' },
-    { number: 17, par: 4, score: 4, putts: 2, fairwayHit: 'left', greenHit: true, teeClub: 'Driver', approachClub: '8i', approachDistance: '125-150' },
-    { number: 18, par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '9i', approachDistance: '100-125' },
-  ];
-  const yardages = [420, 402, 176, 528, 410, 382, 189, 540, 401, 410, 512, 176, 418, 392, 158, 545, 405, 398];
-  const baseDate = new Date();
-  const samples = [
-    {
-      id: SAMPLE_ROUND_ID,
-      courseName: 'Pebble Beach GL',
-      courseId: 'sample_pebble_beach',
-      city: 'Pebble Beach',
-      state: 'CA',
-      score: 82,
-      putts: 33,
-      fairways: 8,
-      greens: 9,
-      upDownMade: 3,
-      upDownAttempts: 7,
-      daysAgo: 3,
-    },
-    {
-      id: 'sample_round_2',
-      courseName: 'TPC San Antonio GC',
-      courseId: 'sample_tpc_san_antonio',
-      city: 'San Antonio',
-      state: 'TX',
-      score: 84,
-      putts: 34,
-      fairways: 7,
-      greens: 8,
-      upDownMade: 2,
-      upDownAttempts: 7,
-      daysAgo: 2,
-    },
-    {
-      id: 'sample_round_3',
-      courseName: 'Bethpage Black GC',
-      courseId: 'sample_bethpage_black',
-      city: 'Farmingdale',
-      state: 'NY',
-      score: 81,
-      putts: 32,
-      fairways: 9,
-      greens: 10,
-      upDownMade: 4,
-      upDownAttempts: 6,
-      daysAgo: 1,
-    },
-  ];
-
-  return samples.map((sample) => {
-    const date = new Date(baseDate);
-    date.setDate(baseDate.getDate() - sample.daysAgo);
-    const holes = baseHoles.map((hole) => ({ ...hole }));
-    return {
-      id: sample.id,
-      date,
-      courseName: sample.courseName,
-      courseId: sample.courseId,
-      score: sample.score,
-      stats: {
-        score: sample.score,
-        putts: sample.putts,
-        fairways: sample.fairways,
-        fairwaysPossible: 14,
-        greens: sample.greens,
-        greensPossible: 18,
-        upDownMade: sample.upDownMade,
-        upDownAttempts: sample.upDownAttempts,
-        teeBox: 'Blue',
-      },
-      html: '',
-      imageUri: '',
-      isAcceptableForHandicap: false,
-      handicapStatus: 'Sample data',
-      teeName: 'Blue',
-      weather: {
-        temp: '76F',
-        conditions: 'Clear',
-        wind: 'Light',
-      },
-      holes,
-      holeCount: 18,
-      courseSnapshot: {
-        courseId: sample.courseId,
-        name: sample.courseName,
-        location: {
-          city: sample.city,
-          state: sample.state,
-          country: 'USA',
-          latitude: 33.3943,
-          longitude: -111.984,
-        },
-        holesCount: 18,
-        tee: {
-          name: 'Blue',
-          yardageTotal: 6704,
-        },
-        holes: holes.map((hole, idx) => ({
-          number: hole.number,
-          par: hole.par,
-          yardage: yardages[idx],
-          handicapIndex: idx + 1,
-        })),
-      },
-      notes: 'Sample Round',
-      roundSource: 'manual',
-      entryMode: 'advanced',
-      isSample: true,
-    } as SavedRound;
-  });
+  const havenRounds = buildHavenSeedRounds();
+  return havenRounds.map((round, index) => ({
+    ...round,
+    id: index === 0 ? SAMPLE_ROUND_ID : `sample_round_${index + 1}`,
+    isAcceptableForHandicap: false,
+    handicapStatus: 'Sample data',
+    notes: `Sample data • ${round.notes || 'Haven Golf Course'}`,
+    isSample: true,
+    isSeededTestRound: false,
+  } as SavedRound));
 };
 
 export async function loadSampleRound(): Promise<SavedRound> {

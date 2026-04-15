@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { getCourse, saveCourse } from '../services/courseCache';
 import { fetchCourseHolesFromBackend } from '../services/golfApi';
-import { haversineYards } from '../services/haversine';
+import { bearingDeg, haversineYards } from '../services/haversine';
 import GpsRoundHud from '../components/gps/GpsRoundHud';
 import GpsGlassChrome from '../components/gps/GpsGlassChrome';
 import { MAPBOX_PUBLIC_TOKEN } from '../config/mapbox';
@@ -441,6 +441,17 @@ function getWindArrowRotation(degrees) {
   return `${(((degrees - 180) % 360) + 360) % 360}deg`;
 }
 
+function getRelativeWindToShot(weatherDegrees, shotBearingDeg) {
+  if (!Number.isFinite(weatherDegrees) || !Number.isFinite(shotBearingDeg)) return null;
+  return normalizeDegrees(weatherDegrees - shotBearingDeg);
+}
+
+function getWindArrowRotationForShot(weatherDegrees, shotBearingDeg) {
+  const relativeFrom = getRelativeWindToShot(weatherDegrees, shotBearingDeg);
+  if (!Number.isFinite(relativeFrom)) return '0deg';
+  return `${normalizeDegrees(relativeFrom + 180)}deg`;
+}
+
 function buildStaticMapRequest(hole, imageWidth, imageHeight) {
   if (!MAPBOX_PUBLIC_TOKEN || !hole) return null;
   const size = getStaticImageSize(imageWidth, imageHeight);
@@ -667,9 +678,16 @@ export function WebGpsRoundPreview({
       : null),
     [selectedTeeMarker]
   );
+  const shotBearingDeg = useMemo(() => {
+    const origin = selectedTeeMarker
+      ? { lat: selectedTeeMarker.lat, lng: selectedTeeMarker.lng }
+      : (teeBack ? { lat: teeBack.Latitude, lng: teeBack.Longitude } : null);
+    if (!origin || !greenCenter) return null;
+    return bearingDeg(origin.lat, origin.lng, greenCenter.Latitude, greenCenter.Longitude);
+  }, [greenCenter, selectedTeeMarker, teeBack]);
   const playingDistance = useMemo(() => {
-    if (tournamentMode || !Number.isFinite(yardages.center)) return null;
-    const base = getPlayingAdjustment(yardages.center, weather, 0);
+    if (tournamentMode || !Number.isFinite(yardages.center) || !Number.isFinite(shotBearingDeg)) return null;
+    const base = getPlayingAdjustment(yardages.center, weather, shotBearingDeg);
     const elevAdj = elevationDiffToYardageAdjustment(elevationDiffFt || 0);
     return {
       adjustedYards: Math.max(0, Math.round(yardages.center + (base?.windAdj ?? 0) + (base?.tempAdj ?? 0) + elevAdj)),
@@ -677,7 +695,19 @@ export function WebGpsRoundPreview({
       windAdj: base?.windAdj ?? 0,
       elevAdj,
     };
-  }, [elevationDiffFt, tournamentMode, weather, yardages.center]);
+  }, [elevationDiffFt, shotBearingDeg, tournamentMode, weather, yardages.center]);
+  const weatherIcon = useMemo(() => {
+    if (tournamentMode || !Number.isFinite(weather?.windMph) || weather.windMph <= 0.5) return null;
+    const rotation = getWindArrowRotationForShot(weather?.windDegrees, shotBearingDeg);
+    return (
+      <Ionicons
+        name="navigate"
+        size={12}
+        color="#fff"
+        style={{ transform: [{ rotate: rotation }] }}
+      />
+    );
+  }, [shotBearingDeg, tournamentMode, weather?.windDegrees, weather?.windMph]);
   const distanceSuggestedClub = useMemo(
     () => getBestClubForPar3(
       tournamentMode ? yardages.center : playingDistance?.adjustedYards ?? yardages.center,
@@ -1515,6 +1545,7 @@ export function WebGpsRoundPreview({
             gpsIcon="navigate"
             onCardPress={() => {}}
             onFinishRound={() => {}}
+            weatherIcon={weatherIcon}
             weatherText={!tournamentMode
               ? `${Number.isFinite(weather?.windMph) ? `${Math.round(weather.windMph)} mph` : '--'}  ${Number.isFinite(weather?.tempF) ? `${Math.round(weather.tempF)}F` : '--'}  ${Number.isFinite(weather?.humidity) ? `${Math.round(weather.humidity)}%` : '--'}`
               : 'Tournament mode'}

@@ -25,6 +25,7 @@ export function GpsRoundHud({
   currentPutts,
   onDecrementPutts,
   onIncrementPutts,
+  onBeforeIncrementPutts = null,
   addShotLabel = 'ADD SHOT',
   onPressAddShot,
   addShotActive = false,
@@ -192,7 +193,13 @@ export function GpsRoundHud({
                 <Text style={styles.puttStepperValue}>{currentPutts}</Text>
                 <Text style={styles.puttStepperLabel}>PUTTS</Text>
               </View>
-              <TouchableOpacity style={styles.puttStepperButton} onPress={onIncrementPutts}>
+              <TouchableOpacity
+                style={styles.puttStepperButton}
+                onPress={() => {
+                  onBeforeIncrementPutts?.();
+                  onIncrementPutts?.();
+                }}
+              >
                 <Text style={styles.puttStepperButtonText}>+</Text>
               </TouchableOpacity>
             </View>

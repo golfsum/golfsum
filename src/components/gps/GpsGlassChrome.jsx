@@ -37,6 +37,7 @@ export function GpsGlassChrome({
   teeYardage = null,
   teeBack = null,
   greenFront = null,
+  greenCenter = null,
   greenBack = null,
   lastShotFrom = null,
   currentHoleShotCount = 0,
@@ -114,27 +115,37 @@ export function GpsGlassChrome({
       }, {})
     : holeScores;
 
-  const playingValue = tournamentMode ? yardages.center : playingDistance?.adjustedYards ?? yardages.center;
+  const rawPlaying = tournamentMode ? yardages.center : playingDistance?.adjustedYards ?? yardages.center;
   const suffix = unitSuffix(distanceUnit);
   const teeBase = Number.isFinite(teeYardage) ? Math.round(teeYardage) : null;
-  const displayCenter = Number.isFinite(yardages.center) ? Math.round(yardages.center) : '--';
-  const displayFront = isOffCourse && teeBack && greenFront
-    ? Math.round(haversineYards(teeBack.Latitude, teeBack.Longitude, greenFront.Latitude, greenFront.Longitude))
+
+  // When off-course: always show tee-to-green distances
+  const offCourseRef = isOffCourse && teeBack ? { lat: teeBack.Latitude, lng: teeBack.Longitude } : null;
+  const useOverride = Boolean(offCourseRef);
+
+  const displayCenter = useOverride && greenCenter
+    ? Math.round(haversineYards(offCourseRef.lat, offCourseRef.lng, greenCenter.Latitude, greenCenter.Longitude))
+    : (Number.isFinite(yardages.center) ? Math.round(yardages.center) : '--');
+  const displayFront = useOverride && greenFront
+    ? Math.round(haversineYards(offCourseRef.lat, offCourseRef.lng, greenFront.Latitude, greenFront.Longitude))
     : (Number.isFinite(yardages.front) ? Math.round(yardages.front) : '--');
-  const displayBack = isOffCourse && teeBack && greenBack
-    ? Math.round(haversineYards(teeBack.Latitude, teeBack.Longitude, greenBack.Latitude, greenBack.Longitude))
+  const displayBack = useOverride && greenBack
+    ? Math.round(haversineYards(offCourseRef.lat, offCourseRef.lng, greenBack.Latitude, greenBack.Longitude))
     : (Number.isFinite(yardages.back) ? Math.round(yardages.back) : '--');
   const scorecardYardageText = teeBase ? `Scorecard Yardage: ${yardsToDisplay(teeBase, distanceUnit)}${suffix}` : null;
   const distanceFromLabel = lastShotFrom
     ? `From shot ${Math.max(1, Number(currentHoleShotCount) || 1)}`
-    : 'From your position';
-  const displayPlaying = Number.isFinite(playingValue) ? Math.round(playingValue) : '--';
+    : useOverride
+      ? 'From tee box'
+      : 'From your position';
+  const playingValue = useOverride ? displayCenter : (Number.isFinite(rawPlaying) ? Math.round(rawPlaying) : '--');
+  const displayPlaying = Number.isFinite(playingValue) ? Math.round(playingValue) : playingValue;
   const windAdj = playingDistance?.windAdj;
   const tempAdj = playingDistance?.tempAdj;
   const elevAdj = playingDistance?.elevAdj;
   const formatWte = (v) => (Number.isFinite(v) ? `${v >= 0 ? '+' : ''}${Math.round(v)}` : '—');
 
-  const holeSubtitle = `H${hole.hole} · P${hole.par} · ${selectedTeeYardage ? `${yardsToDisplay(selectedTeeYardage, distanceUnit)}${suffix}` : '--'}`;
+  const holeSubtitle = `Hole ${hole.hole} · Par ${hole.par} · ${selectedTeeYardage ? `${yardsToDisplay(selectedTeeYardage, distanceUnit)} ${suffix === 'y' ? 'yds' : 'm'}` : '--'}`;
 
   const toggleExpanded = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -145,7 +156,7 @@ export function GpsGlassChrome({
     <View style={styles.chrome} pointerEvents="box-none">
       <View
         style={[styles.headerBar, { marginTop: topInset + 4, paddingTop: 4 }]}
-        onLayout={headerExpanded ? undefined : (e) => setChromeBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
+        onLayout={(e) => setChromeBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
       >
         <View style={styles.headerTopRow}>
           <TouchableOpacity onPress={onBack} style={styles.backBtn} activeOpacity={0.78}>
@@ -179,10 +190,7 @@ export function GpsGlassChrome({
         </View>
 
         {headerExpanded ? (
-          <View
-            style={styles.expandedContent}
-            onLayout={(e) => setChromeBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
-          >
+          <View style={styles.expandedContent}>
             <View style={styles.selectorRowInner}>
               <HoleSelectorBar
                 totalHoles={barHoleIndices.length || selectorSource.length || 18}
@@ -195,18 +203,20 @@ export function GpsGlassChrome({
                 contentContainerStyle={styles.selectorContent}
               />
             </View>
-            <View style={styles.infoStrip}>
-              <View style={styles.infoStripLeft}>
-                {weatherIcon ? weatherIcon : <Ionicons name="navigate" size={12} color="#fff" />}
-                <Text style={styles.infoStripText}>{weatherText || '--'}</Text>
-              </View>
-              <Text style={styles.infoStripPlaying}>PLAYING {displayPlaying}{suffix}</Text>
-            </View>
           </View>
         ) : null}
       </View>
 
-      <View style={[styles.rightColumn, { top: Math.max(chromeBottom, topInset + GPS_CHROME.HEADER_FALLBACK_HEIGHT) + GPS_CHROME.RIGHT_COLUMN_BELOW_CHROME_GAP }]}>
+      {weatherText ? (
+        <View style={[styles.weatherWrap, { top: chromeBottom + 4 }]}>
+          <View style={styles.weatherPill}>
+            {weatherIcon ? weatherIcon : <Ionicons name="navigate" size={12} color="#fff" />}
+            <Text style={styles.weatherText}>{weatherText}</Text>
+          </View>
+        </View>
+      ) : null}
+
+      <View style={[styles.rightColumn, { top: chromeBottom + 6 }]}>
         <View style={styles.yardageCard}>
           <Text style={styles.playingLabel}>PLAYING</Text>
           <Text style={styles.playingValue}>{displayPlaying}</Text>
@@ -331,6 +341,27 @@ const styles = StyleSheet.create({
   },
   selectorContent: {
     paddingHorizontal: spacing.sm,
+  },
+  weatherWrap: {
+    position: 'absolute',
+    left: 10,
+    zIndex: GPS_Z.TOP_CHROME,
+  },
+  weatherPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  weatherText: {
+    color: '#F3F4F6',
+    fontSize: rs(10),
+    fontWeight: '700',
   },
   infoStrip: {
     flexDirection: 'row',

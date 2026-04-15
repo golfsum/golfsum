@@ -2099,6 +2099,48 @@ export const ProfileTab: React.FC<Props> = ({
           onShare={() => Share.share({ message: 'Check out GolfSum - the golf stat tracking app.' })}
           styles={styles}
         />
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.headerLeft}>
+              <Ionicons name="golf-outline" size={20} color="#10B981" />
+              <Text style={styles.sectionTitle}>TEST DATA</Text>
+            </View>
+          </View>
+          <View style={styles.sectionContent}>
+            <TouchableOpacity
+              style={[styles.settingRow, { marginTop: 12 }]}
+              onPress={handleSeedPebbleHistory}
+              disabled={isSeedingPebbleHistory}
+            >
+              <View style={styles.settingIcon}>
+                <Ionicons name="golf-outline" size={18} color="#10B981" />
+              </View>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>
+                  {isSeedingPebbleHistory ? 'Adding Pebble rounds' : 'Add Pebble Beach rounds'}
+                </Text>
+                <Text style={styles.settingValue}>Adds 3 low-80s Pebble test rounds</Text>
+              </View>
+              <Ionicons name="add-circle-outline" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.settingRow, { marginTop: 12 }]}
+              onPress={handleSeedHavenHistory}
+              disabled={isSeedingHavenHistory}
+            >
+              <View style={styles.settingIcon}>
+                <Ionicons name="golf-outline" size={18} color="#10B981" />
+              </View>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>
+                  {isSeedingHavenHistory ? 'Adding Haven rounds' : 'Add Haven Golf Course rounds'}
+                </Text>
+                <Text style={styles.settingValue}>Adds 3 low-80s Haven test rounds</Text>
+              </View>
+              <Ionicons name="add-circle-outline" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
+        </View>
         {__DEV__ && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>

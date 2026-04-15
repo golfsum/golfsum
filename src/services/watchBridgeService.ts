@@ -101,6 +101,7 @@ export function isWatchBridgeAvailable(): boolean {
 export function updateWatchGpsContext(payload: Record<string, unknown>): void {
   if (!isWatchBridgeAvailable() || !nativeModule?.updateWatchGpsContext) return;
   try {
+    nativeModule.start?.();
     nativeModule.updateWatchGpsContext(payload);
   } catch (error) {
     logger.warn('Failed to update watch GPS context:', error);

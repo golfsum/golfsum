@@ -253,6 +253,20 @@ function getWindArrowRotation(degrees) {
   return `${normalizeDegrees(degrees - 180)}deg`;
 }
 
+function getRelativeWindToShot(weatherDegrees, shotBearingDeg) {
+  if (!Number.isFinite(weatherDegrees) || !Number.isFinite(shotBearingDeg)) return null;
+  return normalizeDegrees(weatherDegrees - shotBearingDeg);
+}
+
+function getWindArrowRotationForShot(weatherDegrees, shotBearingDeg) {
+  const relativeFrom = getRelativeWindToShot(weatherDegrees, shotBearingDeg);
+  if (!Number.isFinite(relativeFrom)) return '0deg';
+  // Open-Meteo reports the direction the wind is coming from.
+  // Our map framing keeps the target toward the top of the screen, so convert
+  // the "from" angle into the on-screen "to" angle relative to the shot line.
+  return `${normalizeDegrees(relativeFrom + 180)}deg`;
+}
+
 function directionDelta(a, b) {
   const delta = Math.abs(normalizeDegrees(a) - normalizeDegrees(b));
   return Math.min(delta, 360 - delta);
@@ -833,7 +847,13 @@ export function GpsRoundScreen({
     return userPos ? { lat: userPos.lat, lng: userPos.lng } : null;
   }, [currentHoleShots, distanceMode, gpsQuality, teeBack, userPos]);
 
-  const lastShotFrom = useMemo(() => (currentHoleShots.length > 0 ? yardageOrigin : null), [currentHoleShots.length, yardageOrigin]);
+  const lastShotFrom = useMemo(() => {
+    if (currentHoleShots.length === 0) return null;
+    const lastShot = currentHoleShots[currentHoleShots.length - 1];
+    // Use the shot's 'from' position (where the player stood), not 'to' (which may be the green)
+    if (lastShot?.from) return { lat: lastShot.from.lat, lng: lastShot.from.lng };
+    return yardageOrigin;
+  }, [currentHoleShots, yardageOrigin]);
   const greenCenter = useMemo(() => findPoi(currentHole, 'Green', 'C'), [currentHole]);
   const rawGreenFront = useMemo(() => findPoi(currentHole, 'Green', 'F'), [currentHole]);
   const rawGreenBack = useMemo(() => findPoi(currentHole, 'Green', 'B'), [currentHole]);
@@ -950,6 +970,18 @@ export function GpsRoundScreen({
       elevAdj,
     };
   }, [targetYards, elevationDiffFt, shotBearingDeg, tournamentMode, weather]);
+  const weatherIcon = useMemo(() => {
+    if (tournamentMode || !Number.isFinite(weather?.windMph) || weather.windMph <= 0.5) return null;
+    const rotation = getWindArrowRotationForShot(weather?.windDegrees, shotBearingDeg);
+    return (
+      <Ionicons
+        name="navigate"
+        size={12}
+        color="#fff"
+        style={{ transform: [{ rotate: rotation }] }}
+      />
+    );
+  }, [shotBearingDeg, tournamentMode, weather?.windDegrees, weather?.windMph]);
   const distanceSuggestedClub = useMemo(
     () => getBestClubForPar3(
       tournamentMode
@@ -1434,6 +1466,9 @@ export function GpsRoundScreen({
   }, [currentHoleShots, showLiveShotPreviewLine, userPos]);
   const currentShotDisplay = useMemo(() => {
     const lastShot = currentHoleShots[currentHoleShots.length - 1] || null;
+    const lastCompletedShot = [...currentHoleShots]
+      .reverse()
+      .find((shot) => Number.isFinite(shot.playingYards ?? shot.actualYards)) || null;
     if (overlayState.shotFlow === 'mark' || overlayState.shotFlow === 'edit') {
       return {
         label: overlayState.selectedClub || effectiveSuggestedClub?.club || `Shot ${currentHoleShots.length + 1}`,
@@ -1441,10 +1476,17 @@ export function GpsRoundScreen({
         lie: liveLie?.lie || null,
       };
     }
+    if (lastCompletedShot) {
+      return {
+        label: lastCompletedShot.abbr || `Shot ${lastCompletedShot.num}`,
+        yards: lastCompletedShot.playingYards ?? lastCompletedShot.actualYards ?? null,
+        lie: lastCompletedShot.lie || null,
+      };
+    }
     if (lastShot) {
       return {
         label: lastShot.abbr || `Shot ${lastShot.num}`,
-        yards: lastShot.playingYards ?? lastShot.actualYards ?? null,
+        yards: null,
         lie: lastShot.lie || null,
       };
     }
@@ -1495,10 +1537,17 @@ export function GpsRoundScreen({
     endLiveActivity().catch(() => undefined);
   }, []);
 
-  const resetHoleCamera = useCallback((includeUser = userNearHole) => {
+  const userPosRef = useRef(userPos);
+  const userNearHoleRef = useRef(userNearHole);
+  useEffect(() => { userPosRef.current = userPos; }, [userPos]);
+  useEffect(() => { userNearHoleRef.current = userNearHole; }, [userNearHole]);
+
+  const resetHoleCamera = useCallback((includeUser) => {
     if (!MapboxGL || !currentHole || !cameraRef.current) return;
-    const shouldIncludeUser = includeUser && userNearHole;
-    const frame = getNativeHoleCameraConfig(currentHole, shouldIncludeUser ? userPos : null, { includeUser: shouldIncludeUser });
+    const near = userNearHoleRef.current;
+    const pos = userPosRef.current;
+    const shouldInclude = (includeUser !== undefined ? includeUser : near) && near;
+    const frame = getNativeHoleCameraConfig(currentHole, shouldInclude ? pos : null, { includeUser: shouldInclude });
     if (!frame) return;
     frameBoundsRef.current = frame.bounds;
     cameraRef.current?.setCamera({
@@ -1511,7 +1560,7 @@ export function GpsRoundScreen({
       animationDuration: frame.animationDuration,
       animationMode: frame.animationMode,
     });
-  }, [currentHole, userNearHole, userPos]);
+  }, [currentHole]);
 
   const loadCourse = useCallback(async () => {
     setLoading(true);
@@ -1682,7 +1731,7 @@ export function GpsRoundScreen({
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, [teeBack, tournamentMode, userPos]);
+  }, [currentHole?.hole, currentHoleIndex, teeBack, tournamentMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2056,15 +2105,53 @@ export function GpsRoundScreen({
 
     setLoggedShotsByHole((prev) => {
       const existing = prev[holeIndex] || [];
+      const nextFrom = shotInput.from || null;
+      const prevShot = existing.length > 0 ? existing[existing.length - 1] : null;
+      let updatedExisting = existing;
+
+      if (
+        prevShot?.from &&
+        nextFrom &&
+        !Number.isFinite(prevShot.playingYards ?? prevShot.actualYards)
+      ) {
+        const actualYards = haversineYards(
+          prevShot.from.lat,
+          prevShot.from.lng,
+          nextFrom.lat,
+          nextFrom.lng,
+        );
+        const segmentBearing = bearingDeg(
+          prevShot.from.lat,
+          prevShot.from.lng,
+          nextFrom.lat,
+          nextFrom.lng,
+        );
+        const playingYards = Number.isFinite(actualYards)
+          ? (prevShot.weather
+            ? getPlayingAdjustment(actualYards, prevShot.weather, segmentBearing).adjustedYards
+            : actualYards)
+          : null;
+
+        updatedExisting = [
+          ...existing.slice(0, -1),
+          {
+            ...prevShot,
+            to: { ...nextFrom },
+            actualYards,
+            playingYards,
+          },
+        ];
+      }
+
       return {
         ...prev,
         [holeIndex]: [
-          ...existing,
+          ...updatedExisting,
           {
             id: shotInput.id
               ? String(shotInput.id)
               : `gps-shot-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`,
-            num: existing.length + 1,
+            num: updatedExisting.length + 1,
             club: clubLabel,
             abbr,
             actualYards: shotInput.actualYards,
@@ -2102,6 +2189,7 @@ export function GpsRoundScreen({
   }, [detectLieAtCoordinate, isReasonableShot, userPos, visibleHoles]);
 
   const handleWatchPutt = useCallback(() => {
+    closeLastOpenShotToGreen(currentHoleIndex, greenCenter);
     setHoleSummariesByHole((prev) => {
       const cur = prev[currentHoleIndex] || {};
       const basePutts = typeof cur.putts === 'number' ? cur.putts : 0;
@@ -2127,7 +2215,7 @@ export function GpsRoundScreen({
         loggedAt: new Date().toISOString(),
       });
     }
-  }, [commitShotToHole, currentHoleIndex, greenCenter, userPos]);
+  }, [closeLastOpenShotToGreen, commitShotToHole, currentHoleIndex, greenCenter, userPos]);
 
   const insertRetrospectiveShot = useCallback((holeIndex, insertAfterNum, shotInput) => {
     setLoggedShotsByHole((prev) => {
@@ -2167,6 +2255,50 @@ export function GpsRoundScreen({
       ),
     }));
   }, []);
+
+  const closeLastOpenShotToGreen = useCallback((holeIndex, greenPoi, weatherOverride = weather) => {
+    if (!greenPoi) return;
+    setLoggedShotsByHole((prev) => {
+      const existing = prev[holeIndex] || [];
+      const lastShot = existing.length > 0 ? existing[existing.length - 1] : null;
+      if (!lastShot?.from || Number.isFinite(lastShot.playingYards ?? lastShot.actualYards)) {
+        return prev;
+      }
+
+      const greenTarget = { lat: greenPoi.Latitude, lng: greenPoi.Longitude };
+      const actualYards = haversineYards(
+        lastShot.from.lat,
+        lastShot.from.lng,
+        greenTarget.lat,
+        greenTarget.lng,
+      );
+      const segmentBearing = bearingDeg(
+        lastShot.from.lat,
+        lastShot.from.lng,
+        greenTarget.lat,
+        greenTarget.lng,
+      );
+      const weatherForShot = lastShot.weather || weatherOverride || null;
+      const playingYards = Number.isFinite(actualYards)
+        ? (weatherForShot
+          ? getPlayingAdjustment(actualYards, weatherForShot, segmentBearing).adjustedYards
+          : actualYards)
+        : null;
+
+      return {
+        ...prev,
+        [holeIndex]: [
+          ...existing.slice(0, -1),
+          {
+            ...lastShot,
+            to: greenTarget,
+            actualYards,
+            playingYards,
+          },
+        ],
+      };
+    });
+  }, [weather]);
 
   const deleteShotFromHole = useCallback((holeIndex, shotId) => {
     setLoggedShotsByHole((prev) => {
@@ -2281,19 +2413,33 @@ export function GpsRoundScreen({
       Math.round(Number(currentHole?.hole ?? currentHoleIndex + 1)) || 1,
     );
     const clubsForWatch = (watchClubList || []).filter((c) => typeof c === 'string' && c.length > 0);
+    const holesForWatch = (visibleHoles || [])
+      .map((hole, index) => {
+        const number = Math.max(1, Math.round(Number(hole?.hole ?? index + 1)) || index + 1);
+        const par = Math.max(3, Math.round(Number(hole?.par ?? 4)) || 4);
+        return { number, par };
+      })
+      .filter((hole) => Number.isFinite(hole.number) && Number.isFinite(hole.par));
     updateWatchGpsContext({
       active,
       roundActive: active,
+      roundId: String(roundIdRef.current || courseId || courseName || 'gps-round'),
+      courseId: courseId || null,
+      courseName: courseName || null,
       hole: holeNum,
+      currentHole: holeNum,
       frt: yardageToWatchInt(yardages.front),
       ctr: yardageToWatchInt(yardages.center),
       bck: yardageToWatchInt(yardages.back),
       clubs: clubsForWatch,
+      holes: holesForWatch,
     });
   }, [
-    error,
+    courseId,
+    courseName,
     currentHole?.hole,
     currentHoleIndex,
+    visibleHoles,
     yardages.front,
     yardages.center,
     yardages.back,
@@ -2306,14 +2452,17 @@ export function GpsRoundScreen({
       updateWatchGpsContext({
         active: false,
         roundActive: false,
+        roundId: String(roundIdRef.current || courseId || courseName || 'gps-round'),
         hole: 0,
+        currentHole: 0,
         frt: 0,
         ctr: 0,
         bck: 0,
         clubs: [],
+        holes: [],
       });
     };
-  }, []);
+  }, [courseId, courseName]);
 
   const handleConfirmDistanceJump = useCallback(() => {
     if (!missedShotBanner?.shot) return;
@@ -2692,12 +2841,14 @@ export function GpsRoundScreen({
         loggedHoles={visibleLoggedHoles}
         teeBack={teeBack}
         greenFront={greenFront}
+        greenCenter={greenCenter}
         greenBack={greenBack}
         lastShotFrom={lastShotFrom}
         currentHoleShotCount={currentHoleShots.length}
         onSelectHole={(visibleIndex) => handleSelectHole(visibleIndex)}
         onBack={handleEndRoundPress}
         onCardPress={() => setShowScorecard(true)}
+        weatherIcon={weatherIcon}
         weatherText={!tournamentMode
           ? `${Number.isFinite(weather?.windMph) ? `${Math.round(weather.windMph)} mph` : '--'}  ${Number.isFinite(weather?.tempF) ? `${Math.round(weather.tempF)}F` : '--'}  ${Number.isFinite(weather?.humidity) ? `${Math.round(weather.humidity)}%` : '--'}`
           : 'Tournament mode'}
@@ -2725,6 +2876,7 @@ export function GpsRoundScreen({
         <MapboxGL.MapView
           onPress={handleMapPress}
           onCameraChanged={handleCameraChanged}
+          onDidFinishLoadingMap={() => resetHoleCamera(false)}
           style={StyleSheet.absoluteFillObject}
           styleURL={MapboxGL.StyleURL.Satellite}
           logoEnabled={false}
@@ -2734,7 +2886,13 @@ export function GpsRoundScreen({
           logoPosition={{ bottom: GPS_MAPBOX.LOGO_ATTRIBUTION_EDGE, left: GPS_MAPBOX.LOGO_ATTRIBUTION_EDGE }}
           attributionPosition={{ bottom: GPS_MAPBOX.LOGO_ATTRIBUTION_EDGE, right: GPS_MAPBOX.LOGO_ATTRIBUTION_EDGE }}
         >
-          <MapboxGL.Camera ref={cameraRef} />
+          <MapboxGL.Camera
+            ref={cameraRef}
+            defaultSettings={greenCenter ? {
+              centerCoordinate: [greenCenter.Longitude, greenCenter.Latitude],
+              zoomLevel: 16,
+            } : undefined}
+          />
           {(pinCoords || greenCenter) ? (
             <MapboxGL.MarkerView
               id="green-flag-marker"
@@ -2937,10 +3095,10 @@ export function GpsRoundScreen({
             >
               <View style={styles.measurePinWrap}>
                 <View style={styles.measurePinBadge}>
+                  <Text style={styles.measurePinText}>{formatYardage(measurePin.toGreen, distanceUnit)} to green</Text>
                   {measurePin.fromDistance != null && (
                     <Text style={styles.measurePinFromYou}>{formatYardage(measurePin.fromDistance, distanceUnit)} from {measurePin.fromLabel}</Text>
                   )}
-                  <Text style={styles.measurePinText}>{formatYardage(measurePin.toGreen, distanceUnit)} to green</Text>
                 </View>
                 <View style={styles.measurePinDot} />
               </View>
@@ -3312,6 +3470,7 @@ export function GpsRoundScreen({
             putts: Math.max(0, currentPutts - 1),
           },
         }))}
+        onBeforeIncrementPutts={() => closeLastOpenShotToGreen(currentHoleIndex, greenCenter)}
         onIncrementPutts={() => setHoleSummariesByHole((prev) => ({
           ...prev,
           [currentHoleIndex]: {
@@ -4442,11 +4601,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 7,
     borderWidth: 1,
-    borderColor: 'rgba(255,180,0,0.5)',
-    backgroundColor: 'rgba(255,180,0,0.2)',
+    borderColor: 'rgba(248,113,113,0.5)',
+    backgroundColor: 'rgba(248,113,113,0.18)',
   },
   mapOffCourseText: {
-    color: '#FFB400',
+    color: '#F87171',
     fontSize: 10,
     fontWeight: '600',
   },
