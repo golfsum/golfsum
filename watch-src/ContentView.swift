@@ -5,6 +5,9 @@ struct ContentView: View {
   @State private var toast: String?
   @State private var toastTask: Task<Void, Never>?
   @State private var showClubPicker = false
+  @State private var showQuickStart = false
+  @State private var quickStartTee = "Blue"
+  private let quickStartTees = ["Blue", "White", "Gold", "Red"]
 
   var body: some View {
     TabView {
@@ -14,6 +17,9 @@ struct ContentView: View {
     .tabViewStyle(.page)
     .sheet(isPresented: $showClubPicker) {
       clubPickerSheet
+    }
+    .sheet(isPresented: $showQuickStart) {
+      quickStartSheet
     }
     .overlay(alignment: .bottom) {
       if let toast {
@@ -89,6 +95,10 @@ struct ContentView: View {
           session.refreshRound()
         }
         .buttonStyle(.borderedProminent)
+        Button("Start Round") {
+          showQuickStart = true
+        }
+        .buttonStyle(.bordered)
         if session.isRefreshing {
           ProgressView()
             .progressViewStyle(.circular)
@@ -148,6 +158,7 @@ struct ContentView: View {
       Text("Reachable: \(session.phoneReachable ? "Yes" : "No")")
       Text("Session: \(session.sessionStateLabel)")
       Text("Last Sync: \(session.lastSyncDescription)")
+      Text("Messages: \(session.messagesReceivedCount)")
       Text("Round ID: \(session.lastReceivedRoundID)")
     }
     .font(.system(size: 10, weight: .medium, design: .rounded))
@@ -175,6 +186,48 @@ struct ContentView: View {
       Section {
         Button("Cancel") {
           showClubPicker = false
+        }
+      }
+    }
+  }
+
+  private var quickStartSheet: some View {
+    List {
+      Section("Quick Start Round") {
+        HStack {
+          Text("Course")
+          Spacer()
+          Text("Haven")
+            .foregroundStyle(.secondary)
+        }
+        Picker("Tee", selection: $quickStartTee) {
+          ForEach(quickStartTees, id: \.self) { tee in
+            Text(tee).tag(tee)
+          }
+        }
+        HStack {
+          Text("Round")
+          Spacer()
+          Text("18 Holes")
+            .foregroundStyle(.secondary)
+        }
+        HStack {
+          Text("Starting Hole")
+          Spacer()
+          Text("1")
+            .foregroundStyle(.secondary)
+        }
+      }
+      Section {
+        Button("Start on iPhone") {
+          session.quickStartRound(courseName: "Haven", teeName: quickStartTee, startingHole: 1)
+          showQuickStart = false
+          flash("Requested on iPhone")
+        }
+      }
+      Section {
+        Button("Cancel") {
+          showQuickStart = false
         }
       }
     }

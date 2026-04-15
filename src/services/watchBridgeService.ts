@@ -6,21 +6,28 @@ import { logger } from '../utils/logger';
 const WATCH_EVENT_QUEUE_KEY = '@GolfSum:watchEventQueue';
 const WATCH_END_ROUND_FLAG_KEY = '@GolfSum:watchEndRoundFlag';
 
-export type WatchBridgeEventType = 'hole_saved' | 'end_round';
+export type WatchBridgeEventType = 'hole_saved' | 'end_round' | 'startRoundFromWatch' | 'requestActiveRound' | 'startRound' | 'roundState';
 
 export interface WatchBridgeEvent {
   type: WatchBridgeEventType;
   roundId?: string;
-  holeNumber: number;
-  par: number;
-  score: number;
-  putts: number;
+  holeNumber?: number;
+  currentHole?: number;
+  par?: number;
+  score?: number;
+  putts?: number;
   fir?: boolean | null;
   gir?: boolean | null;
   scoreToPar?: number;
   totalPutts?: number;
   holesCompleted?: number;
   savedAt?: number;
+  course?: string;
+  courseName?: string;
+  tee?: string;
+  teeName?: string;
+  yardage?: number;
+  timestamp?: number;
 }
 
 type WatchBridgeModuleShape = {
@@ -81,8 +88,8 @@ async function applyToInProgressRound(event: WatchBridgeEvent): Promise<void> {
   draft.holes[holeIndex] = {
     ...hole,
     par: event.par || hole.par,
-    score: event.score,
-    putts: event.putts,
+    score: event.score ?? hole.score,
+    putts: event.putts ?? hole.putts,
     fir: mapFir(event.fir),
     gir: mapGir(event.gir),
     isSaved: true,
@@ -140,12 +147,15 @@ export function initializeWatchReceiver(
   const emitter = new NativeEventEmitter(NativeModules.GolfSumWatchBridge);
   const sub = emitter.addListener('GolfSumWatchMessage', async (payload: unknown) => {
     const event = payload as WatchBridgeEvent;
-    if (!event || !event.type || !event.holeNumber) return;
+    if (!event || !event.type) return;
     try {
-      await enqueueWatchEvent(event);
-      await applyToInProgressRound(event);
-      if (event.type === 'end_round') {
-        await setEndRoundFlag(event);
+      if (event.type === 'hole_saved' || event.type === 'end_round') {
+        if (!event.holeNumber) return;
+        await enqueueWatchEvent(event);
+        await applyToInProgressRound(event);
+        if (event.type === 'end_round') {
+          await setEndRoundFlag(event);
+        }
       }
       onEvent?.(event);
     } catch (error) {

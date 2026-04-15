@@ -26,6 +26,7 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
   @Published var lastSyncDescription = "Never"
   @Published var lastReceivedRoundID = "—"
   @Published var isRefreshing = false
+  @Published var messagesReceivedCount = 0
   private var hasNotifiedRoundStart = false
   private var refreshRetryTask: Task<Void, Never>?
 
@@ -148,7 +149,7 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
   private func scheduleRetrySync() {
     refreshRetryTask?.cancel()
     refreshRetryTask = Task { @MainActor in
-      try? await Task.sleep(nanoseconds: 3_000_000_000)
+      try? await Task.sleep(nanoseconds: 2_000_000_000)
       if !self.roundActive {
         self.refreshRound()
       }
@@ -159,6 +160,7 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
   private func applyIncomingState(_ context: [String: Any]) {
     if context.isEmpty { return }
     debugLog("applyIncomingState \(context)")
+    messagesReceivedCount += 1
     let active = boolFrom(context["roundActive"]) || boolFrom(context["active"])
     if active && !roundActive {
       notifyRoundStartedIfNeeded()
@@ -274,6 +276,57 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
           self.scheduleRetrySync()
         }
       }
+    }
+  }
+
+  func quickStartRound(courseName: String = "Haven", teeName: String = "Blue", startingHole: Int = 1) {
+    let localRound = ActiveRound(
+      roundID: "watch-\(UUID().uuidString)",
+      courseName: courseName,
+      teeName: teeName,
+      startedAt: Date(),
+      currentHole: HoleSnapshot(
+        number: startingHole,
+        par: 4,
+        yardage: 382,
+        front: 0,
+        middle: 0,
+        back: 0,
+        suggestedClub: nil,
+        coachingFocus: nil
+      ),
+      wind: nil,
+      isActive: true
+    )
+    SharedRoundStore.save(localRound)
+    applyPersistedState()
+
+    guard WCSession.isSupported() else { return }
+    let session = WCSession.default
+    session.activate()
+    guard session.activationState == .activated else { return }
+
+    let message: [String: Any] = [
+      "type": "startRoundFromWatch",
+      "course": courseName,
+      "courseName": courseName,
+      "tee": teeName,
+      "teeName": teeName,
+      "currentHole": startingHole,
+      "holeNumber": startingHole,
+      "par": 4,
+      "yardage": 382,
+      "timestamp": Date().timeIntervalSince1970,
+    ]
+    debugLog("quickStartRound \(message)")
+    if session.isReachable {
+      session.sendMessage(message, replyHandler: { payload in
+        DispatchQueue.main.async {
+          self.applyIncomingState(payload)
+        }
+      }, errorHandler: { error in
+        self.debugLog("quickStartRound send error: \(error.localizedDescription)")
+      })
     }
   }
 

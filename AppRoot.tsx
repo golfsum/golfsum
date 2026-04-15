@@ -74,7 +74,7 @@ import { GpsRoundScreen } from './src/screens/GpsRoundScreen';
 import { WebGpsRoundPreview } from './src/screens/WebGpsRoundPreview';
 import SaveConfirmationOverlay from './src/components/SaveConfirmationOverlay';
 import { detectMilestone, MilestoneEvent } from './src/services/milestoneDetector';
-import { consumeWatchEndRoundFlag, initializeWatchReceiver, type WatchBridgeEvent } from './src/services/watchBridgeService';
+import { consumeWatchEndRoundFlag, initializeWatchReceiver, updateWatchGpsContext, type WatchBridgeEvent } from './src/services/watchBridgeService';
 import {
   initializePushNotifications,
   syncPushRegistrationForProfile,
@@ -144,6 +144,19 @@ export default function App() {
 
   useLayoutEffect(() => {
     const teardown = initializeWatchReceiver((event: WatchBridgeEvent) => {
+      if (event.type === 'startRoundFromWatch') {
+        const courseName = event.course || event.courseName || 'Haven';
+        const teeName = event.tee || event.teeName || 'Blue';
+        const holeNumber = event.currentHole || event.holeNumber || 1;
+        logger.debug('Start round requested from watch', event);
+        handleStartGpsRound('watch-haven-stub', courseName, {
+          teeName,
+          startingHole: holeNumber,
+          endingHole: 18,
+          roundLength: '18',
+        });
+        return;
+      }
       setRefreshTrigger(prev => prev + 1);
       if (event.type === 'end_round') {
         Alert.alert('Round synced from Apple Watch', 'Final hole saved. Finish and save on iPhone.');
@@ -554,12 +567,41 @@ export default function App() {
     courseName?: string,
     settings?: { teeName?: string; startingHole?: number; endingHole?: number; roundLength?: '18' | 'front9' | 'back9'; tournamentMode?: boolean; routeHoleNumbers?: number[]; routeLabel?: string }
   ) => {
+    const teeName = settings?.teeName || 'Blue';
+    const currentHole = settings?.startingHole || 1;
+    const roundId = `gps-${courseId}-${Date.now()}`;
+    const startRoundPayload = {
+      type: 'startRound',
+      action: 'roundState',
+      active: true,
+      roundActive: true,
+      roundID: roundId,
+      roundId,
+      course: courseName || 'Haven',
+      courseName: courseName || 'Haven',
+      currentHole,
+      hole: currentHole,
+      par: 4,
+      yardage: 382,
+      tee: teeName,
+      teeName,
+      frt: 0,
+      ctr: 0,
+      bck: 0,
+      timestamp: Date.now() / 1000,
+      lastSyncAt: Date.now() / 1000,
+      clubs: [],
+      holes: [{ number: currentHole, par: 4 }],
+    };
+    logger.debug('Sending startRound to Watch', startRoundPayload);
+    updateWatchGpsContext(startRoundPayload);
+
     setGpsResumeData(null);
     setGpsRoundCourse({
       courseId,
       courseName,
-      teeColor: settings?.teeName || 'Blue',
-      startingHole: settings?.startingHole || 1,
+      teeColor: teeName,
+      startingHole: currentHole,
       endingHole: settings?.endingHole || 18,
       roundLength: settings?.roundLength || '18',
       routeHoleNumbers: settings?.routeHoleNumbers,

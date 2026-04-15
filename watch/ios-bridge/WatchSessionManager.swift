@@ -30,9 +30,19 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
 
   /// Property-list friendly payload: active / roundActive, hole, frt, ctr, bck, clubs ([String]).
   func updateApplicationContextPayload(_ payload: [String: Any]) {
-    lastPayload = payload
+    let active = boolFrom(payload["roundActive"]) || boolFrom(payload["active"])
+    var outgoing = payload
+    outgoing["timestamp"] = outgoing["timestamp"] ?? Date().timeIntervalSince1970
+    outgoing["lastSyncAt"] = Date().timeIntervalSince1970
+    if outgoing["type"] == nil {
+      outgoing["type"] = active ? "startRound" : "roundEnded"
+    }
+    if outgoing["action"] == nil {
+      outgoing["action"] = "roundState"
+    }
+    lastPayload = outgoing
     SharedRoundStore.save(activeRound(from: payload))
-    debugLog("Stored payload for round \(stringFrom(payload[\"roundID\"]) ?? stringFrom(payload[\"roundId\"]) ?? "unknown")")
+    debugLog("Sending startRound to Watch \(outgoing)")
     flushContextToWatch()
   }
 
@@ -128,12 +138,13 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
 
     let contextPayload = lastPayload.merging([
       "lastSyncAt": Date().timeIntervalSince1970,
+      "timestamp": lastPayload["timestamp"] ?? Date().timeIntervalSince1970,
     ]) { _, new in new }
 
     // Backup path — survives when watch wakes later.
     do {
       try session.updateApplicationContext(contextPayload)
-      debugLog("updateApplicationContext sent. reachable=\(session.isReachable)")
+      debugLog("updateApplicationContext sent. reachable=\(session.isReachable) payload=\(contextPayload)")
     } catch {
       // Best-effort; avoid crashing the app if the watch is unavailable.
       debugLog("updateApplicationContext failed: \(error.localizedDescription)")
@@ -142,9 +153,7 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     // Immediate path when the watch app is running in foreground.
     if session.isReachable {
       var msg = contextPayload
-      let isActive = boolFrom(lastPayload["roundActive"]) || boolFrom(lastPayload["active"])
       msg["action"] = "roundState"
-      msg["type"] = isActive ? "startRound" : "roundEnded"
       session.sendMessage(
         msg,
         replyHandler: { reply in
@@ -152,7 +161,7 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         },
         errorHandler: { _ in
           // Context still updated above; message is best-effort.
-          self.debugLog("sendMessage failed")
+          self.debugLog("sendMessage failed: \($0.localizedDescription)")
         }
       )
     } else {
@@ -208,6 +217,12 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         "lastSyncAt": Date().timeIntervalSince1970,
       ]) { _, new in new })
       flushContextToWatch()
+      return
+    }
+    if type == "startRoundFromWatch" {
+      debugLog("Received startRoundFromWatch request \(message)")
+      messageHandler?(message)
+      replyHandler(["ok": true])
       return
     }
     debugLog("Received watch message: \(message)")
