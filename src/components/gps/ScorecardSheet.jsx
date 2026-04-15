@@ -40,6 +40,23 @@ function shouldShowCircle(label) {
   return label === 'eagle' || label === 'birdie';
 }
 
+function getFirDisplay(hole) {
+  if (hole?.fairwayHit === true) return 'Y';
+  if (hole?.fairwayHit === false) {
+    if (hole?.fairwayMiss === 'left') return 'L';
+    if (hole?.fairwayMiss === 'right') return 'R';
+    if (hole?.fairwayMiss === 'bunker') return 'B';
+    return 'N';
+  }
+  return '–';
+}
+
+function getGirDisplay(hole) {
+  if (hole?.girAchieved === true) return 'Y';
+  if (hole?.girAchieved === false) return 'N';
+  return '–';
+}
+
 // ─── Subtotal helpers ────────────────────────────────────────────────
 function sumScores(holes, start, end) {
   let total = 0;
@@ -209,6 +226,14 @@ function HoleRow({ hole, isCurrent, isFuture, isFlagged, onPress }) {
           <Text style={[styles.cellText, styles.cellTextDash]}>–</Text>
         )}
       </View>
+
+      <View style={styles.cellFir}>
+        <Text style={[styles.cellTextSmall, isFuture && styles.cellTextFuture]}>{getFirDisplay(hole)}</Text>
+      </View>
+
+      <View style={styles.cellGir}>
+        <Text style={[styles.cellTextSmall, isFuture && styles.cellTextFuture]}>{getGirDisplay(hole)}</Text>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -237,6 +262,8 @@ function SubtotalRow({ label, scoreSub, parSub, count }) {
           {diffText}
         </Text>
       </View>
+      <View style={styles.cellFir} />
+      <View style={styles.cellGir} />
     </View>
   );
 }
@@ -368,6 +395,8 @@ export default function ScorecardSheet({
             <View style={styles.cellHcp}><Text style={styles.colHeaderText}>HCP</Text></View>
             <View style={styles.cellScore}><Text style={styles.colHeaderText}>SCORE</Text></View>
             <View style={styles.cellPutts}><Text style={styles.colHeaderText}>PUTTS</Text></View>
+            <View style={styles.cellFir}><Text style={styles.colHeaderText}>FIR</Text></View>
+            <View style={styles.cellGir}><Text style={styles.colHeaderText}>GIR</Text></View>
           </View>
 
           {/* Scrollable hole list */}
@@ -423,6 +452,8 @@ export default function ScorecardSheet({
                     : ''}
                 </Text>
               </View>
+              <View style={styles.cellFir} />
+              <View style={styles.cellGir} />
             </View>
 
             {/* Bottom spacing */}
@@ -441,6 +472,8 @@ const CELL_PAR_WIDTH = 44;
 const CELL_HCP_WIDTH = 40;
 const CELL_SCORE_WIDTH = 56;
 const CELL_PUTTS_WIDTH = 48;
+const CELL_FIR_WIDTH = 34;
+const CELL_GIR_WIDTH = 34;
 
 const styles = StyleSheet.create({
   overlay: {
@@ -564,6 +597,14 @@ const styles = StyleSheet.create({
   },
   cellPutts: {
     flex: 1,
+    alignItems: 'center',
+  },
+  cellFir: {
+    width: CELL_FIR_WIDTH,
+    alignItems: 'center',
+  },
+  cellGir: {
+    width: CELL_GIR_WIDTH,
     alignItems: 'center',
   },
 

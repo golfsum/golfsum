@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, ActivityIndicator, Alert, Animated, AppState, Modal, NativeEventEmitter, NativeModules, Platform, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { getCourse, saveCourse } from '../services/courseCache';
 import { fetchCourseHolesFromBackend } from '../services/golfApi';
 import { requestGpsPermission, watchUserPosition, classifyGpsQuality } from '../services/gps';
@@ -64,6 +65,7 @@ import {
   clearGpsInProgressRound,
 } from '../services/inProgressRoundService';
 import { updateWatchGpsContext } from '../services/watchBridgeService';
+import Storage from '../services/storage';
 
 let MapboxGL = null;
 try {
@@ -162,6 +164,35 @@ function getSegmentMetrics(userPos, teePoi, greenPoi) {
   };
 }
 
+function getGreenMissMetrics(userPos, teePoi, greenFront, greenCenter, greenBack) {
+  if (!userPos || !teePoi || !greenFront || !greenCenter || !greenBack) return null;
+  const origin = { lat: teePoi.Latitude, lng: teePoi.Longitude };
+  const front = projectMeters(origin, { lat: greenFront.Latitude, lng: greenFront.Longitude });
+  const back = projectMeters(origin, { lat: greenBack.Latitude, lng: greenBack.Longitude });
+  const center = projectMeters(origin, { lat: greenCenter.Latitude, lng: greenCenter.Longitude });
+  const point = projectMeters(origin, userPos);
+  const axis2 = (center.x * center.x) + (center.y * center.y);
+  if (axis2 === 0) return null;
+
+  const projectT = (value) => ((value.x * center.x) + (value.y * center.y)) / axis2;
+  const frontT = projectT(front);
+  const backT = projectT(back);
+  const pointT = projectT(point);
+  const proj = { x: center.x * pointT, y: center.y * pointT };
+  const dx = point.x - proj.x;
+  const dy = point.y - proj.y;
+  const cross = (center.x * point.y) - (center.y * point.x);
+
+  return {
+    pointT,
+    minT: Math.min(frontT, backT),
+    maxT: Math.max(frontT, backT),
+    lateralMeters: Math.sqrt((dx * dx) + (dy * dy)),
+    side: cross >= 0 ? 'Left Green' : 'Right Green',
+    distanceToCenterYards: haversineYards(userPos.lat, userPos.lng, greenCenter.Latitude, greenCenter.Longitude),
+  };
+}
+
 function getHazardTags(hole) {
   const pois = hole?.pois || [];
   const tags = [];
@@ -176,7 +207,7 @@ function getHazardTags(hole) {
   return tags;
 }
 
-function detectLiveLie(userPos, hole, teePoi, greenPoi) {
+function detectLiveLie(userPos, hole, teePoi, greenPoi, greenFrontPoi = null, greenBackPoi = null) {
   if (!userPos || !hole) return LIVE_LIE_DEFAULT;
 
   const pois = hole?.pois || [];
@@ -210,6 +241,19 @@ function detectLiveLie(userPos, hole, teePoi, greenPoi) {
     return { lie: 'Trees', color: '#86EFAC', showDot: true };
   }
 
+  const greenMiss = getGreenMissMetrics(userPos, teePoi, greenFrontPoi, greenPoi, greenBackPoi);
+  if (greenMiss && Number.isFinite(greenMiss.distanceToCenterYards) && greenMiss.distanceToCenterYards <= 45) {
+    if (greenMiss.pointT < greenMiss.minT - 0.04) {
+      return { lie: 'Short Green', color: '#FBBF24', showDot: true };
+    }
+    if (greenMiss.pointT > greenMiss.maxT + 0.04) {
+      return { lie: 'Long Green', color: '#FBBF24', showDot: true };
+    }
+    if (greenMiss.lateralMeters >= 10) {
+      return { lie: greenMiss.side, color: '#A3E635', showDot: true };
+    }
+  }
+
   if (metrics && metrics.alongTrackRatio >= 0 && metrics.alongTrackRatio <= 1 && metrics.corridorDistance <= 15) {
     return { lie: 'Fairway', color: '#4CAF7D', showDot: true };
   }
@@ -218,6 +262,31 @@ function detectLiveLie(userPos, hole, teePoi, greenPoi) {
   }
 
   return LIVE_LIE_DEFAULT;
+}
+
+const AIM_HINT_COUNT_KEY = '@GolfSum:aimModeHintCount';
+
+function isAimSnapPoi(poi) {
+  const type = String(poi?.POI || '').toLowerCase();
+  return type.includes('bunker') || type.includes('water') || type.includes('hazard');
+}
+
+function getAimPoiTag(poi) {
+  const type = String(poi?.POI || '').toLowerCase();
+  if (type.includes('bunker')) return 'Snapped to Bunker';
+  if (type.includes('water')) return 'Snapped to Water';
+  if (type.includes('hazard')) return 'Snapped to Hazard';
+  return 'Snapped to POI';
+}
+
+function getAimPoiLabel(poi) {
+  const side = String(poi?.SideOfFairway || '').toUpperCase();
+  const sideLabel = side === 'L' ? 'Left ' : side === 'R' ? 'Right ' : '';
+  const raw = String(poi?.POI || '').toLowerCase();
+  if (raw.includes('bunker')) return `Carry ${sideLabel}Bunker`.trim();
+  if (raw.includes('water')) return `Carry ${sideLabel}Water`.trim();
+  if (raw.includes('hazard')) return `Carry ${sideLabel}Hazard`.trim();
+  return String(poi?.POI || 'Aim Point');
 }
 
 function normalizeTeeName(name) {
@@ -675,6 +744,9 @@ export function GpsRoundScreen({
   const [flaggedForPreSave, setFlaggedForPreSave] = useState([]);
   const [coursePlan, setCoursePlan] = useState(null);
   const [showGhostOverlay, setShowGhostOverlay] = useState(true);
+  const [aimMode, setAimMode] = useState(false);
+  const [showAimHintBanner, setShowAimHintBanner] = useState(false);
+  const aimHintTimeoutRef = useRef(null);
 
   const roundIdRef = useRef(resumedRoundData?.id ?? `gps-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`);
   const createdAtRoundRef = useRef(resumedRoundData?.createdAt ?? new Date().toISOString());
@@ -1415,8 +1487,8 @@ export function GpsRoundScreen({
     GPS_BAR.YARDAGE +
     GPS_COACHING.NUDGE_GAP_ABOVE_BAR;
   const detectLieAtCoordinate = useCallback((coord) => (
-    detectLiveLie(coord, currentHole, teeBack, greenCenter)
-  ), [currentHole, greenCenter, teeBack]);
+    detectLiveLie(coord, currentHole, teeBack, greenCenter, greenFront, greenBack)
+  ), [currentHole, greenBack, greenCenter, greenFront, teeBack]);
 
   const yardsUserToGreenCenterLive = useMemo(() => {
     if (!userPos?.lat || !greenCenter) return null;
@@ -1703,6 +1775,10 @@ export function GpsRoundScreen({
     if (lieToastTimeoutRef.current) clearTimeout(lieToastTimeoutRef.current);
   }, []);
 
+  useEffect(() => () => {
+    if (aimHintTimeoutRef.current) clearTimeout(aimHintTimeoutRef.current);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const weatherAnchor = teeBack
@@ -1963,6 +2039,56 @@ export function GpsRoundScreen({
 
   const [measurePin, setMeasurePin] = useState(null);
   const [pinCoords, setPinCoords] = useState(null);
+  const aimSnapPois = useMemo(
+    () => (currentHole?.pois || []).filter((poi) =>
+      isAimSnapPoi(poi) &&
+      Number.isFinite(poi?.Latitude) &&
+      Number.isFinite(poi?.Longitude)
+    ),
+    [currentHole]
+  );
+  const showGreenDistancePills = useMemo(
+    () => Number.isFinite(centerYards) && centerYards <= 200 && greenFront && greenCenter && greenBack,
+    [centerYards, greenBack, greenCenter, greenFront]
+  );
+
+  const showAimHint = useCallback(async () => {
+    try {
+      const raw = await Storage.getItem(AIM_HINT_COUNT_KEY);
+      const count = Number.parseInt(raw || '0', 10) || 0;
+      if (count >= 3) return;
+      await Storage.setItem(AIM_HINT_COUNT_KEY, String(count + 1));
+      setShowAimHintBanner(true);
+      if (aimHintTimeoutRef.current) clearTimeout(aimHintTimeoutRef.current);
+      aimHintTimeoutRef.current = setTimeout(() => setShowAimHintBanner(false), 3200);
+    } catch {
+      setShowAimHintBanner(true);
+      if (aimHintTimeoutRef.current) clearTimeout(aimHintTimeoutRef.current);
+      aimHintTimeoutRef.current = setTimeout(() => setShowAimHintBanner(false), 3200);
+    }
+  }, []);
+
+  const enterAimMode = useCallback(() => {
+    setAimMode(true);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+    void showAimHint();
+  }, [showAimHint]);
+
+  const exitAimMode = useCallback(() => {
+    setAimMode(false);
+    setShowAimHintBanner(false);
+    if (!measurePin?.locked) {
+      setMeasurePin(null);
+    }
+  }, [measurePin?.locked]);
+
+  const toggleAimMode = useCallback(() => {
+    if (aimMode) {
+      exitAimMode();
+    } else {
+      enterAimMode();
+    }
+  }, [aimMode, enterAimMode, exitAimMode]);
 
   const handleMapPress = useCallback((event) => {
     const coords = event?.geometry?.coordinates;
@@ -2013,47 +2139,82 @@ export function GpsRoundScreen({
     }
     lastMapTapRef.current = now;
 
-    // Tap to measure: segment from tee (or last shot / you) → tap, plus tap → green.
+    if (!aimMode) {
+      setMeasurePin(null);
+      return;
+    }
+
+    // Tap to aim: current player position → aim point, plus aim point → green.
     if (!Array.isArray(coords) || coords.length < 2 || !activeGreenPoi) {
       setMeasurePin(null);
       return;
     }
-    const toGreen = Math.round(haversineYards(tapLat, tapLng, activeGreenPoi.Latitude, activeGreenPoi.Longitude));
+    const snappedPoi = aimSnapPois
+      .map((poi) => ({
+        poi,
+        distance: haversineYards(tapLat, tapLng, poi.Latitude, poi.Longitude),
+      }))
+      .filter((entry) => Number.isFinite(entry.distance) && entry.distance <= 18)
+      .sort((left, right) => left.distance - right.distance)[0]?.poi || null;
+
+    const aimLat = snappedPoi?.Latitude ?? tapLat;
+    const aimLng = snappedPoi?.Longitude ?? tapLng;
+    const toGreen = Math.round(haversineYards(aimLat, aimLng, activeGreenPoi.Latitude, activeGreenPoi.Longitude));
     if (!Number.isFinite(toGreen) || toGreen > 800) {
       setMeasurePin(null);
       return;
     }
-    const lastShot = currentHoleShots.length > 0
-      ? currentHoleShots[currentHoleShots.length - 1]
-      : null;
-    const measureLineFrom = currentHoleShots.length > 0 && lastShot?.from
-      ? { lat: lastShot.from.lat, lng: lastShot.from.lng }
+    const measureLineFrom = userPos
+      ? { lat: userPos.lat, lng: userPos.lng }
       : teeBack
         ? { lat: teeBack.Latitude, lng: teeBack.Longitude }
-        : userPos
-          ? { lat: userPos.lat, lng: userPos.lng }
-          : null;
-    const fromLabel = currentHoleShots.length > 0 ? 'last shot' : teeBack ? 'tee' : 'you';
+        : null;
+    const fromLabel = userPos ? 'aim point' : teeBack ? 'tee' : 'aim point';
 
     const rawFrom = measureLineFrom
-      ? Math.round(haversineYards(measureLineFrom.lat, measureLineFrom.lng, tapLat, tapLng))
+      ? Math.round(haversineYards(measureLineFrom.lat, measureLineFrom.lng, aimLat, aimLng))
       : null;
 
     const fromDistance = (rawFrom != null && rawFrom >= 5 && rawFrom < 600) ? rawFrom : null;
+    const targetBearing = bearingDeg(
+      aimLat,
+      aimLng,
+      activeGreenPoi.Latitude,
+      activeGreenPoi.Longitude,
+    );
+    const playsLike = !tournamentMode && Number.isFinite(targetBearing)
+      ? getPlayingAdjustment(toGreen, weather, targetBearing).adjustedYards
+      : toGreen;
+    const windRotation = !tournamentMode && Number.isFinite(weather?.windMph) && weather.windMph > 0.5
+      ? getWindArrowRotationForShot(weather?.windDegrees, targetBearing)
+      : null;
 
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
     setMeasurePin({
-      lng: tapLng,
-      lat: tapLat,
+      lng: aimLng,
+      lat: aimLat,
       toGreen,
+      playsLike,
       fromDistance,
       fromLabel,
       measureLineFrom,
+      snappedPoi,
+      snappedTag: snappedPoi ? getAimPoiTag(snappedPoi) : null,
+      snappedLabel: snappedPoi ? getAimPoiLabel(snappedPoi) : null,
+      windRotation,
+      locked: false,
     });
-  }, [activeGreenPoi, currentHoleShots, greenCenter, greenMapOnly, measurePin, overlayState.anySheet, overlayState.shotFlow, resetHoleCamera, teeBack, userPos]);
+  }, [activeGreenPoi, aimMode, aimSnapPois, greenCenter, greenMapOnly, measurePin, overlayState.anySheet, overlayState.shotFlow, resetHoleCamera, teeBack, tournamentMode, userPos, weather]);
 
   useEffect(() => {
     setSuggestionTipExpanded(false);
   }, [currentHoleIndex, overlayState.selectedClub]);
+
+  useEffect(() => {
+    setAimMode(false);
+    setShowAimHintBanner(false);
+    setMeasurePin((prev) => (prev?.locked ? prev : null));
+  }, [currentHoleIndex]);
 
   const handleCameraChanged = useCallback((event) => {
     overlayRef.current?.handleCameraChanged?.(event);
@@ -2420,17 +2581,27 @@ export function GpsRoundScreen({
         return { number, par };
       })
       .filter((hole) => Number.isFinite(hole.number) && Number.isFinite(hole.par));
+    const currentPar = Math.max(3, Math.round(Number(currentHole?.par ?? 4)) || 4);
+    const currentYardage = yardageToWatchInt(selectedTeeYardage || currentHole?.yardage || yardages.center);
     updateWatchGpsContext({
       active,
       roundActive: active,
+      roundID: String(roundIdRef.current || courseId || courseName || 'gps-round'),
       roundId: String(roundIdRef.current || courseId || courseName || 'gps-round'),
       courseId: courseId || null,
       courseName: courseName || null,
+      teeName: selectedTee?.name || teeColor || null,
       hole: holeNum,
       currentHole: holeNum,
+      par: currentPar,
+      yardage: currentYardage,
       frt: yardageToWatchInt(yardages.front),
       ctr: yardageToWatchInt(yardages.center),
       bck: yardageToWatchInt(yardages.back),
+      suggestedClub: effectiveSuggestedClub?.club || null,
+      coachingFocus: holeSuggestion?.oneBigFocus || holeSuggestion?.message || null,
+      windMph: Number.isFinite(weather?.windMph) ? Math.round(weather.windMph) : 0,
+      windDegrees: Number.isFinite(weather?.windDegrees) ? weather.windDegrees : 0,
       clubs: clubsForWatch,
       holes: holesForWatch,
     });
@@ -2438,12 +2609,22 @@ export function GpsRoundScreen({
     courseId,
     courseName,
     currentHole?.hole,
+    currentHole?.par,
+    currentHole?.yardage,
     currentHoleIndex,
+    effectiveSuggestedClub?.club,
+    holeSuggestion?.message,
+    holeSuggestion?.oneBigFocus,
+    selectedTee?.name,
+    selectedTeeYardage,
+    teeColor,
     visibleHoles,
+    watchClubList,
+    weather?.windDegrees,
+    weather?.windMph,
     yardages.front,
     yardages.center,
     yardages.back,
-    watchClubList,
   ]);
 
   useEffect(() => {
@@ -2452,12 +2633,19 @@ export function GpsRoundScreen({
       updateWatchGpsContext({
         active: false,
         roundActive: false,
+        roundID: String(roundIdRef.current || courseId || courseName || 'gps-round'),
         roundId: String(roundIdRef.current || courseId || courseName || 'gps-round'),
         hole: 0,
         currentHole: 0,
+        par: 0,
+        yardage: 0,
         frt: 0,
         ctr: 0,
         bck: 0,
+        suggestedClub: '',
+        coachingFocus: '',
+        windMph: 0,
+        windDegrees: 0,
         clubs: [],
         holes: [],
       });
@@ -2906,6 +3094,34 @@ export function GpsRoundScreen({
               </View>
             </MapboxGL.MarkerView>
           ) : null}
+          {showGreenDistancePills ? (
+            <>
+              <MapboxGL.MarkerView
+                id="green-front-pill"
+                coordinate={[greenFront.Longitude, greenFront.Latitude]}
+              >
+                <View style={[styles.greenDistancePill, styles.greenDistancePillFront]}>
+                  <Text style={styles.greenDistancePillText}>Front {formatYardage(yardages.front, distanceUnit)}</Text>
+                </View>
+              </MapboxGL.MarkerView>
+              <MapboxGL.MarkerView
+                id="green-middle-pill"
+                coordinate={[greenCenter.Longitude, greenCenter.Latitude]}
+              >
+                <View style={[styles.greenDistancePill, styles.greenDistancePillMiddle]}>
+                  <Text style={styles.greenDistancePillText}>Middle {formatYardage(yardages.center, distanceUnit)}</Text>
+                </View>
+              </MapboxGL.MarkerView>
+              <MapboxGL.MarkerView
+                id="green-back-pill"
+                coordinate={[greenBack.Longitude, greenBack.Latitude]}
+              >
+                <View style={[styles.greenDistancePill, styles.greenDistancePillBack]}>
+                  <Text style={styles.greenDistancePillText}>Back {formatYardage(yardages.back, distanceUnit)}</Text>
+                </View>
+              </MapboxGL.MarkerView>
+            </>
+          ) : null}
           {(currentHoleSummary.firstPuttDistance != null || currentPutts > 0) && puttMarkerPoi ? (
             <MapboxGL.MarkerView
               id="putt-pill-marker"
@@ -3095,10 +3311,46 @@ export function GpsRoundScreen({
             >
               <View style={styles.measurePinWrap}>
                 <View style={styles.measurePinBadge}>
-                  <Text style={styles.measurePinText}>{formatYardage(measurePin.toGreen, distanceUnit)} to green</Text>
+                  {measurePin.snappedTag ? (
+                    <View style={styles.measurePinTag}>
+                      <Text style={styles.measurePinTagText}>{measurePin.snappedTag}</Text>
+                    </View>
+                  ) : null}
+                  <Text style={styles.measurePinText}>
+                    {measurePin.snappedLabel || 'To Aim Point'}: {measurePin.fromDistance != null ? formatYardage(measurePin.fromDistance, distanceUnit) : '--'}
+                  </Text>
+                  <Text style={styles.measurePinToGreenText}>To Green: {formatYardage(measurePin.toGreen, distanceUnit)}</Text>
+                  <View style={styles.measurePinPlaysLikeRow}>
+                    <Text style={styles.measurePinPlaysLikeText}>Plays Like: {formatYardage(measurePin.playsLike, distanceUnit)}</Text>
+                    {measurePin.windRotation ? (
+                      <Ionicons
+                        name="navigate"
+                        size={11}
+                        color="#86EFAC"
+                        style={{ transform: [{ rotate: measurePin.windRotation }] }}
+                      />
+                    ) : null}
+                  </View>
                   {measurePin.fromDistance != null && (
-                    <Text style={styles.measurePinFromYou}>{formatYardage(measurePin.fromDistance, distanceUnit)} from {measurePin.fromLabel}</Text>
+                    <Text style={styles.measurePinFromYou}>{formatYardage(measurePin.fromDistance, distanceUnit)} from current position</Text>
                   )}
+                  <View style={styles.measurePinActions}>
+                    <TouchableOpacity
+                      style={[styles.measurePinActionBtn, measurePin.locked && styles.measurePinActionBtnActive]}
+                      onPress={() => setMeasurePin((prev) => prev ? { ...prev, locked: !prev.locked } : prev)}
+                    >
+                      <Ionicons name={measurePin.locked ? 'lock-closed' : 'lock-open'} size={12} color={measurePin.locked ? '#0f1419' : '#fff'} />
+                      <Text style={[styles.measurePinActionText, measurePin.locked && styles.measurePinActionTextActive]}>
+                        {measurePin.locked ? 'Locked' : 'Pin'}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.measurePinDismissBtn}
+                      onPress={() => setMeasurePin(null)}
+                    >
+                      <Ionicons name="close" size={12} color="rgba(255,255,255,0.8)" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
                 <View style={styles.measurePinDot} />
               </View>
@@ -3123,9 +3375,9 @@ export function GpsRoundScreen({
                 id="measure-line-layer"
                 style={{
                   lineColor: '#FBBF24',
-                  lineWidth: 1.5,
+                  lineWidth: 2.5,
                   lineDasharray: [4, 3],
-                  lineOpacity: 0.7,
+                  lineOpacity: 0.85,
                 }}
               />
             </MapboxGL.ShapeSource>
@@ -3148,10 +3400,9 @@ export function GpsRoundScreen({
               <MapboxGL.LineLayer
                 id="measure-line-from-origin-layer"
                 style={{
-                  lineColor: '#60A5FA',
-                  lineWidth: 1.2,
-                  lineDasharray: [4, 3],
-                  lineOpacity: 0.6,
+                  lineColor: '#22C55E',
+                  lineWidth: 4,
+                  lineOpacity: 0.95,
                 }}
               />
             </MapboxGL.ShapeSource>
@@ -3313,6 +3564,12 @@ export function GpsRoundScreen({
             }}
           />
         </MapboxGL.MapView>
+        {aimMode ? <View pointerEvents="none" style={styles.aimModeDimmer} /> : null}
+        {showAimHintBanner ? (
+          <View style={styles.aimHintBanner} pointerEvents="none">
+            <Text style={styles.aimHintText}>Aim Point Mode — Tap anywhere on the map to measure distances</Text>
+          </View>
+        ) : null}
         {missedShotBanner ? (
           <View style={styles.missedShotBanner}>
             <Text style={styles.missedShotBannerText}>{missedShotBanner.message}</Text>
@@ -3527,6 +3784,7 @@ export function GpsRoundScreen({
         showPlacementInstruction={!overlayState.anySheet && (overlayState.shotFlow === 'mark' || overlayState.shotFlow === 'edit')}
         placementClub={overlayState.activeClub}
         placementLie={overlayState.activeLie}
+        placementLieOptions={overlayState.placementLieOptions || []}
         placementDistance={overlayState.targetDistance}
         placementInstructionText={
           overlayState.shotFlow === 'edit'
@@ -3545,6 +3803,7 @@ export function GpsRoundScreen({
           overlayRef.current?.confirmAndLog?.();
         }}
         onCycleLie={() => overlayRef.current?.cycleLie?.()}
+        onSetPlacementLie={(lieName) => overlayRef.current?.setManualLieChoice?.(lieName)}
         onOpenClubPicker={() => overlayRef.current?.openClubPicker?.()}
         onPressEditShot={currentHoleShots.length > 0 ? () => {
           setSelectedShot(currentHoleShots[currentHoleShots.length - 1]);
@@ -3593,6 +3852,15 @@ export function GpsRoundScreen({
           <Ionicons name="golf-outline" size={14} color={greenMapOnly ? '#fff' : colors.brand.primary} />
           <Text style={[styles.greenPillText, greenMapOnly && styles.greenPillTextActive]}>
             {greenTarget === 'front' ? 'Front' : greenTarget === 'back' ? 'Back' : 'Green'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.greenPill, aimMode && styles.greenPillActive, styles.aimPill]}
+          onPress={toggleAimMode}
+        >
+          <Ionicons name={aimMode ? 'checkmark-circle-outline' : 'locate-outline'} size={14} color={aimMode ? '#fff' : colors.brand.primary} />
+          <Text style={[styles.greenPillText, aimMode && styles.greenPillTextActive]}>
+            {aimMode ? 'Done' : 'Aim'}
           </Text>
         </TouchableOpacity>
         {greenMapOnly ? (
@@ -4632,6 +4900,9 @@ const styles = StyleSheet.create({
   greenPillTextActive: {
     color: '#fff',
   },
+  aimPill: {
+    backgroundColor: 'rgba(4,12,8,0.9)',
+  },
   overviewPill: {
     backgroundColor: 'rgba(255,255,255,0.10)',
     borderColor: 'rgba(255,255,255,0.22)',
@@ -4694,6 +4965,30 @@ const styles = StyleSheet.create({
     color: '#E5E7EB',
     fontSize: 11,
     fontWeight: '600',
+  },
+  greenDistancePill: {
+    backgroundColor: 'rgba(4,12,8,0.96)',
+    borderColor: 'rgba(26,200,85,0.65)',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  greenDistancePillFront: {
+    marginTop: 20,
+    marginLeft: -24,
+  },
+  greenDistancePillMiddle: {
+    marginTop: -22,
+  },
+  greenDistancePillBack: {
+    marginTop: -24,
+    marginLeft: 24,
+  },
+  greenDistancePillText: {
+    color: '#ECFDF5',
+    fontSize: 9,
+    fontWeight: '800',
   },
   selectedTeeMarker: {
     width: 16,
@@ -4902,34 +5197,134 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   measurePinBadge: {
-    backgroundColor: 'rgba(15,15,15,0.92)',
-    borderRadius: 8,
+    backgroundColor: 'rgba(10,12,14,0.96)',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(251,191,36,0.4)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    alignItems: 'center',
-    marginBottom: 4,
-    gap: 1,
+    borderColor: 'rgba(26,200,85,0.45)',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    alignItems: 'flex-start',
+    marginBottom: 6,
+    gap: 3,
+    minWidth: 178,
+    shadowColor: '#000',
+    shadowOpacity: 0.32,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
   },
   measurePinFromYou: {
     color: 'rgba(255,255,255,0.75)',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
   measurePinText: {
-    color: '#FBBF24',
+    color: '#ECFDF5',
     fontSize: 14,
     fontWeight: '800',
     letterSpacing: -0.3,
   },
+  measurePinToGreenText: {
+    color: '#FCD34D',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  measurePinPlaysLikeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  measurePinPlaysLikeText: {
+    color: '#86EFAC',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  measurePinTag: {
+    backgroundColor: 'rgba(26,200,85,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(26,200,85,0.28)',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  measurePinTagText: {
+    color: '#A7F3D0',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  measurePinActions: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'stretch',
+  },
+  measurePinActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  measurePinActionBtnActive: {
+    backgroundColor: '#86EFAC',
+    borderColor: '#86EFAC',
+  },
+  measurePinActionText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  measurePinActionTextActive: {
+    color: '#0f1419',
+  },
+  measurePinDismissBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    marginLeft: 'auto',
+  },
   measurePinDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#FBBF24',
-    borderWidth: 1.5,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#22C55E',
+    borderWidth: 2,
     borderColor: 'rgba(0,0,0,0.5)',
+  },
+  aimModeDimmer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.08)',
+    zIndex: GPS_Z.MAP_DISTANCE_BADGE - 1,
+  },
+  aimHintBanner: {
+    position: 'absolute',
+    top: 122,
+    left: 14,
+    right: 14,
+    alignItems: 'center',
+    zIndex: GPS_Z.TOP_CHROME + 2,
+  },
+  aimHintText: {
+    color: '#F8FAFC',
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+    backgroundColor: 'rgba(5,10,20,0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(26,200,85,0.35)',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   mapShotClubDot: {
     width: 8,

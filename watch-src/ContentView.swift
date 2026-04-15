@@ -31,16 +31,57 @@ struct ContentView: View {
   private var distancesPage: some View {
     VStack(spacing: 8) {
       if session.roundActive {
-        Text("Hole \(session.hole)")
+        Text(session.courseName)
           .font(.headline)
+          .lineLimit(1)
+        Text("Hole \(session.hole) • Par \(session.par) • \(session.yardage) yds")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+          .multilineTextAlignment(.center)
+        if !session.teeName.isEmpty {
+          Text(session.teeName)
+            .font(.caption2)
+            .foregroundStyle(.green)
+        }
         HStack(spacing: 12) {
           yardColumn("FRT", session.frt)
-          yardColumn("CTR", session.ctr)
+          yardColumn("MID", session.ctr)
           yardColumn("BCK", session.bck)
         }
+        if session.windMph > 0 {
+          HStack(spacing: 6) {
+            Image(systemName: "location.north.fill")
+              .rotationEffect(.degrees(session.windDegrees))
+            Text("\(session.windMph) mph")
+              .font(.caption)
+          }
+          .foregroundStyle(.green)
+        }
+        if !session.suggestedClub.isEmpty {
+          Text(session.suggestedClub)
+            .font(.title3.weight(.semibold))
+        }
+        if !session.coachingFocus.isEmpty {
+          Text(session.coachingFocus)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+        }
+        Button("Refresh") {
+          session.refreshRound()
+        }
+        .buttonStyle(.bordered)
       } else {
         Text("No active round")
           .font(.headline)
+        Text("Start one on your iPhone")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+        Button("Refresh") {
+          session.refreshRound()
+        }
+        .buttonStyle(.borderedProminent)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -76,6 +117,11 @@ struct ContentView: View {
             flash("Phone not connected")
           }
         }
+      }
+      .buttonStyle(.bordered)
+
+      Button("Refresh Round") {
+        session.refreshRound()
       }
       .buttonStyle(.bordered)
     }

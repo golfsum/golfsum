@@ -38,6 +38,7 @@ module.exports = function withWatchApp(config) {
       const iosDir = modConfig.modRequest.platformProjectRoot;
 
       const watchSrcDir = path.join(projectRoot, 'watch-src');
+      const watchSharedDir = path.join(projectRoot, 'watch-shared');
       const watchTargetsDir = path.join(projectRoot, 'targets', 'watch');
       const mainIosDir = path.join(iosDir, MAIN_APP_NAME);
       const phoneBridgeDir = path.join(projectRoot, 'watch', 'ios-bridge');
@@ -55,6 +56,11 @@ module.exports = function withWatchApp(config) {
       ['GolfSumWatchApp.swift', 'ContentView.swift', 'WatchSessionManager.swift'].forEach((f) =>
         copyIfChanged(path.join(watchSrcDir, f), path.join(watchTargetsDir, f))
       );
+
+      ['ActiveRound.swift', 'SharedRoundStore.swift'].forEach((f) => {
+        copyIfChanged(path.join(watchSharedDir, f), path.join(watchTargetsDir, f));
+        copyIfChanged(path.join(watchSharedDir, f), path.join(mainIosDir, f));
+      });
 
       // Phone: WCSession + RN bridge
       ['GolfSumWatchBridge.h', 'GolfSumWatchBridge.m', 'GolfSumWatchBridge.swift', 'WatchSessionManager.swift'].forEach((f) => {

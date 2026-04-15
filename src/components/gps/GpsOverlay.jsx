@@ -121,9 +121,47 @@ const lieChoicesMap = {
   'Right Rough': '#A3E635',
   'Sand': '#FBBF24',
   'Green': '#34D399',
+  'Short Green': '#FBBF24',
+  'Long Green': '#FBBF24',
+  'Left Green': '#A3E635',
+  'Right Green': '#A3E635',
   'Trees': '#86EFAC',
   'Water': '#60A5FA',
 };
+
+function getPlacementLieOptions(activeLie, lieChoices) {
+  const byName = new Map(lieChoices.map((choice) => [choice.lie, choice]));
+  const currentLie = activeLie?.lie || null;
+
+  let names;
+  if (currentLie === 'Tee Box') {
+    names = ['Tee Box', 'Fairway', 'Left Rough', 'Right Rough'];
+  } else if (
+    currentLie === 'Green' ||
+    currentLie === 'Short Green' ||
+    currentLie === 'Long Green' ||
+    currentLie === 'Left Green' ||
+    currentLie === 'Right Green'
+  ) {
+    names = ['Green', 'Short Green', 'Left Green', 'Right Green', 'Long Green'];
+  } else if (currentLie === 'Sand') {
+    names = ['Sand', 'Fairway', 'Left Rough', 'Right Rough', 'Green'];
+  } else if (currentLie === 'Water' || currentLie === 'Trees') {
+    names = [currentLie, 'Fairway', 'Left Rough', 'Right Rough', 'Sand'];
+  } else {
+    names = ['Fairway', 'Left Rough', 'Right Rough', 'Sand', 'Green'];
+  }
+
+  const selected = names
+    .map((name) => byName.get(name))
+    .filter(Boolean);
+
+  if (currentLie && !selected.some((choice) => choice.lie === currentLie) && byName.has(currentLie)) {
+    selected.unshift(byName.get(currentLie));
+  }
+
+  return selected.slice(0, 5);
+}
 
 export const GpsOverlay = forwardRef(function GpsOverlay(
   {
@@ -386,6 +424,12 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
     cycleLie() {
       cycleLieRef.current?.();
     },
+    setManualLieChoice(lieName) {
+      const nextChoice = lieChoices.find((choice) => choice.lie === lieName);
+      if (nextChoice) {
+        setManualLie(nextChoice);
+      }
+    },
   }));
 
   // Overlay state is reported in a single effect below (after computed values are ready)
@@ -494,9 +538,17 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
     { lie: 'Right Rough', color: '#A3E635' },
     { lie: 'Sand', color: '#FBBF24' },
     { lie: 'Green', color: '#34D399' },
+    { lie: 'Short Green', color: '#FBBF24' },
+    { lie: 'Long Green', color: '#FBBF24' },
+    { lie: 'Left Green', color: '#A3E635' },
+    { lie: 'Right Green', color: '#A3E635' },
     { lie: 'Trees', color: '#86EFAC' },
     { lie: 'Water', color: '#60A5FA' },
   ]), []);
+  const placementLieOptions = useMemo(
+    () => getPlacementLieOptions(activeLie, lieChoices),
+    [activeLie, lieChoices]
+  );
 
   const targetGeo = useMemo(() => {
     if (!MapboxGL || !userPos || !targetPoint) return null;
@@ -617,14 +669,7 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
   // Keep refs in sync for imperative access
   logShotRef.current = logShot;
   cycleLieRef.current = () => {
-    const lieList = [
-      { lie: 'Tee Box', color: '#60A5FA' },
-      { lie: 'Fairway', color: '#4CAF7D' },
-      { lie: 'Left Rough', color: '#A3E635' },
-      { lie: 'Right Rough', color: '#A3E635' },
-      { lie: 'Sand', color: '#FBBF24' },
-      { lie: 'Green', color: '#34D399' },
-    ];
+    const lieList = placementLieOptions.length ? placementLieOptions : lieChoices;
     const currentIdx = lieList.findIndex(l => l.lie === (activeLie?.lie));
     const nextIdx = (currentIdx + 1) % lieList.length;
     setManualLie(lieList[nextIdx]);
@@ -648,6 +693,7 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
       selectedClub,
       activeClub: activeClub,
       activeLie: activeLie,
+      placementLieOptions,
       targetDistance: targetDistance,
       targetPlaying: tournamentMode ? targetDistance : targetPlaying?.adjustedYards ?? targetDistance,
     });
@@ -656,6 +702,7 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
     activeLie,
     clubPickerOpen,
     onOverlayStateChange,
+    placementLieOptions,
     selectedClub,
     shotInProgress?.id,
     targetDistance,

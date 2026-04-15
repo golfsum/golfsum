@@ -52,10 +52,12 @@ export function GpsRoundHud({
   showPlacementInstruction = false,
   placementClub = null,
   placementLie = null,
+  placementLieOptions = [],
   placementDistance = null,
   onCancelPlacement,
   onConfirmPlacement,
   onCycleLie,
+  onSetPlacementLie,
   onOpenClubPicker,
   placementInstructionText = null,
 }) {
@@ -70,7 +72,7 @@ export function GpsRoundHud({
   const barDockBottom = bottomBarHeight + effectiveBottomInset;
   /** Extra band above the dock (placement distance / manual entry); native `yardageBarHeight` is often 0 in layout constants. */
   const yardageBandH = isPlacing
-    ? Math.max(yardageBarHeight, 38)
+    ? Math.max(yardageBarHeight, 74)
     : manualMode
       ? Math.max(yardageBarHeight, 52)
       : 0;
@@ -245,6 +247,36 @@ export function GpsRoundHud({
             { bottom: barDockBottom, height: yardageBandH },
           ]}
         >
+          {placementLieOptions.length ? (
+            <View style={styles.placementLieOptionsRow}>
+              {placementLieOptions.map((option) => {
+                const active = placementLie?.lie === option.lie;
+                return (
+                  <TouchableOpacity
+                    key={option.lie}
+                    style={[
+                      styles.placementLieOptionChip,
+                      { borderColor: active ? option.color : 'rgba(255,255,255,0.12)' },
+                      active && styles.placementLieOptionChipActive,
+                      active && { backgroundColor: `${option.color}22` },
+                    ]}
+                    onPress={() => onSetPlacementLie?.(option.lie)}
+                  >
+                    <View style={[styles.placementLieDot, { backgroundColor: option.color }]} />
+                    <Text
+                      style={[
+                        styles.placementLieOptionText,
+                        active && { color: option.color },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {option.lie}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : null}
           <View style={styles.placementDistRow}>
             <Text style={styles.placementDistLabel}>TO GREEN</Text>
             <Text style={styles.placementDistValue}>{placementDistance != null ? (distanceUnit === 'meters' ? Math.round(placementDistance * 0.9144) : Math.round(placementDistance)) : '--'}</Text>
@@ -689,7 +721,36 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     justifyContent: 'center',
     gap: 4,
+    paddingTop: 2,
+    paddingBottom: 6,
+  },
+  placementLieOptionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingTop: 4,
+  },
+  placementLieOptionChip: {
+    minWidth: 60,
+    maxWidth: 78,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
     paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderRadius: 999,
+  },
+  placementLieOptionChipActive: {
+    backgroundColor: 'rgba(255,255,255,0.09)',
+  },
+  placementLieOptionText: {
+    color: 'rgba(255,255,255,0.82)',
+    fontSize: 10,
+    fontWeight: '700',
   },
   placementDistLabel: {
     color: 'rgba(255,255,255,0.3)',
