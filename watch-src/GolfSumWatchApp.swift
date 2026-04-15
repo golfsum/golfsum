@@ -11,7 +11,7 @@ struct GolfSumWatchApp: App {
     WindowGroup {
       ContentView()
         .environmentObject(WatchSessionManager.shared)
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: scenePhase) { phase in
           if phase == .active {
             WatchSessionManager.shared.refreshRound()
           }
