@@ -9,6 +9,10 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
   /// Latest payload from JS; replayed after activation / when the watch becomes reachable.
   private var lastPayload: [String: Any] = [:]
 
+  private func debugLog(_ message: String) {
+    print("[GolfSumPhoneWC] \(message)")
+  }
+
   func setMessageHandler(_ handler: @escaping ([String: Any]) -> Void) {
     messageHandler = handler
   }
@@ -18,6 +22,7 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     let session = WCSession.default
     session.delegate = self
     session.activate()
+    debugLog("activate() called")
     if let round = SharedRoundStore.load() {
       lastPayload = payload(for: round)
     }
@@ -27,6 +32,7 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
   func updateApplicationContextPayload(_ payload: [String: Any]) {
     lastPayload = payload
     SharedRoundStore.save(activeRound(from: payload))
+    debugLog("Stored payload for round \(stringFrom(payload[\"roundID\"]) ?? stringFrom(payload[\"roundId\"]) ?? "unknown")")
     flushContextToWatch()
   }
 
@@ -116,27 +122,41 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     guard WCSession.isSupported() else { return }
     let session = WCSession.default
     guard session.activationState == .activated else {
+      debugLog("flushContextToWatch skipped: activationState=\(session.activationState.rawValue)")
       return
     }
 
+    let contextPayload = lastPayload.merging([
+      "lastSyncAt": Date().timeIntervalSince1970,
+    ]) { _, new in new }
+
     // Backup path — survives when watch wakes later.
     do {
-      try session.updateApplicationContext(lastPayload)
+      try session.updateApplicationContext(contextPayload)
+      debugLog("updateApplicationContext sent. reachable=\(session.isReachable)")
     } catch {
       // Best-effort; avoid crashing the app if the watch is unavailable.
+      debugLog("updateApplicationContext failed: \(error.localizedDescription)")
     }
 
     // Immediate path when the watch app is running in foreground.
     if session.isReachable {
-      var msg = lastPayload
+      var msg = contextPayload
+      let isActive = boolFrom(lastPayload["roundActive"]) || boolFrom(lastPayload["active"])
       msg["action"] = "roundState"
+      msg["type"] = isActive ? "startRound" : "roundEnded"
       session.sendMessage(
         msg,
-        replyHandler: nil,
+        replyHandler: { reply in
+          self.debugLog("sendMessage ack: \(reply)")
+        },
         errorHandler: { _ in
           // Context still updated above; message is best-effort.
+          self.debugLog("sendMessage failed")
         }
       )
+    } else {
+      debugLog("Immediate message skipped: watch not reachable")
     }
   }
 
@@ -147,6 +167,7 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     activationDidCompleteWith activationState: WCSessionActivationState,
     error: Error?
   ) {
+    debugLog("activationDidComplete state=\(activationState.rawValue) error=\(error?.localizedDescription ?? "nil")")
     if activationState == .activated {
       if let round = SharedRoundStore.load() {
         lastPayload = payload(for: round)
@@ -162,6 +183,7 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
   }
 
   func sessionReachabilityDidChange(_ session: WCSession) {
+    debugLog("reachability changed: \(session.isReachable)")
     if session.isReachable {
       flushContextToWatch()
     }
@@ -176,10 +198,19 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     didReceiveMessage message: [String: Any],
     replyHandler: @escaping ([String: Any]) -> Void
   ) {
-    if let action = message["action"] as? String, action == "requestRoundSync" {
-      replyHandler(lastPayload)
+    let action = message["action"] as? String
+    let type = message["type"] as? String
+    if action == "requestRoundSync" || action == "requestActiveRound" || type == "requestActiveRound" {
+      debugLog("Watch requested active round")
+      replyHandler(lastPayload.merging([
+        "action": "roundState",
+        "type": "startRound",
+        "lastSyncAt": Date().timeIntervalSince1970,
+      ]) { _, new in new })
+      flushContextToWatch()
       return
     }
+    debugLog("Received watch message: \(message)")
     messageHandler?(message)
     replyHandler(["ok": true])
   }

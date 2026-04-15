@@ -22,7 +22,16 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
   @Published var windDegrees: Double = 0
   @Published var clubs: [String] = []
   @Published var phoneReachable = false
+  @Published var sessionStateLabel = "inactive"
+  @Published var lastSyncDescription = "Never"
+  @Published var lastReceivedRoundID = "—"
+  @Published var isRefreshing = false
   private var hasNotifiedRoundStart = false
+  private var refreshRetryTask: Task<Void, Never>?
+
+  private func debugLog(_ message: String) {
+    print("[GolfSumWatchWC] \(message)")
+  }
 
   func activate() {
     guard WCSession.isSupported() else { return }
@@ -30,23 +39,51 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     let session = WCSession.default
     session.delegate = self
     session.activate()
+    debugLog("activate() called")
     DispatchQueue.main.async {
       self.applyPersistedState()
       self.applyIncomingState(session.applicationContext)
       self.phoneReachable = session.isReachable
+      self.sessionStateLabel = self.label(for: session.activationState)
+      if !self.roundActive {
+        self.scheduleRetrySync()
+      }
     }
   }
 
   func refreshRound() {
+    refreshRetryTask?.cancel()
     applyPersistedState()
     guard WCSession.isSupported() else { return }
     let session = WCSession.default
-    guard session.activationState == .activated, session.isReachable else { return }
-    session.sendMessage(["action": "requestRoundSync"], replyHandler: { payload in
-      DispatchQueue.main.async {
-        self.applyIncomingState(payload)
+    isRefreshing = true
+    session.activate()
+    phoneReachable = session.isReachable
+    sessionStateLabel = label(for: session.activationState)
+    debugLog("refreshRound reachable=\(session.isReachable) state=\(session.activationState.rawValue)")
+
+    guard session.activationState == .activated, session.isReachable else {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        self.isRefreshing = false
       }
-    }, errorHandler: { _ in })
+      scheduleRetrySync()
+      return
+    }
+
+    let message: [String: Any] = ["action": "requestActiveRound", "type": "requestActiveRound"]
+    session.sendMessage(message, replyHandler: { payload in
+      DispatchQueue.main.async {
+        self.debugLog("refreshRound reply: \(payload)")
+        self.applyIncomingState(payload)
+        self.isRefreshing = false
+      }
+    }, errorHandler: { error in
+      DispatchQueue.main.async {
+        self.debugLog("refreshRound error: \(error.localizedDescription)")
+        self.isRefreshing = false
+        self.scheduleRetrySync()
+      }
+    })
   }
 
   private func boolFrom(_ value: Any?) -> Bool {
@@ -85,10 +122,43 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     coachingFocus = round.currentHole.coachingFocus ?? ""
     windMph = round.wind?.speedMph ?? 0
     windDegrees = round.wind?.directionDegrees ?? 0
+    lastReceivedRoundID = round.roundID
+  }
+
+  private func label(for state: WCSessionActivationState) -> String {
+    switch state {
+    case .activated:
+      return "activated"
+    case .inactive:
+      return "inactive"
+    case .notActivated:
+      return "notActivated"
+    @unknown default:
+      return "unknown"
+    }
+  }
+
+  private func updateLastSync(at unixTimestamp: TimeInterval?) {
+    let date = unixTimestamp.map(Date.init(timeIntervalSince1970:)) ?? Date()
+    let formatter = DateFormatter()
+    formatter.dateFormat = "h:mm:ss a"
+    lastSyncDescription = formatter.string(from: date)
+  }
+
+  private func scheduleRetrySync() {
+    refreshRetryTask?.cancel()
+    refreshRetryTask = Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 3_000_000_000)
+      if !self.roundActive {
+        self.refreshRound()
+      }
+    }
   }
 
   /// Merge keys from phone: `active` and/or `roundActive`, hole, frt, ctr, bck, clubs.
   private func applyIncomingState(_ context: [String: Any]) {
+    if context.isEmpty { return }
+    debugLog("applyIncomingState \(context)")
     let active = boolFrom(context["roundActive"]) || boolFrom(context["active"])
     if active && !roundActive {
       notifyRoundStartedIfNeeded()
@@ -98,6 +168,7 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     }
     roundActive = active
     roundID = (context["roundID"] as? String) ?? (context["roundId"] as? String) ?? roundID
+    lastReceivedRoundID = roundID.isEmpty ? lastReceivedRoundID : roundID
     courseName = (context["courseName"] as? String) ?? courseName
     teeName = (context["teeName"] as? String) ?? teeName
     hole = intFrom(context["hole"])
@@ -115,6 +186,8 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     } else {
       clubs = []
     }
+    updateLastSync(at: doubleFrom(context["lastSyncAt"]) == 0 ? nil : doubleFrom(context["lastSyncAt"]))
+    isRefreshing = false
 
     let round = active ? ActiveRound(
       roundID: roundID.isEmpty ? UUID().uuidString : roundID,
@@ -191,17 +264,27 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     error: Error?
   ) {
     DispatchQueue.main.async {
+      self.debugLog("activationDidComplete state=\(activationState.rawValue) error=\(error?.localizedDescription ?? "nil")")
       self.phoneReachable = session.isReachable
+      self.sessionStateLabel = self.label(for: activationState)
       if activationState == .activated {
         self.applyPersistedState()
         self.applyIncomingState(session.applicationContext)
+        if !self.roundActive {
+          self.scheduleRetrySync()
+        }
       }
     }
   }
 
   func sessionReachabilityDidChange(_ session: WCSession) {
     DispatchQueue.main.async {
+      self.debugLog("reachability changed: \(session.isReachable)")
       self.phoneReachable = session.isReachable
+      self.sessionStateLabel = self.label(for: session.activationState)
+      if session.isReachable && !self.roundActive {
+        self.refreshRound()
+      }
     }
   }
 
@@ -213,7 +296,9 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
 
   func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
     DispatchQueue.main.async {
-      if let action = message["action"] as? String, action == "roundState" {
+      let action = message["action"] as? String
+      let type = message["type"] as? String
+      if action == "roundState" || type == "startRound" || type == "roundState" {
         self.applyIncomingState(message)
         return
       }

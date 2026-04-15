@@ -26,6 +26,11 @@ struct ContentView: View {
           .padding(.bottom, 4)
       }
     }
+    .onAppear {
+      if !session.roundActive {
+        session.refreshRound()
+      }
+    }
   }
 
   private var distancesPage: some View {
@@ -72,19 +77,27 @@ struct ContentView: View {
           session.refreshRound()
         }
         .buttonStyle(.bordered)
+        debugPanel
       } else {
         Text("No active round")
           .font(.headline)
-        Text("Start one on your iPhone")
+        Text("No active round detected. Tap Refresh or start one on your iPhone.")
           .font(.caption2)
           .foregroundStyle(.secondary)
+          .multilineTextAlignment(.center)
         Button("Refresh") {
           session.refreshRound()
         }
         .buttonStyle(.borderedProminent)
+        if session.isRefreshing {
+          ProgressView()
+            .progressViewStyle(.circular)
+        }
+        debugPanel
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .padding(.horizontal, 4)
   }
 
   private func yardColumn(_ label: String, _ value: Int) -> some View {
@@ -124,8 +137,23 @@ struct ContentView: View {
         session.refreshRound()
       }
       .buttonStyle(.bordered)
+
+      debugPanel
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  private var debugPanel: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text("Reachable: \(session.phoneReachable ? "Yes" : "No")")
+      Text("Session: \(session.sessionStateLabel)")
+      Text("Last Sync: \(session.lastSyncDescription)")
+      Text("Round ID: \(session.lastReceivedRoundID)")
+    }
+    .font(.system(size: 10, weight: .medium, design: .rounded))
+    .foregroundStyle(.secondary)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.top, 4)
   }
 
   private var clubPickerSheet: some View {
