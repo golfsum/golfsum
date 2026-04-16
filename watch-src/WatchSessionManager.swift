@@ -29,9 +29,22 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
   @Published var messagesReceivedCount = 0
   private var hasNotifiedRoundStart = false
   private var refreshRetryTask: Task<Void, Never>?
+  private var pendingLifecycleMessages: [[String: Any]] = []
 
   private func debugLog(_ message: String) {
     print("[GolfSumWatchWC] \(message)")
+  }
+
+  private func flushPendingLifecycleMessages() {
+    guard WCSession.isSupported(), !pendingLifecycleMessages.isEmpty else { return }
+    let session = WCSession.default
+    guard session.activationState == .activated else { return }
+    let queued = pendingLifecycleMessages
+    pendingLifecycleMessages.removeAll()
+    queued.forEach { payload in
+      debugLog("Flushing queued lifecycle payload: \(payload)")
+      pushLifecyclePayload(payload, allowReply: false, reply: { _ in })
+    }
   }
 
   func activate() {
@@ -254,7 +267,7 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
       "lastHole": hole,
       "timestamp": Date().timeIntervalSince1970,
     ]
-    sendOrFail(payload, reply: reply)
+    sendRoundLifecyclePayload(payload, reply: reply)
   }
 
   private func sendOrFail(_ message: [String: Any], reply: @escaping (Bool) -> Void) {
@@ -291,6 +304,69 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     )
   }
 
+  private func sendRoundLifecyclePayload(_ message: [String: Any], reply: @escaping (Bool) -> Void) {
+    guard WCSession.isSupported() else {
+      isRefreshing = false
+      reply(false)
+      return
+    }
+    let session = WCSession.default
+    session.activate()
+    guard session.activationState == .activated else {
+      pendingLifecycleMessages.append(message)
+      debugLog("Queued lifecycle payload until activation completes: \(message)")
+      DispatchQueue.main.async {
+        self.isRefreshing = false
+        reply(true)
+      }
+      return
+    }
+
+    pushLifecyclePayload(message, allowReply: true, reply: reply)
+  }
+
+  private func pushLifecyclePayload(_ message: [String: Any], allowReply: Bool, reply: @escaping (Bool) -> Void) {
+    let session = WCSession.default
+    var lifecycleMessage = message
+    lifecycleMessage["lastSyncAt"] = Date().timeIntervalSince1970
+
+    do {
+      try session.updateApplicationContext(lifecycleMessage)
+      debugLog("Sent applicationContext lifecycle payload: \(lifecycleMessage)")
+    } catch {
+      debugLog("Failed to send applicationContext lifecycle payload: \(error.localizedDescription)")
+    }
+    session.transferUserInfo(lifecycleMessage)
+    debugLog("Queued transferUserInfo lifecycle payload: \(lifecycleMessage)")
+
+    if session.isReachable {
+      session.sendMessage(
+        lifecycleMessage,
+        replyHandler: { payload in
+          DispatchQueue.main.async {
+            self.debugLog("Lifecycle message reply: \(payload)")
+            self.isRefreshing = false
+            reply(true)
+          }
+        },
+        errorHandler: { error in
+          DispatchQueue.main.async {
+            self.debugLog("Lifecycle message send error: \(error.localizedDescription)")
+            self.isRefreshing = false
+            reply(false)
+          }
+        }
+      )
+    } else {
+      DispatchQueue.main.async {
+        self.isRefreshing = false
+        if allowReply {
+          reply(true)
+        }
+      }
+    }
+  }
+
   // MARK: - WCSessionDelegate
 
   func session(
@@ -305,6 +381,7 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
       if activationState == .activated {
         self.applyPersistedState()
         self.applyIncomingState(session.applicationContext)
+        self.flushPendingLifecycleMessages()
         if !self.roundActive {
           self.scheduleRetrySync()
         }
@@ -337,7 +414,6 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     guard WCSession.isSupported() else { return }
     let session = WCSession.default
     session.activate()
-    guard session.activationState == .activated else { return }
 
     let message: [String: Any] = [
       "type": "startRoundFromWatch",
@@ -352,15 +428,12 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
       "timestamp": Date().timeIntervalSince1970,
     ]
     debugLog("quickStartRound \(message)")
-    if session.isReachable {
-      session.sendMessage(message, replyHandler: { payload in
-        DispatchQueue.main.async {
-          self.applyIncomingState(payload)
-        }
-      }, errorHandler: { error in
-        self.debugLog("quickStartRound send error: \(error.localizedDescription)")
-      })
+    if session.activationState != .activated {
+      pendingLifecycleMessages.append(message)
+      debugLog("Queued quickStartRound until activation completes")
+      return
     }
+    pushLifecyclePayload(message, allowReply: false, reply: { _ in })
   }
 
   func sessionReachabilityDidChange(_ session: WCSession) {
@@ -368,6 +441,7 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
       self.debugLog("reachability changed: \(session.isReachable)")
       self.phoneReachable = session.isReachable
       self.sessionStateLabel = self.label(for: session.activationState)
+      self.flushPendingLifecycleMessages()
       if session.isReachable && !self.roundActive {
         self.refreshRound()
       }

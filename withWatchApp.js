@@ -30,6 +30,29 @@ function copyIfChanged(src, dst) {
   console.log(`[withWatchApp] Synced: ${path.basename(dst)}`);
 }
 
+function injectWatchSessionStart(appDelegatePath) {
+  if (!fs.existsSync(appDelegatePath)) return;
+  let content = fs.readFileSync(appDelegatePath, 'utf8');
+  if (content.includes('WatchSessionManager.shared.start()')) return;
+
+  if (content.includes('return super.application(application, didFinishLaunchingWithOptions: launchOptions)')) {
+    content = content.replace(
+      'return super.application(application, didFinishLaunchingWithOptions: launchOptions)',
+      'WatchSessionManager.shared.start()\n    return super.application(application, didFinishLaunchingWithOptions: launchOptions)'
+    );
+  } else if (content.includes('return super.application(application, didFinishLaunchingWithOptions: launchOptions ?? [:])')) {
+    content = content.replace(
+      'return super.application(application, didFinishLaunchingWithOptions: launchOptions ?? [:])',
+      'WatchSessionManager.shared.start()\n    return super.application(application, didFinishLaunchingWithOptions: launchOptions ?? [:])'
+    );
+  } else {
+    return;
+  }
+
+  fs.writeFileSync(appDelegatePath, content, 'utf8');
+  console.log('[withWatchApp] Injected WatchSessionManager start into AppDelegate.swift');
+}
+
 module.exports = function withWatchApp(config) {
   return withDangerousMod(config, [
     'ios',
@@ -69,6 +92,8 @@ module.exports = function withWatchApp(config) {
           copyIfChanged(src, path.join(mainIosDir, f));
         }
       });
+
+      injectWatchSessionStart(path.join(mainIosDir, 'AppDelegate.swift'));
 
       return modConfig;
     },

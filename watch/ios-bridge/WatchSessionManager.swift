@@ -218,7 +218,18 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
   }
 
   func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+    debugLog("didReceiveMessage: \(message)")
     deliverOrQueue(message)
+  }
+
+  func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String : Any]) {
+    debugLog("didReceiveApplicationContext: \(applicationContext)")
+    deliverOrQueue(applicationContext)
+  }
+
+  func session(_ session: WCSession, didReceiveUserInfo userInfo: [String : Any] = [:]) {
+    debugLog("didReceiveUserInfo: \(userInfo)")
+    deliverOrQueue(userInfo)
   }
 
   func session(
