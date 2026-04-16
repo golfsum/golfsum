@@ -2,8 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActionSheetIOS, ActivityIndicator, Alert, Animated, AppState, Modal, NativeEventEmitter, NativeModules, Platform, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { getCourse, saveCourse } from '../services/courseCache';
-import { fetchCourseHolesFromBackend } from '../services/golfApi';
+import { loadGpsRoundSetup } from '../services/gpsRoundSetup';
 import { requestGpsPermission, watchUserPosition, classifyGpsQuality } from '../services/gps';
 import { haversineYards, projectPointYards } from '../services/haversine';
 import { rs } from '../utils/responsive';
@@ -626,6 +625,7 @@ export function GpsRoundScreen({
   onBack,
   onFinishRound,
   resumedRoundData = null,
+  watchEndRoundRequest = 0,
 }) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -646,6 +646,7 @@ export function GpsRoundScreen({
   const frameBoundsRef = useRef(null);
   const lastMapTapRef = useRef(0);
   const pulseAnim = useRef(new Animated.Value(0)).current;
+  const lastHandledWatchEndRoundRef = useRef(0);
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -1638,31 +1639,26 @@ export function GpsRoundScreen({
     setLoading(true);
     setError('');
     try {
-      const local = await getCourse(courseId);
-      if (local) {
-        setCourse(local);
-        setCached(true);
-      } else {
-        try {
-          const remote = await fetchCourseHolesFromBackend(courseId);
-          await saveCourse(courseId, remote);
-          setCourse(remote);
-          setCached(false);
-        } catch (_remoteErr) {
-          // No course found anywhere — continue with null so GPS round still starts.
-          setCached(false);
-        }
-      }
+      const setup = await loadGpsRoundSetup(courseId, courseName);
+      setCourse(setup?.course || null);
+      setCached(!!setup?.cached);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load course. Pre-download courses from Find Course for offline play.');
     } finally {
       setLoading(false);
     }
-  }, [courseId]);
+  }, [courseId, courseName]);
 
   useEffect(() => {
     loadCourse();
   }, [loadCourse]);
+
+  useEffect(() => {
+    if (!watchEndRoundRequest) return;
+    if (watchEndRoundRequest === lastHandledWatchEndRoundRef.current) return;
+    lastHandledWatchEndRoundRef.current = watchEndRoundRequest;
+    void handleFinishRound();
+  }, [handleFinishRound, watchEndRoundRequest]);
 
   // Load course plan for ghost overlay
   useEffect(() => {

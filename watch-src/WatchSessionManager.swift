@@ -173,12 +173,18 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     lastReceivedRoundID = roundID.isEmpty ? lastReceivedRoundID : roundID
     courseName = (context["courseName"] as? String) ?? courseName
     teeName = (context["teeName"] as? String) ?? teeName
-    hole = intFrom(context["hole"])
-    par = max(3, intFrom(context["par"]) == 0 ? par : intFrom(context["par"]))
-    yardage = max(0, intFrom(context["yardage"]))
-    frt = intFrom(context["frt"])
-    ctr = intFrom(context["ctr"])
-    bck = intFrom(context["bck"])
+    let nextHole = intFrom(context["hole"])
+    if nextHole > 0 { hole = nextHole }
+    let nextPar = intFrom(context["par"])
+    if nextPar > 0 { par = max(3, nextPar) }
+    let nextYardage = intFrom(context["yardage"])
+    if nextYardage > 0 || !active { yardage = max(0, nextYardage) }
+    let nextFrt = intFrom(context["frt"])
+    if nextFrt > 0 || !active { frt = max(0, nextFrt) }
+    let nextCtr = intFrom(context["ctr"])
+    if nextCtr > 0 || !active { ctr = max(0, nextCtr) }
+    let nextBck = intFrom(context["bck"])
+    if nextBck > 0 || !active { bck = max(0, nextBck) }
     suggestedClub = (context["suggestedClub"] as? String) ?? suggestedClub
     coachingFocus = (context["coachingFocus"] as? String) ?? coachingFocus
     windMph = intFrom(context["windMph"])
@@ -190,6 +196,7 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     }
     updateLastSync(at: doubleFrom(context["lastSyncAt"]) == 0 ? nil : doubleFrom(context["lastSyncAt"]))
     isRefreshing = false
+    debugLog("Received full context with yardages: yardage=\(yardage) frt=\(frt) ctr=\(ctr) bck=\(bck)")
 
     let round = active ? ActiveRound(
       roundID: roundID.isEmpty ? UUID().uuidString : roundID,
@@ -238,11 +245,13 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
   }
 
   func sendEndRound(reply: @escaping (Bool) -> Void) {
+    isRefreshing = true
     let payload: [String: Any] = [
       "action": "endRound",
       "type": "endRound",
       "roundID": roundID,
       "finalHole": hole,
+      "lastHole": hole,
       "timestamp": Date().timeIntervalSince1970,
     ]
     sendOrFail(payload, reply: reply)
@@ -250,22 +259,35 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
 
   private func sendOrFail(_ message: [String: Any], reply: @escaping (Bool) -> Void) {
     guard WCSession.isSupported() else {
+      isRefreshing = false
       reply(false)
       return
     }
     let session = WCSession.default
     guard session.activationState == .activated else {
+      isRefreshing = false
       reply(false)
       return
     }
     guard session.isReachable else {
+      isRefreshing = false
       reply(false)
       return
     }
     session.sendMessage(
       message,
-      replyHandler: { _ in reply(true) },
-      errorHandler: { _ in reply(false) }
+      replyHandler: { _ in
+        DispatchQueue.main.async {
+          self.isRefreshing = false
+          reply(true)
+        }
+      },
+      errorHandler: { _ in
+        DispatchQueue.main.async {
+          self.isRefreshing = false
+          reply(false)
+        }
+      }
     )
   }
 

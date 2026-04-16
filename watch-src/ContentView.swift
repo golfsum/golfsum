@@ -25,7 +25,10 @@ struct ContentView: View {
     .confirmationDialog("End round now?", isPresented: $confirmFinishRound, titleVisibility: .visible) {
       Button("Finish Round", role: .destructive) {
         session.sendEndRound { ok in
-          flash(ok ? "Round Saved" : "Phone not connected")
+          flash(ok ? "Ending Round..." : "Phone not connected")
+          if ok {
+            session.refreshRound()
+          }
         }
       }
       Button("Cancel", role: .cancel) {}
@@ -96,6 +99,10 @@ struct ContentView: View {
           confirmFinishRound = true
         }
         .buttonStyle(.borderedProminent)
+        if session.isRefreshing {
+          ProgressView()
+            .progressViewStyle(.circular)
+        }
         debugPanel
       } else {
         Text("No active round")

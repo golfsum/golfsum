@@ -35,8 +35,13 @@ class GolfSumWatchBridge: RCTEventEmitter {
     if let action = msg["action"] as? String, action == "roundState" {
       return
     }
+    if let action = msg["action"] as? String, action == "endRound" {
+      sendEvent(withName: "GolfSumWatchGpsCommand", body: msg)
+      sendEvent(withName: "GolfSumWatchMessage", body: msg)
+      return
+    }
     if let action = msg["action"] as? String,
-       ["addShot", "addPutt", "advanceHole", "endRound"].contains(action) {
+       ["addShot", "addPutt", "advanceHole"].contains(action) {
       sendEvent(withName: "GolfSumWatchGpsCommand", body: msg)
       return
     }

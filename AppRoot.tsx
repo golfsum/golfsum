@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -210,7 +210,7 @@ export default function App() {
           par: Math.max(3, Math.round(Number(hole?.par ?? 4)) || 4),
         })),
       };
-      logger.debug('Full round data sent to Watch with yardages', payload);
+      logger.debug('Full round with yardages sent to Watch via applicationContext', payload);
       updateWatchGpsContext(payload);
     } catch (error) {
       logger.warn('Could not hydrate full round data for watch sync', error);
@@ -230,6 +230,14 @@ export default function App() {
           endingHole: 18,
           roundLength: '18',
         });
+        return;
+      }
+      if (event.type === 'endRound') {
+        logger.debug('End round requested from watch', event);
+        setWatchEndRoundRequest(prev => prev + 1);
+        if (gpsRoundCourseRef.current && currentScreenRef.current !== 'gps-round') {
+          setCurrentScreen('gps-round');
+        }
         return;
       }
       setRefreshTrigger(prev => prev + 1);
@@ -275,6 +283,7 @@ export default function App() {
     routeLabel?: string;
     tournamentMode?: boolean;
   } | null>(null);
+  const [watchEndRoundRequest, setWatchEndRoundRequest] = useState(0);
   const [planningCourse, setPlanningCourse] = useState<{
     courseId: string;
     courseName?: string;
@@ -293,6 +302,16 @@ export default function App() {
   const [resumableGpsRound, setResumableGpsRound] = useState<GpsInProgressRound | null>(null);
   const [showGpsResumeModal, setShowGpsResumeModal] = useState(false);
   const [savingPausedGps, setSavingPausedGps] = useState(false);
+  const currentScreenRef = useRef(currentScreen);
+  const gpsRoundCourseRef = useRef(gpsRoundCourse);
+
+  useEffect(() => {
+    currentScreenRef.current = currentScreen;
+  }, [currentScreen]);
+
+  useEffect(() => {
+    gpsRoundCourseRef.current = gpsRoundCourse;
+  }, [gpsRoundCourse]);
 
   useEffect(() => {
     checkForResumableGpsRound().then((r) => {
@@ -1353,6 +1372,7 @@ export default function App() {
               onBack={handleBack}
               onFinishRound={handleFinishGpsRound}
               resumedRoundData={gpsResumeData as any}
+              watchEndRoundRequest={watchEndRoundRequest}
             />
           </View>
         )
