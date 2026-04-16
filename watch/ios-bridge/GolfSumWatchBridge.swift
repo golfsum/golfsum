@@ -6,6 +6,20 @@ class GolfSumWatchBridge: RCTEventEmitter {
 
   private let sessionManager = WatchSessionManager.shared
 
+  override init() {
+    super.init()
+    sessionManager.setMessageHandler { [weak self] msg in
+      self?.dispatchIncomingMessage(msg)
+    }
+    sessionManager.start()
+  }
+
+  override init() {
+    super.init()
+    // Activate WCSession as soon as the native module loads (before JS calls `start()`).
+    sessionManager.start()
+  }
+
   override static func requiresMainQueueSetup() -> Bool {
     true
   }
@@ -35,8 +49,9 @@ class GolfSumWatchBridge: RCTEventEmitter {
     if let action = msg["action"] as? String, action == "roundState" {
       return
     }
+    // End-round is handled only on `GolfSumWatchMessage` so JS does not run `handleFinishRound`
+    // twice (GPS command listener + AppRoot counter) which broke the flow when no shots exist.
     if let action = msg["action"] as? String, action == "endRound" {
-      sendEvent(withName: "GolfSumWatchGpsCommand", body: msg)
       sendEvent(withName: "GolfSumWatchMessage", body: msg)
       return
     }
