@@ -8,13 +8,32 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
   private var messageHandler: (([String: Any]) -> Void)?
   /// Latest payload from JS; replayed after activation / when the watch becomes reachable.
   private var lastPayload: [String: Any] = [:]
+  private var pendingMessages: [[String: Any]] = []
 
   private func debugLog(_ message: String) {
     print("[GolfSumPhoneWC] \(message)")
   }
 
+  private func deliverOrQueue(_ message: [String: Any]) {
+    if let messageHandler {
+      messageHandler(message)
+    } else {
+      pendingMessages.append(message)
+      debugLog("Queued incoming message until JS bridge is ready: \(message)")
+    }
+  }
+
+  private func flushPendingMessages() {
+    guard let messageHandler, !pendingMessages.isEmpty else { return }
+    let queued = pendingMessages
+    pendingMessages.removeAll()
+    queued.forEach { messageHandler($0) }
+    debugLog("Flushed \(queued.count) queued watch messages to JS")
+  }
+
   func setMessageHandler(_ handler: @escaping ([String: Any]) -> Void) {
     messageHandler = handler
+    flushPendingMessages()
   }
 
   func start() {
@@ -199,7 +218,7 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
   }
 
   func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-    messageHandler?(message)
+    deliverOrQueue(message)
   }
 
   func session(
@@ -221,12 +240,18 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     }
     if type == "startRoundFromWatch" {
       debugLog("Received startRoundFromWatch request \(message)")
-      messageHandler?(message)
+      deliverOrQueue(message)
+      replyHandler(["ok": true])
+      return
+    }
+    if action == "endRound" || type == "endRound" {
+      debugLog("Received endRound request \(message)")
+      deliverOrQueue(message)
       replyHandler(["ok": true])
       return
     }
     debugLog("Received watch message: \(message)")
-    messageHandler?(message)
+    deliverOrQueue(message)
     replyHandler(["ok": true])
   }
 }

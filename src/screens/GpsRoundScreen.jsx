@@ -2559,10 +2559,14 @@ export function GpsRoundScreen({
         if (!Number.isFinite(h)) return;
         const idx = visibleHoles.findIndex((vh) => (vh.hole ?? vh.number) === h);
         if (idx >= 0) handleSelectHole(idx);
+        return;
+      }
+      if (action === 'endRound' || msg?.type === 'endRound') {
+        void handleFinishRound();
       }
     });
     return () => sub.remove();
-  }, [handleSelectHole, handleWatchPutt, visibleHoles]);
+  }, [handleFinishRound, handleSelectHole, handleWatchPutt, visibleHoles]);
 
   useEffect(() => {
     if (Platform.OS !== 'ios') return undefined;
@@ -2936,10 +2940,47 @@ export function GpsRoundScreen({
     }
   }, [course, courseId, courseName, currentHole, currentHoleIndex, endingHole, holeFlagsByHole, holeScoresByHole, holeSummariesByHole, loggedShotsByHole, onBack, roundLength, routeHoleNumbers, routeLabel, selectedTee, selectedTeeYardage, teeColor, timingState, tournamentMode, visibleHoles]);
 
+  const playedHoleCount = useMemo(
+    () => visibleHoles.reduce((count, _hole, idx) => {
+      const score = holeScoresByHole[idx];
+      const summary = holeSummariesByHole[idx] || {};
+      const shots = (loggedShotsByHole[idx] || []).length;
+      const putts = typeof summary.putts === 'number' ? summary.putts : 0;
+      return count + ((score != null || shots > 0 || putts > 0) ? 1 : 0);
+    }, 0),
+    [holeScoresByHole, holeSummariesByHole, loggedShotsByHole, visibleHoles]
+  );
+
+  const handleDeleteRound = useCallback(async () => {
+    await clearGpsInProgressRound().catch(() => undefined);
+    updateWatchGpsContext({
+      active: false,
+      roundActive: false,
+      action: 'roundState',
+      type: 'roundEnded',
+      roundID: String(roundIdRef.current || courseId || courseName || 'gps-round'),
+      roundId: String(roundIdRef.current || courseId || courseName || 'gps-round'),
+      finalHole: visibleHoles[currentHoleIndex]?.hole ?? currentHoleIndex + 1,
+      frt: 0,
+      ctr: 0,
+      bck: 0,
+      timestamp: Date.now() / 1000,
+      lastSyncAt: Date.now() / 1000,
+      clubs: [],
+      holes: [],
+    });
+    onBack?.();
+  }, [courseId, courseName, currentHoleIndex, onBack, visibleHoles]);
+
   const handleEndRoundPress = useCallback(() => {
     const message = currentHoleIndex < visibleHoles.length - 1
       ? `You are on hole ${currentHoleIndex + 1} of ${visibleHoles.length}`
       : undefined;
+    const currentHasScore = holeScoresByHole[currentHoleIndex] != null || (currentHoleShots.length + currentPutts > 0);
+    const fewPlayed = playedHoleCount < 5;
+    const warning = !currentHasScore && playedHoleCount >= 5
+      ? `${message ? `${message}\n\n` : ''}No score entered for the current hole. You can still finish now.`
+      : message;
 
     const runFinish = () => {
       void handleFinishRound();
@@ -2947,28 +2988,43 @@ export function GpsRoundScreen({
     const runPause = () => {
       void handlePauseRound();
     };
+    const runDelete = () => {
+      Alert.alert('Delete this round?', 'Data will be lost.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete Round', style: 'destructive', onPress: () => void handleDeleteRound() },
+      ]);
+    };
 
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
           title: 'End Round',
-          message,
-          options: ['Finish Round', 'Save & Pause — Resume Later', 'Cancel'],
-          cancelButtonIndex: 2,
+          message: warning,
+          options: fewPlayed
+            ? ['Finish Round', 'Delete Round', 'Save & Pause — Resume Later', 'Cancel']
+            : ['Finish Round', 'Save & Pause — Resume Later', 'Cancel'],
+          destructiveButtonIndex: fewPlayed ? 1 : undefined,
+          cancelButtonIndex: fewPlayed ? 3 : 2,
         },
         (buttonIndex) => {
           if (buttonIndex === 0) runFinish();
-          else if (buttonIndex === 1) runPause();
+          else if (fewPlayed && buttonIndex === 1) runDelete();
+          else if ((fewPlayed && buttonIndex === 2) || (!fewPlayed && buttonIndex === 1)) runPause();
         },
       );
     } else {
-      Alert.alert('End Round', message, [
+      Alert.alert('End Round', warning, fewPlayed ? [
+        { text: 'Finish Round', onPress: runFinish },
+        { text: 'Delete Round', style: 'destructive', onPress: runDelete },
+        { text: 'Save & Pause — Resume Later', onPress: runPause },
+        { text: 'Cancel', style: 'cancel' },
+      ] : [
         { text: 'Finish Round', onPress: runFinish },
         { text: 'Save & Pause — Resume Later', onPress: runPause },
         { text: 'Cancel', style: 'cancel' },
       ]);
     }
-  }, [currentHoleIndex, handleFinishRound, handlePauseRound, visibleHoles]);
+  }, [currentHoleIndex, currentHoleShots.length, currentPutts, handleDeleteRound, handleFinishRound, handlePauseRound, holeScoresByHole, playedHoleCount, visibleHoles]);
 
   if (!MapboxGL) {
     return (

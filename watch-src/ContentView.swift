@@ -6,6 +6,7 @@ struct ContentView: View {
   @State private var toastTask: Task<Void, Never>?
   @State private var showClubPicker = false
   @State private var showQuickStart = false
+  @State private var confirmFinishRound = false
   @State private var quickStartTee = "Blue"
   private let quickStartTees = ["Blue", "White", "Gold", "Red"]
 
@@ -20,6 +21,14 @@ struct ContentView: View {
     }
     .sheet(isPresented: $showQuickStart) {
       quickStartSheet
+    }
+    .confirmationDialog("End round now?", isPresented: $confirmFinishRound, titleVisibility: .visible) {
+      Button("Finish Round", role: .destructive) {
+        session.sendEndRound { ok in
+          flash(ok ? "Round Saved" : "Phone not connected")
+        }
+      }
+      Button("Cancel", role: .cancel) {}
     }
     .overlay(alignment: .bottom) {
       if let toast {
@@ -83,6 +92,10 @@ struct ContentView: View {
           session.refreshRound()
         }
         .buttonStyle(.bordered)
+        Button("Finish Round") {
+          confirmFinishRound = true
+        }
+        .buttonStyle(.borderedProminent)
         debugPanel
       } else {
         Text("No active round")
@@ -147,6 +160,13 @@ struct ContentView: View {
         session.refreshRound()
       }
       .buttonStyle(.bordered)
+
+      if session.roundActive {
+        Button("Finish Round") {
+          confirmFinishRound = true
+        }
+        .buttonStyle(.borderedProminent)
+      }
 
       debugPanel
     }

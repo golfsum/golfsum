@@ -6,7 +6,7 @@ import { logger } from '../utils/logger';
 const WATCH_EVENT_QUEUE_KEY = '@GolfSum:watchEventQueue';
 const WATCH_END_ROUND_FLAG_KEY = '@GolfSum:watchEndRoundFlag';
 
-export type WatchBridgeEventType = 'hole_saved' | 'end_round' | 'startRoundFromWatch' | 'requestActiveRound' | 'startRound' | 'roundState';
+export type WatchBridgeEventType = 'hole_saved' | 'end_round' | 'startRoundFromWatch' | 'requestActiveRound' | 'startRound' | 'roundState' | 'endRound' | 'roundEnded';
 
 export interface WatchBridgeEvent {
   type: WatchBridgeEventType;

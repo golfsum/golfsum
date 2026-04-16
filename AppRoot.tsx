@@ -70,6 +70,8 @@ import { ProUpgradeScreen } from './src/screens/ProUpgradeScreen';
 import { appStyles as styles } from './src/app/appStyles';
 import { AppScreen } from './src/app/appTypes';
 import { AppMainContent } from './src/app/AppMainContent';
+import { loadGpsRoundSetup } from './src/services/gpsRoundSetup';
+import { haversineYards } from './src/services/haversine';
 import { GpsRoundScreen } from './src/screens/GpsRoundScreen';
 import { WebGpsRoundPreview } from './src/screens/WebGpsRoundPreview';
 import SaveConfirmationOverlay from './src/components/SaveConfirmationOverlay';
@@ -85,6 +87,7 @@ const ONBOARDING_COMPLETE_KEY = '@GolfSum:onboardingComplete';
 const ONBOARDING_LEGACY_KEY = '@GolfSum:onboardingSeen';
 const ONBOARDING_SETUP_KEY = '@GolfSum:onboardingSetup';
 const LAST_SYNC_KEY = '@GolfSum:LastSync';
+const WATCH_HAVEN_COURSE_ID = 'haven_golf_course_green_valley_az';
 
 const mapOnboardingHandicapToTypical = (
   range: 'beginner' | '10-20' | '5-10' | 'scratch+'
@@ -142,6 +145,78 @@ export default function App() {
     return () => sub.remove();
   }, []);
 
+  const sendFullRoundDataToWatch = useCallback(async (
+    courseId: string,
+    courseName?: string,
+    teeName?: string,
+    startingHole: number = 1,
+    roundId?: string,
+  ) => {
+    try {
+      const setup = await loadGpsRoundSetup(courseId, courseName);
+      const holes = Array.isArray(setup.course?.holes) ? setup.course.holes : [];
+      const currentHole = holes.find((hole: any) => Number(hole?.hole ?? hole?.number) === startingHole) || holes[0] || null;
+      const normalizedTee = String(teeName || setup.teeOptions?.[0]?.name || 'Blue').trim().toLowerCase();
+      const tees = Array.isArray(currentHole?.tees) ? currentHole.tees : [];
+      const matchingTee =
+        tees.find((tee: any) => String(tee?.name || '').trim().toLowerCase() === normalizedTee) ||
+        tees.find((tee: any) => String(tee?.color || '').trim().toLowerCase() === normalizedTee) ||
+        tees[0] ||
+        null;
+
+      const pois = Array.isArray(currentHole?.pois) ? currentHole.pois : [];
+      const greenFront = pois.find((poi: any) => poi?.POI === 'Green' && poi?.Location === 'F');
+      const greenCenter = pois.find((poi: any) => poi?.POI === 'Green' && poi?.Location === 'C');
+      const greenBack = pois.find((poi: any) => poi?.POI === 'Green' && poi?.Location === 'B');
+      const teeBack = pois.find((poi: any) => poi?.POI === 'Tee Back');
+
+      let ctr = Math.round(Number(matchingTee?.yards || currentHole?.yardage || 0)) || 0;
+      let frt = ctr;
+      let bck = ctr;
+      if (
+        teeBack &&
+        greenFront && greenCenter && greenBack &&
+        Number.isFinite(teeBack.Latitude) &&
+        Number.isFinite(teeBack.Longitude)
+      ) {
+        frt = Math.round(haversineYards(teeBack.Latitude, teeBack.Longitude, greenFront.Latitude, greenFront.Longitude));
+        ctr = Math.round(haversineYards(teeBack.Latitude, teeBack.Longitude, greenCenter.Latitude, greenCenter.Longitude));
+        bck = Math.round(haversineYards(teeBack.Latitude, teeBack.Longitude, greenBack.Latitude, greenBack.Longitude));
+      }
+
+      const payload = {
+        type: 'startRound',
+        action: 'roundState',
+        active: true,
+        roundActive: true,
+        roundID: roundId || `gps-${courseId}-${Date.now()}`,
+        roundId: roundId || `gps-${courseId}-${Date.now()}`,
+        course: courseName || setup.course?.courseName || setup.course?.name || 'Haven',
+        courseName: courseName || setup.course?.courseName || setup.course?.name || 'Haven',
+        currentHole: Math.max(1, startingHole),
+        hole: Math.max(1, startingHole),
+        par: Math.max(3, Math.round(Number(currentHole?.par || 4)) || 4),
+        yardage: ctr,
+        tee: teeName || matchingTee?.name || 'Blue',
+        teeName: teeName || matchingTee?.name || 'Blue',
+        frt,
+        ctr,
+        bck,
+        timestamp: Date.now() / 1000,
+        lastSyncAt: Date.now() / 1000,
+        clubs: [],
+        holes: holes.map((hole: any, index: number) => ({
+          number: Math.max(1, Math.round(Number(hole?.hole ?? index + 1)) || index + 1),
+          par: Math.max(3, Math.round(Number(hole?.par ?? 4)) || 4),
+        })),
+      };
+      logger.debug('Full round data sent to Watch with yardages', payload);
+      updateWatchGpsContext(payload);
+    } catch (error) {
+      logger.warn('Could not hydrate full round data for watch sync', error);
+    }
+  }, []);
+
   useLayoutEffect(() => {
     const teardown = initializeWatchReceiver((event: WatchBridgeEvent) => {
       if (event.type === 'startRoundFromWatch') {
@@ -149,7 +224,7 @@ export default function App() {
         const teeName = event.tee || event.teeName || 'Blue';
         const holeNumber = event.currentHole || event.holeNumber || 1;
         logger.debug('Start round requested from watch', event);
-        handleStartGpsRound('watch-haven-stub', courseName, {
+        handleStartGpsRound(WATCH_HAVEN_COURSE_ID, courseName, {
           teeName,
           startingHole: holeNumber,
           endingHole: 18,
@@ -595,6 +670,7 @@ export default function App() {
     };
     logger.debug('Sending startRound to Watch', startRoundPayload);
     updateWatchGpsContext(startRoundPayload);
+    void sendFullRoundDataToWatch(courseId, courseName, teeName, currentHole, roundId);
 
     setGpsResumeData(null);
     setGpsRoundCourse({
@@ -638,6 +714,22 @@ export default function App() {
     // Save GPS rounds directly to history (avoid routing through score-entry / old scorecard flow).
     try {
       const saved = await saveCompletedGpsRoundToHistory(data);
+      updateWatchGpsContext({
+        active: false,
+        roundActive: false,
+        action: 'roundState',
+        type: 'roundEnded',
+        roundID: data.courseId,
+        roundId: data.courseId,
+        finalHole: data.endingHole || data.startingHole || 18,
+        timestamp: Date.now() / 1000,
+        lastSyncAt: Date.now() / 1000,
+        frt: 0,
+        ctr: 0,
+        bck: 0,
+        clubs: [],
+        holes: [],
+      });
       setSelectedRound(saved);
       setGpsRoundCourse(null);
       setGpsResumeData(null);

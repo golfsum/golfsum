@@ -237,6 +237,17 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     sendOrFail(["action": "advanceHole", "hole": holeNumber], reply: reply)
   }
 
+  func sendEndRound(reply: @escaping (Bool) -> Void) {
+    let payload: [String: Any] = [
+      "action": "endRound",
+      "type": "endRound",
+      "roundID": roundID,
+      "finalHole": hole,
+      "timestamp": Date().timeIntervalSince1970,
+    ]
+    sendOrFail(payload, reply: reply)
+  }
+
   private func sendOrFail(_ message: [String: Any], reply: @escaping (Bool) -> Void) {
     guard WCSession.isSupported() else {
       reply(false)
@@ -351,7 +362,7 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     DispatchQueue.main.async {
       let action = message["action"] as? String
       let type = message["type"] as? String
-      if action == "roundState" || type == "startRound" || type == "roundState" {
+      if action == "roundState" || type == "startRound" || type == "roundState" || type == "roundEnded" {
         self.applyIncomingState(message)
         return
       }
