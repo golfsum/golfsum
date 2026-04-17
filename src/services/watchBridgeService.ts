@@ -38,6 +38,15 @@ type WatchBridgeModuleShape = {
 
 const nativeModule = (NativeModules.GolfSumWatchBridge || null) as WatchBridgeModuleShape | null;
 
+/** Set from GpsRoundScreen when mounted — Watch `addShot` / `addPutt` must work even if listener lived only on that screen before. */
+let watchGpsCommandHandler: ((msg: Record<string, unknown>) => void) | null = null;
+
+export function setWatchGpsCommandHandler(
+  handler: ((msg: Record<string, unknown>) => void) | null
+): void {
+  watchGpsCommandHandler = handler;
+}
+
 const mapFir = (fir: boolean | null | undefined): 'hit' | 'right' | null => {
   if (fir === true) return 'hit';
   if (fir === false) return 'right'; // Generic miss marker for watch yes/no input.
@@ -81,7 +90,8 @@ async function applyToInProgressRound(event: WatchBridgeEvent): Promise<void> {
     // Round id namespaces may differ between watch/iPhone. Do not hard-reject.
   }
 
-  const holeIndex = Math.max(0, Math.min(draft.holes.length - 1, event.holeNumber - 1));
+  const holeNum = typeof event.holeNumber === 'number' ? event.holeNumber : 0;
+  const holeIndex = Math.max(0, Math.min(draft.holes.length - 1, holeNum > 0 ? holeNum - 1 : 0));
   const hole = draft.holes[holeIndex];
   if (!hole) return;
 
@@ -145,10 +155,23 @@ export function initializeWatchReceiver(
   }
 
   const emitter = new NativeEventEmitter(NativeModules.GolfSumWatchBridge);
+  const subGps = emitter.addListener('GolfSumWatchGpsCommand', (payload: unknown) => {
+    try {
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        logger.debug('[WatchBridge] GolfSumWatchGpsCommand:', payload);
+      }
+      watchGpsCommandHandler?.(payload as Record<string, unknown>);
+    } catch (error) {
+      logger.warn('Failed handling watch GPS command:', error);
+    }
+  });
   const sub = emitter.addListener('GolfSumWatchMessage', async (payload: unknown) => {
     const event = payload as WatchBridgeEvent;
     if (!event || !event.type) return;
     try {
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        logger.debug('[WatchBridge] GolfSumWatchMessage:', event.type, event);
+      }
       if (event.type === 'hole_saved' || event.type === 'end_round') {
         if (!event.holeNumber) return;
         await enqueueWatchEvent(event);
@@ -171,6 +194,7 @@ export function initializeWatchReceiver(
 
   return () => {
     sub.remove();
+    subGps.remove();
     try {
       nativeModule.stop?.();
     } catch {

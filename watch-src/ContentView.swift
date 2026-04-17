@@ -6,7 +6,7 @@ struct ContentView: View {
   @State private var toastTask: Task<Void, Never>?
   @State private var showClubPicker = false
   @State private var showQuickStart = false
-  @State private var confirmFinishRound = false
+  @State private var showEndRoundConfirm = false
   @State private var quickStartTee = "Blue"
   private let quickStartTees = ["Blue", "White", "Gold", "Red"]
 
@@ -22,16 +22,15 @@ struct ContentView: View {
     .sheet(isPresented: $showQuickStart) {
       quickStartSheet
     }
-    .confirmationDialog("End round now?", isPresented: $confirmFinishRound, titleVisibility: .visible) {
-      Button("Finish Round", role: .destructive) {
+    .alert("End round on iPhone?", isPresented: $showEndRoundConfirm) {
+      Button("Cancel", role: .cancel) {}
+      Button("End Round", role: .destructive) {
         session.sendEndRound { ok in
-          flash(ok ? "Ending Round..." : "Phone not connected")
-          if ok {
-            session.refreshRound()
-          }
+          flash(ok ? "Sent — confirm on iPhone" : "Keep iPhone unlocked nearby, then try again")
         }
       }
-      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("GolfSum on iPhone will offer to finish or delete this round. Stay in Bluetooth range.")
     }
     .overlay(alignment: .bottom) {
       if let toast {
@@ -74,7 +73,7 @@ struct ContentView: View {
         if session.windMph > 0 {
           HStack(spacing: 6) {
             Image(systemName: "location.north.fill")
-              .rotationEffect(.degrees(session.windDegrees))
+              .rotationEffect(.degrees(session.windArrowDegrees))
             Text("\(session.windMph) mph")
               .font(.caption)
           }
@@ -96,7 +95,7 @@ struct ContentView: View {
         }
         .buttonStyle(.bordered)
         Button("Finish Round") {
-          confirmFinishRound = true
+          showEndRoundConfirm = true
         }
         .buttonStyle(.borderedProminent)
         if session.isRefreshing {
@@ -142,40 +141,42 @@ struct ContentView: View {
   }
 
   private var shotTrackingPage: some View {
-    VStack(spacing: 12) {
-      Button("Add Shot") {
-        if session.clubs.isEmpty {
-          flash(session.roundActive ? "Waiting for phone data" : "No active round")
-          return
-        }
-        showClubPicker = true
-      }
-      .buttonStyle(.borderedProminent)
-
-      Button("Add Putt") {
-        session.sendAddPutt { ok in
-          if ok {
-            flash("Putt logged")
-          } else {
-            flash("Phone not connected")
+    ScrollView {
+      VStack(spacing: 12) {
+        Button("Add Shot") {
+          if session.clubs.isEmpty {
+            flash(session.roundActive ? "Waiting for phone data" : "No active round")
+            return
           }
-        }
-      }
-      .buttonStyle(.bordered)
-
-      Button("Refresh Round") {
-        session.refreshRound()
-      }
-      .buttonStyle(.bordered)
-
-      if session.roundActive {
-        Button("Finish Round") {
-          confirmFinishRound = true
+          showClubPicker = true
         }
         .buttonStyle(.borderedProminent)
-      }
 
-      debugPanel
+        Button("Add Putt") {
+          session.sendAddPutt { ok in
+            if ok {
+              flash("Putt logged")
+            } else {
+              flash("Phone not connected")
+            }
+          }
+        }
+        .buttonStyle(.bordered)
+
+        Button("Refresh Round") {
+          session.refreshRound()
+        }
+        .buttonStyle(.bordered)
+
+        if session.roundActive {
+          Button("Finish Round") {
+            showEndRoundConfirm = true
+          }
+          .buttonStyle(.borderedProminent)
+        }
+      }
+      .frame(maxWidth: .infinity)
+      .padding(.vertical, 4)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
@@ -187,6 +188,8 @@ struct ContentView: View {
       Text("Last Sync: \(session.lastSyncDescription)")
       Text("Messages: \(session.messagesReceivedCount)")
       Text("Round ID: \(session.lastReceivedRoundID)")
+      Text("Last type: \(session.lastContextType)")
+      Text("Yards: \(session.lastContextYardageLine)")
     }
     .font(.system(size: 10, weight: .medium, design: .rounded))
     .foregroundStyle(.secondary)

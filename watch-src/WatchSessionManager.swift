@@ -16,10 +16,15 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
   @Published var frt: Int = 0
   @Published var ctr: Int = 0
   @Published var bck: Int = 0
+  @Published var currentYardage: Int = 0
+  @Published var frtYards: Int = 0
+  @Published var midYards: Int = 0
+  @Published var bckYards: Int = 0
   @Published var suggestedClub = ""
   @Published var coachingFocus = ""
   @Published var windMph: Int = 0
   @Published var windDegrees: Double = 0
+  @Published var windArrowDegrees: Double = 0
   @Published var clubs: [String] = []
   @Published var phoneReachable = false
   @Published var sessionStateLabel = "inactive"
@@ -27,6 +32,8 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
   @Published var lastReceivedRoundID = "—"
   @Published var isRefreshing = false
   @Published var messagesReceivedCount = 0
+  @Published var lastContextType: String = "—"
+  @Published var lastContextYardageLine: String = "—"
   private var hasNotifiedRoundStart = false
   private var refreshRetryTask: Task<Void, Never>?
   private var pendingLifecycleMessages: [[String: Any]] = []
@@ -132,10 +139,15 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     frt = round.currentHole.front
     ctr = round.currentHole.middle
     bck = round.currentHole.back
+    currentYardage = round.currentHole.yardage
+    frtYards = round.currentHole.front
+    midYards = round.currentHole.middle
+    bckYards = round.currentHole.back
     suggestedClub = round.currentHole.suggestedClub ?? ""
     coachingFocus = round.currentHole.coachingFocus ?? ""
     windMph = round.wind?.speedMph ?? 0
     windDegrees = round.wind?.directionDegrees ?? 0
+    // windArrowDegrees comes via application context; keep current value if round data lacks it
     lastReceivedRoundID = round.roundID
   }
 
@@ -174,6 +186,22 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     if context.isEmpty { return }
     debugLog("applyIncomingState \(context)")
     messagesReceivedCount += 1
+    let msgType = (context["type"] as? String) ?? (context["action"] as? String) ?? "—"
+    lastContextType = msgType
+
+    if msgType == "roundEnded" {
+      hasNotifiedRoundStart = false
+      roundActive = false
+      currentYardage = 0
+      frtYards = 0
+      midYards = 0
+      bckYards = 0
+      SharedRoundStore.save(nil)
+      lastContextYardageLine = "round ended"
+      debugLog("applyIncomingState: roundEnded — cleared shared round")
+      return
+    }
+
     let active = boolFrom(context["roundActive"]) || boolFrom(context["active"])
     if active && !roundActive {
       notifyRoundStartedIfNeeded()
@@ -186,7 +214,7 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     lastReceivedRoundID = roundID.isEmpty ? lastReceivedRoundID : roundID
     courseName = (context["courseName"] as? String) ?? courseName
     teeName = (context["teeName"] as? String) ?? teeName
-    let nextHole = intFrom(context["hole"])
+    let nextHole = max(intFrom(context["currentHole"]), intFrom(context["hole"]))
     if nextHole > 0 { hole = nextHole }
     let nextPar = intFrom(context["par"])
     if nextPar > 0 { par = max(3, nextPar) }
@@ -198,10 +226,19 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     if nextCtr > 0 || !active { ctr = max(0, nextCtr) }
     let nextBck = intFrom(context["bck"])
     if nextBck > 0 || !active { bck = max(0, nextBck) }
+    let nextCurrentYardage = max(intFrom(context["currentYardage"]), nextYardage)
+    if nextCurrentYardage > 0 || !active { currentYardage = max(0, nextCurrentYardage) } else { currentYardage = yardage }
+    let nextFrtYards = max(intFrom(context["frtYards"]), nextFrt)
+    if nextFrtYards > 0 || !active { frtYards = max(0, nextFrtYards) } else { frtYards = frt }
+    let nextMidYards = max(intFrom(context["midYards"]), nextCtr)
+    if nextMidYards > 0 || !active { midYards = max(0, nextMidYards) } else { midYards = ctr }
+    let nextBckYards = max(intFrom(context["bckYards"]), nextBck)
+    if nextBckYards > 0 || !active { bckYards = max(0, nextBckYards) } else { bckYards = bck }
     suggestedClub = (context["suggestedClub"] as? String) ?? suggestedClub
     coachingFocus = (context["coachingFocus"] as? String) ?? coachingFocus
     windMph = intFrom(context["windMph"])
     windDegrees = doubleFrom(context["windDegrees"])
+    windArrowDegrees = doubleFrom(context["windArrowDegrees"])
     if let list = context["clubs"] as? [String] {
       clubs = list
     } else {
@@ -209,7 +246,10 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     }
     updateLastSync(at: doubleFrom(context["lastSyncAt"]) == 0 ? nil : doubleFrom(context["lastSyncAt"]))
     isRefreshing = false
-    debugLog("Received full context with yardages: yardage=\(yardage) frt=\(frt) ctr=\(ctr) bck=\(bck)")
+    lastContextYardageLine = "y=\(currentYardage) f=\(frtYards) m=\(midYards) b=\(bckYards)"
+    debugLog("Received context dictionary: \(context)")
+    debugLog("Received full context with yardages: yardage=\(currentYardage) frt=\(frtYards) ctr=\(midYards) bck=\(bckYards)")
+    objectWillChange.send()
 
     let round = active ? ActiveRound(
       roundID: roundID.isEmpty ? UUID().uuidString : roundID,
@@ -283,8 +323,12 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
       return
     }
     guard session.isReachable else {
-      isRefreshing = false
-      reply(false)
+      // Phone may be locked or app backgrounded; queued delivery still reaches `didReceiveUserInfo` on iPhone.
+      session.transferUserInfo(message)
+      DispatchQueue.main.async {
+        self.isRefreshing = false
+        reply(true)
+      }
       return
     }
     session.sendMessage(
@@ -297,8 +341,9 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
       },
       errorHandler: { _ in
         DispatchQueue.main.async {
+          session.transferUserInfo(message)
           self.isRefreshing = false
-          reply(false)
+          reply(true)
         }
       }
     )
@@ -358,9 +403,11 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
         }
       )
     } else {
+      debugLog("Lifecycle payload: watch not reachable — applicationContext + transferUserInfo only")
       DispatchQueue.main.async {
         self.isRefreshing = false
         if allowReply {
+          // transferUserInfo queued; iPhone processes when app wakes (same path as sendMessage).
           reply(true)
         }
       }
@@ -458,10 +505,29 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     DispatchQueue.main.async {
       let action = message["action"] as? String
       let type = message["type"] as? String
+      self.debugLog("didReceiveMessage (no reply) action=\(action ?? "nil") type=\(type ?? "nil")")
       if action == "roundState" || type == "startRound" || type == "roundState" || type == "roundEnded" {
         self.applyIncomingState(message)
         return
       }
+    }
+  }
+
+  func session(
+    _ session: WCSession,
+    didReceiveMessage message: [String: Any],
+    replyHandler: @escaping ([String: Any]) -> Void
+  ) {
+    DispatchQueue.main.async {
+      let action = message["action"] as? String
+      let type = message["type"] as? String
+      self.debugLog("didReceiveMessage+reply action=\(action ?? "nil") type=\(type ?? "nil")")
+      if action == "roundState" || type == "startRound" || type == "roundState" || type == "roundEnded" {
+        self.applyIncomingState(message)
+        replyHandler(["ok": true])
+        return
+      }
+      replyHandler(["ok": false, "error": "unhandled"])
     }
   }
 }

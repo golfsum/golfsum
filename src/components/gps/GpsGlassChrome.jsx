@@ -115,7 +115,11 @@ export function GpsGlassChrome({
       }, {})
     : holeScores;
 
-  const rawPlaying = tournamentMode ? yardages.center : playingDistance?.adjustedYards ?? yardages.center;
+  // `??` keeps 0 — but adjustedYards can be 0 while scorecard yardages are valid; prefer real yardages then.
+  const adjYards = playingDistance?.adjustedYards;
+  const rawPlaying = tournamentMode
+    ? yardages.center
+    : (adjYards != null && Number.isFinite(adjYards) && adjYards > 0 ? adjYards : yardages.center);
   const suffix = unitSuffix(distanceUnit);
   const teeBase = Number.isFinite(teeYardage) ? Math.round(teeYardage) : null;
 
@@ -123,15 +127,49 @@ export function GpsGlassChrome({
   const offCourseRef = isOffCourse && teeBack ? { lat: teeBack.Latitude, lng: teeBack.Longitude } : null;
   const useOverride = Boolean(offCourseRef);
 
-  const displayCenter = useOverride && greenCenter
-    ? Math.round(haversineYards(offCourseRef.lat, offCourseRef.lng, greenCenter.Latitude, greenCenter.Longitude))
-    : (Number.isFinite(yardages.center) ? Math.round(yardages.center) : '--');
-  const displayFront = useOverride && greenFront
-    ? Math.round(haversineYards(offCourseRef.lat, offCourseRef.lng, greenFront.Latitude, greenFront.Longitude))
-    : (Number.isFinite(yardages.front) ? Math.round(yardages.front) : '--');
-  const displayBack = useOverride && greenBack
-    ? Math.round(haversineYards(offCourseRef.lat, offCourseRef.lng, greenBack.Latitude, greenBack.Longitude))
-    : (Number.isFinite(yardages.back) ? Math.round(yardages.back) : '--');
+  const yardageFromPill = (key) => {
+    const v = yardages[key];
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      const r = Math.round(v);
+      return r > 0 ? r : '--';
+    }
+    if (v === '--' || v == null || v === '') return '--';
+    const n = Number(String(v).replace(/[^0-9.]/g, ''));
+    if (!Number.isFinite(n) || n <= 0) return '--';
+    return Math.round(n);
+  };
+
+  const haversineYardsOrNull = (lat1, lon1, lat2, lon2) => {
+    const y = haversineYards(
+      Number(lat1),
+      Number(lon1),
+      Number(lat2),
+      Number(lon2),
+    );
+    return y != null && Number.isFinite(y) ? y : null;
+  };
+
+  const hvCenter = useOverride && greenCenter
+    ? haversineYardsOrNull(offCourseRef.lat, offCourseRef.lng, greenCenter.Latitude, greenCenter.Longitude)
+    : null;
+  const hvFront = useOverride && greenFront
+    ? haversineYardsOrNull(offCourseRef.lat, offCourseRef.lng, greenFront.Latitude, greenFront.Longitude)
+    : null;
+  const hvBack = useOverride && greenBack
+    ? haversineYardsOrNull(offCourseRef.lat, offCourseRef.lng, greenBack.Latitude, greenBack.Longitude)
+    : null;
+
+  // Never use Math.round(null) — it becomes 0. Tee haversine can also be 0 with bad POI data — treat as missing.
+  const pillFromHaversine = (hv, key) => {
+    if (hv != null && Number.isFinite(hv)) {
+      const r = Math.round(hv);
+      if (r > 0) return r;
+    }
+    return yardageFromPill(key);
+  };
+  const displayCenter = pillFromHaversine(hvCenter, 'center');
+  const displayFront = pillFromHaversine(hvFront, 'front');
+  const displayBack = pillFromHaversine(hvBack, 'back');
   const scorecardYardageText = teeBase ? `Scorecard Yardage: ${yardsToDisplay(teeBase, distanceUnit)}${suffix}` : null;
   const distanceFromLabel = lastShotFrom
     ? `From shot ${Math.max(1, Number(currentHoleShotCount) || 1)}`
@@ -139,7 +177,10 @@ export function GpsGlassChrome({
       ? 'From tee box'
       : 'From your position';
   const playingValue = useOverride ? displayCenter : (Number.isFinite(rawPlaying) ? Math.round(rawPlaying) : '--');
-  const displayPlaying = Number.isFinite(playingValue) ? Math.round(playingValue) : playingValue;
+  let displayPlaying = Number.isFinite(playingValue) ? Math.round(playingValue) : playingValue;
+  if (!tournamentMode && typeof displayPlaying === 'number' && displayPlaying <= 0) {
+    displayPlaying = '--';
+  }
   const windAdj = playingDistance?.windAdj;
   const tempAdj = playingDistance?.tempAdj;
   const elevAdj = playingDistance?.elevAdj;

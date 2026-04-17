@@ -15,7 +15,7 @@ export const formatAccuracy = (meters, distanceUnit) => {
 };
 
 export const formatYardage = (yards, distanceUnit) => {
-  if (!Number.isFinite(yards)) return '--';
+  if (!Number.isFinite(yards) || yards <= 0) return '--';
   if (distanceUnit === 'meters') {
     return `${Math.round(yards * 0.9144)}m`;
   }

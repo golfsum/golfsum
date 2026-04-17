@@ -179,10 +179,82 @@ export default function App() {
         Number.isFinite(teeBack.Latitude) &&
         Number.isFinite(teeBack.Longitude)
       ) {
-        frt = Math.round(haversineYards(teeBack.Latitude, teeBack.Longitude, greenFront.Latitude, greenFront.Longitude));
-        ctr = Math.round(haversineYards(teeBack.Latitude, teeBack.Longitude, greenCenter.Latitude, greenCenter.Longitude));
-        bck = Math.round(haversineYards(teeBack.Latitude, teeBack.Longitude, greenBack.Latitude, greenBack.Longitude));
+        frt = Math.round(
+          haversineYards(
+            Number(teeBack.Latitude),
+            Number(teeBack.Longitude),
+            Number(greenFront.Latitude),
+            Number(greenFront.Longitude),
+          ) ?? 0,
+        );
+        ctr = Math.round(
+          haversineYards(
+            Number(teeBack.Latitude),
+            Number(teeBack.Longitude),
+            Number(greenCenter.Latitude),
+            Number(greenCenter.Longitude),
+          ) ?? 0,
+        );
+        bck = Math.round(
+          haversineYards(
+            Number(teeBack.Latitude),
+            Number(teeBack.Longitude),
+            Number(greenBack.Latitude),
+            Number(greenBack.Longitude),
+          ) ?? 0,
+        );
       }
+
+      const holesForWatch = holes.map((hole: any, index: number) => {
+        const number = Math.max(1, Math.round(Number(hole?.hole ?? index + 1)) || index + 1);
+        const par = Math.max(3, Math.round(Number(hole?.par ?? 4)) || 4);
+        const teesH = Array.isArray(hole?.tees) ? hole.tees : [];
+        const teeMatch =
+          teesH.find((tee: any) => String(tee?.name || '').trim().toLowerCase() === normalizedTee) ||
+          teesH.find((tee: any) => String(tee?.color || '').trim().toLowerCase() === normalizedTee) ||
+          teesH[0] ||
+          null;
+        const poisH = Array.isArray(hole?.pois) ? hole.pois : [];
+        const gfH = poisH.find((poi: any) => poi?.POI === 'Green' && poi?.Location === 'F');
+        const gcH = poisH.find((poi: any) => poi?.POI === 'Green' && poi?.Location === 'C');
+        const gbH = poisH.find((poi: any) => poi?.POI === 'Green' && poi?.Location === 'B');
+        const tbH = poisH.find((poi: any) => poi?.POI === 'Tee Back');
+        let ctrH = Math.round(Number(teeMatch?.yards || hole?.yardage || 0)) || 0;
+        let frtH = ctrH;
+        let bckH = ctrH;
+        if (
+          tbH &&
+          gfH && gcH && gbH &&
+          Number.isFinite(tbH.Latitude) &&
+          Number.isFinite(tbH.Longitude)
+        ) {
+          frtH = Math.round(
+            haversineYards(
+              Number(tbH.Latitude),
+              Number(tbH.Longitude),
+              Number(gfH.Latitude),
+              Number(gfH.Longitude),
+            ) ?? 0,
+          );
+          ctrH = Math.round(
+            haversineYards(
+              Number(tbH.Latitude),
+              Number(tbH.Longitude),
+              Number(gcH.Latitude),
+              Number(gcH.Longitude),
+            ) ?? 0,
+          );
+          bckH = Math.round(
+            haversineYards(
+              Number(tbH.Latitude),
+              Number(tbH.Longitude),
+              Number(gbH.Latitude),
+              Number(gbH.Longitude),
+            ) ?? 0,
+          );
+        }
+        return { number, par, frt: frtH, ctr: ctrH, bck: bckH };
+      });
 
       const payload = {
         type: 'startRound',
@@ -204,49 +276,16 @@ export default function App() {
         bck,
         timestamp: Date.now() / 1000,
         lastSyncAt: Date.now() / 1000,
+        lastUpdated: Date.now(),
         clubs: [],
-        holes: holes.map((hole: any, index: number) => ({
-          number: Math.max(1, Math.round(Number(hole?.hole ?? index + 1)) || index + 1),
-          par: Math.max(3, Math.round(Number(hole?.par ?? 4)) || 4),
-        })),
+        holes: holesForWatch,
       };
-      logger.debug('Full round with yardages sent to Watch via applicationContext', payload);
+      console.log('[AppRoot→Watch] sendFullRoundDataToWatch: hole=%d frt=%d ctr=%d bck=%d holes=%d',
+        startingHole, frt, ctr, bck, holesForWatch.length);
       updateWatchGpsContext(payload);
     } catch (error) {
       logger.warn('Could not hydrate full round data for watch sync', error);
     }
-  }, []);
-
-  useLayoutEffect(() => {
-    const teardown = initializeWatchReceiver((event: WatchBridgeEvent) => {
-      if (event.type === 'startRoundFromWatch') {
-        const courseName = event.course || event.courseName || 'Haven';
-        const teeName = event.tee || event.teeName || 'Blue';
-        const holeNumber = event.currentHole || event.holeNumber || 1;
-        logger.debug('Start round requested from watch', event);
-        handleStartGpsRound(WATCH_HAVEN_COURSE_ID, courseName, {
-          teeName,
-          startingHole: holeNumber,
-          endingHole: 18,
-          roundLength: '18',
-        });
-        return;
-      }
-      if (event.type === 'endRound') {
-        logger.debug('End round requested from watch', event);
-        setWatchEndRoundRequest(prev => prev + 1);
-        if (gpsRoundCourseRef.current && currentScreenRef.current !== 'gps-round') {
-          setCurrentScreen('gps-round');
-        }
-        return;
-      }
-      setRefreshTrigger(prev => prev + 1);
-      if (event.type === 'end_round') {
-        Alert.alert('Round synced from Apple Watch', 'Final hole saved. Finish and save on iPhone.');
-      }
-    });
-
-    return () => teardown();
   }, []);
 
   useEffect(() => {
@@ -689,7 +728,6 @@ export default function App() {
     };
     logger.debug('Sending startRound to Watch', startRoundPayload);
     updateWatchGpsContext(startRoundPayload);
-    void sendFullRoundDataToWatch(courseId, courseName, teeName, currentHole, roundId);
 
     setGpsResumeData(null);
     setGpsRoundCourse({
@@ -705,6 +743,41 @@ export default function App() {
     });
     setCurrentScreen('gps-round');
   };
+
+  const handleStartGpsRoundRef = useRef(handleStartGpsRound);
+  handleStartGpsRoundRef.current = handleStartGpsRound;
+
+  useLayoutEffect(() => {
+    const teardown = initializeWatchReceiver((event: WatchBridgeEvent) => {
+      if (event.type === 'startRoundFromWatch') {
+        const cn = event.course || event.courseName || 'Haven';
+        const tn = event.tee || event.teeName || 'Blue';
+        const holeNumber = event.currentHole || event.holeNumber || 1;
+        logger.debug('Start round requested from watch', event);
+        handleStartGpsRoundRef.current(WATCH_HAVEN_COURSE_ID, cn, {
+          teeName: tn,
+          startingHole: holeNumber,
+          endingHole: 18,
+          roundLength: '18',
+        });
+        return;
+      }
+      if (event.type === 'endRound') {
+        logger.debug('End round requested from watch', event);
+        setWatchEndRoundRequest((prev) => prev + 1);
+        if (gpsRoundCourseRef.current && currentScreenRef.current !== 'gps-round') {
+          setCurrentScreen('gps-round');
+        }
+        return;
+      }
+      setRefreshTrigger((prev) => prev + 1);
+      if (event.type === 'end_round') {
+        Alert.alert('Round synced from Apple Watch', 'Final hole saved. Finish and save on iPhone.');
+      }
+    });
+
+    return () => teardown();
+  }, []);
 
   const handleStartPlanning = (courseId: string, courseName?: string, teeColor?: string, latitude?: number, longitude?: number) => {
     setPlanningCourse({ courseId, courseName, teeColor, latitude, longitude });

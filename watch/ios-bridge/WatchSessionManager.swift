@@ -252,13 +252,21 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     if type == "startRoundFromWatch" {
       debugLog("Received startRoundFromWatch request \(message)")
       deliverOrQueue(message)
-      replyHandler(["ok": true])
+      replyHandler([
+        "ok": true,
+        "type": "startRoundFromWatchAck",
+        "lastSyncAt": Date().timeIntervalSince1970,
+      ])
       return
     }
     if action == "endRound" || type == "endRound" {
-      debugLog("Received endRound request \(message)")
+      debugLog("Received endRound (with reply) \(message)")
       deliverOrQueue(message)
-      replyHandler(["ok": true])
+      replyHandler([
+        "ok": true,
+        "type": "endRoundAck",
+        "lastSyncAt": Date().timeIntervalSince1970,
+      ])
       return
     }
     debugLog("Received watch message: \(message)")
