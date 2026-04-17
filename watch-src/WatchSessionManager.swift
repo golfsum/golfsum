@@ -42,6 +42,35 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     print("[GolfSumWatchWC] \(message)")
   }
 
+  func sendLogToPhone(level: String, message: String, extra: [String: Any]? = nil) {
+    guard WCSession.isSupported() else { return }
+    let session = WCSession.default
+    session.activate()
+    let logPayload: [String: Any] = [
+      "type": "watchLog",
+      "level": level,
+      "message": message,
+      "timestamp": Date().timeIntervalSince1970,
+      "roundID": roundID.isEmpty ? "unknown" : roundID,
+      "currentHole": hole,
+      "source": "watch",
+      "extra": extra ?? [:],
+    ]
+
+    debugLog("sendLogToPhone \(logPayload)")
+
+    if session.activationState == .activated {
+      session.transferUserInfo(logPayload)
+      debugLog("Queued watch log via transferUserInfo")
+    }
+
+    if session.isReachable {
+      session.sendMessage(logPayload, replyHandler: nil) { error in
+        self.debugLog("watchLog sendMessage failed: \(error.localizedDescription)")
+      }
+    }
+  }
+
   private func flushPendingLifecycleMessages() {
     guard WCSession.isSupported(), !pendingLifecycleMessages.isEmpty else { return }
     let session = WCSession.default
@@ -61,6 +90,10 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     session.delegate = self
     session.activate()
     debugLog("activate() called")
+    sendLogToPhone(level: "info", message: "Watch session activate() called", extra: [
+      "reachable": session.isReachable,
+      "state": label(for: session.activationState),
+    ])
     DispatchQueue.main.async {
       self.applyPersistedState()
       self.applyIncomingState(session.applicationContext)
@@ -82,6 +115,10 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     phoneReachable = session.isReachable
     sessionStateLabel = label(for: session.activationState)
     debugLog("refreshRound reachable=\(session.isReachable) state=\(session.activationState.rawValue)")
+    sendLogToPhone(level: "debug", message: "Refresh requested from watch", extra: [
+      "reachable": session.isReachable,
+      "state": label(for: session.activationState),
+    ])
 
     guard session.activationState == .activated, session.isReachable else {
       DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -199,6 +236,9 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
       SharedRoundStore.save(nil)
       lastContextYardageLine = "round ended"
       debugLog("applyIncomingState: roundEnded — cleared shared round")
+      sendLogToPhone(level: "info", message: "roundEnded received on watch", extra: [
+        "roundID": roundID,
+      ])
       return
     }
 
@@ -249,6 +289,14 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     lastContextYardageLine = "y=\(currentYardage) f=\(frtYards) m=\(midYards) b=\(bckYards)"
     debugLog("Received context dictionary: \(context)")
     debugLog("Received full context with yardages: yardage=\(currentYardage) frt=\(frtYards) ctr=\(midYards) bck=\(bckYards)")
+    sendLogToPhone(level: currentYardage > 0 ? "info" : "warn", message: "Received full context from phone", extra: [
+      "yardage": currentYardage,
+      "frt": frtYards,
+      "mid": midYards,
+      "bck": bckYards,
+      "fullDataVersion": intFrom(context["fullDataVersion"]),
+      "lastUpdated": doubleFrom(context["lastUpdated"]),
+    ])
     objectWillChange.send()
 
     let round = active ? ActiveRound(
@@ -307,6 +355,10 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
       "lastHole": hole,
       "timestamp": Date().timeIntervalSince1970,
     ]
+    sendLogToPhone(level: "info", message: "Finish Round tapped on watch", extra: [
+      "roundID": roundID,
+      "lastHole": hole,
+    ])
     sendRoundLifecyclePayload(payload, reply: reply)
   }
 
@@ -423,6 +475,10 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
   ) {
     DispatchQueue.main.async {
       self.debugLog("activationDidComplete state=\(activationState.rawValue) error=\(error?.localizedDescription ?? "nil")")
+      self.sendLogToPhone(level: error == nil ? "info" : "error", message: "watch activationDidComplete", extra: [
+        "state": self.label(for: activationState),
+        "error": error?.localizedDescription ?? "",
+      ])
       self.phoneReachable = session.isReachable
       self.sessionStateLabel = self.label(for: activationState)
       if activationState == .activated {
@@ -475,6 +531,11 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
       "timestamp": Date().timeIntervalSince1970,
     ]
     debugLog("quickStartRound \(message)")
+    sendLogToPhone(level: "info", message: "startRoundFromWatch requested", extra: [
+      "course": courseName,
+      "tee": teeName,
+      "startingHole": startingHole,
+    ])
     if session.activationState != .activated {
       pendingLifecycleMessages.append(message)
       debugLog("Queued quickStartRound until activation completes")
@@ -486,6 +547,10 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
   func sessionReachabilityDidChange(_ session: WCSession) {
     DispatchQueue.main.async {
       self.debugLog("reachability changed: \(session.isReachable)")
+      self.sendLogToPhone(level: "debug", message: "watch reachability changed", extra: [
+        "reachable": session.isReachable,
+        "state": self.label(for: session.activationState),
+      ])
       self.phoneReachable = session.isReachable
       self.sessionStateLabel = self.label(for: session.activationState)
       self.flushPendingLifecycleMessages()
@@ -497,6 +562,13 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
 
   func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
     DispatchQueue.main.async {
+      self.sendLogToPhone(level: "debug", message: "didReceiveApplicationContext on watch", extra: [
+        "keys": Array(applicationContext.keys).sorted(),
+        "yardage": self.intFrom(applicationContext["yardage"]),
+        "frt": self.intFrom(applicationContext["frt"]),
+        "mid": self.intFrom(applicationContext["ctr"]),
+        "bck": self.intFrom(applicationContext["bck"]),
+      ])
       self.applyIncomingState(applicationContext)
     }
   }

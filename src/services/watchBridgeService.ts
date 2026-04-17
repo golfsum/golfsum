@@ -6,7 +6,7 @@ import { logger } from '../utils/logger';
 const WATCH_EVENT_QUEUE_KEY = '@GolfSum:watchEventQueue';
 const WATCH_END_ROUND_FLAG_KEY = '@GolfSum:watchEndRoundFlag';
 
-export type WatchBridgeEventType = 'hole_saved' | 'end_round' | 'startRoundFromWatch' | 'requestActiveRound' | 'startRound' | 'roundState' | 'endRound' | 'roundEnded';
+export type WatchBridgeEventType = 'hole_saved' | 'end_round' | 'startRoundFromWatch' | 'requestActiveRound' | 'startRound' | 'roundState' | 'endRound' | 'roundEnded' | 'watchLog';
 
 export interface WatchBridgeEvent {
   type: WatchBridgeEventType;
@@ -28,6 +28,10 @@ export interface WatchBridgeEvent {
   teeName?: string;
   yardage?: number;
   timestamp?: number;
+  level?: 'debug' | 'info' | 'warn' | 'error';
+  message?: string;
+  source?: string;
+  extra?: Record<string, unknown>;
 }
 
 type WatchBridgeModuleShape = {
@@ -171,6 +175,25 @@ export function initializeWatchReceiver(
     try {
       if (typeof __DEV__ !== 'undefined' && __DEV__) {
         logger.debug('[WatchBridge] GolfSumWatchMessage:', event.type, event);
+      }
+      if (event.type === 'watchLog') {
+        const level = event.level || 'info';
+        const summary = `[WatchLog] ${event.message || 'No message'}`;
+        const details = {
+          source: event.source || 'watch',
+          watchLevel: level,
+          roundId: event.roundId || null,
+          currentHole: event.currentHole || null,
+          timestamp: event.timestamp || null,
+          extra: event.extra || {},
+        };
+        if (level === 'error') {
+          logger.error(summary, details);
+        } else {
+          logger.warn(summary, details);
+        }
+        onEvent?.(event);
+        return;
       }
       if (event.type === 'hole_saved' || event.type === 'end_round') {
         if (!event.holeNumber) return;

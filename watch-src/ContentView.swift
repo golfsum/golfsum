@@ -94,6 +94,13 @@ struct ContentView: View {
           session.refreshRound()
         }
         .buttonStyle(.bordered)
+        Button("Send Test Log") {
+          session.sendLogToPhone(level: "debug", message: "Manual test log from Watch", extra: [
+            "testValue": 123
+          ])
+          flash("Test log sent")
+        }
+        .buttonStyle(.bordered)
         Button("Finish Round") {
           showEndRoundConfirm = true
         }
@@ -114,6 +121,13 @@ struct ContentView: View {
           session.refreshRound()
         }
         .buttonStyle(.borderedProminent)
+        Button("Send Test Log") {
+          session.sendLogToPhone(level: "debug", message: "Manual test log from Watch", extra: [
+            "testValue": 123
+          ])
+          flash("Test log sent")
+        }
+        .buttonStyle(.bordered)
         Button("Start Round") {
           showQuickStart = true
         }
