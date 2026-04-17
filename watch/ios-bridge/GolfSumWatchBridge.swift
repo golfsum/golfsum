@@ -11,12 +11,7 @@ class GolfSumWatchBridge: RCTEventEmitter {
     sessionManager.setMessageHandler { [weak self] msg in
       self?.dispatchIncomingMessage(msg)
     }
-    sessionManager.start()
-  }
-
-  override init() {
-    super.init()
-    // Activate WCSession as soon as the native module loads (before JS calls `start()`).
+    // Activate WCSession as soon as the native module loads.
     sessionManager.start()
   }
 

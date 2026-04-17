@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 
 const MAIN_APP_NAME = 'GolfSum';
+const APP_DELEGATE_MARKER = 'WatchSessionManager.shared.start() // withWatchApp';
 
 function copyIfChanged(src, dst) {
   if (!fs.existsSync(src)) {
@@ -28,6 +29,38 @@ function copyIfChanged(src, dst) {
 
   fs.writeFileSync(dst, content, 'utf8');
   console.log(`[withWatchApp] Synced: ${path.basename(dst)}`);
+}
+
+function patchAppDelegate(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return;
+  }
+
+  const original = fs.readFileSync(filePath, 'utf8');
+  if (original.includes(APP_DELEGATE_MARKER)) {
+    return;
+  }
+
+  let next = original;
+
+  if (filePath.endsWith('.swift')) {
+    next = next.replace(
+      /((?:override\s+)?func\s+application\([^\n]*didFinishLaunchingWithOptions[^\n]*\)\s*->\s*Bool\s*\{\s*\n)/,
+      `$1    ${APP_DELEGATE_MARKER}\n`
+    );
+  } else {
+    next = next.replace(
+      /(-\s*\(BOOL\)application:\(UIApplication \*\)application didFinishLaunchingWithOptions:\(NSDictionary \*\)launchOptions\s*\{\s*\n)/,
+      `$1  ${APP_DELEGATE_MARKER}\n`
+    );
+  }
+
+  if (next !== original) {
+    fs.writeFileSync(filePath, next, 'utf8');
+    console.log(`[withWatchApp] Patched AppDelegate startup: ${path.basename(filePath)}`);
+  } else {
+    console.warn(`[withWatchApp] WARNING: Could not patch AppDelegate automatically: ${filePath}`);
+  }
 }
 
 module.exports = function withWatchApp(config) {
@@ -69,6 +102,10 @@ module.exports = function withWatchApp(config) {
           copyIfChanged(src, path.join(mainIosDir, f));
         }
       });
+
+      patchAppDelegate(path.join(mainIosDir, 'AppDelegate.swift'));
+      patchAppDelegate(path.join(mainIosDir, 'AppDelegate.mm'));
+      patchAppDelegate(path.join(mainIosDir, 'AppDelegate.m'));
 
       return modConfig;
     },

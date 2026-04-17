@@ -2,6 +2,7 @@ import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import Storage from './storage';
 import { getInProgressRound, saveInProgressRound } from './inProgressRoundService';
 import { logger } from '../utils/logger';
+import { saveLastError } from './userService';
 
 const WATCH_EVENT_QUEUE_KEY = '@GolfSum:watchEventQueue';
 const WATCH_END_ROUND_FLAG_KEY = '@GolfSum:watchEndRoundFlag';
@@ -191,6 +192,19 @@ export function initializeWatchReceiver(
           logger.error(summary, details);
         } else {
           logger.warn(summary, details);
+        }
+        try {
+          await saveLastError({
+            message: summary,
+            name: 'WatchLog',
+            stack: undefined,
+            args: JSON.stringify(details),
+            createdAt: event.timestamp
+              ? new Date(event.timestamp * 1000).toISOString()
+              : new Date().toISOString(),
+          });
+        } catch (persistError) {
+          logger.warn('Failed to persist watch log to user lastError:', persistError);
         }
         onEvent?.(event);
         return;
