@@ -2681,6 +2681,8 @@ export function GpsRoundScreen({
       )
     );
     if (!hasRealCurrentHoleData) {
+      console.log('[GpsRound→Watch] skip: no current-hole yardages yet (frt=%d ctr=%d bck=%d curY=%d hole=%o)',
+        frtVal, ctrVal, bckVal, currentYardage, currentHole?.hole);
       return undefined;
     }
     const active = true;
@@ -2780,9 +2782,9 @@ export function GpsRoundScreen({
       };
     });
     const firstHoleYardage = fullHolePayload[0]?.yardage || 0;
-    if (firstHoleYardage <= 0) {
-      return undefined;
-    }
+    // Do NOT bail when hole-1 yardage is 0 — POIs may be missing for some holes
+    // while the user plays others. hasRealCurrentHoleData above already guards
+    // against sending an empty current-hole payload.
     const payloadWithFullData = {
       ...payload,
       holes: fullHolePayload,
