@@ -1,4 +1,5 @@
 import SwiftUI
+import WatchKit
 
 struct ContentView: View {
   @EnvironmentObject private var session: WatchSessionManager
@@ -6,6 +7,10 @@ struct ContentView: View {
   @State private var toastTask: Task<Void, Never>?
   @State private var showClubPicker = false
   @State private var showEndRoundConfirm = false
+
+  private func haptic(_ type: WKHapticType) {
+    WKInterfaceDevice.current().play(type)
+  }
 
   var body: some View {
     Group {
@@ -32,7 +37,9 @@ struct ContentView: View {
     .alert("End round on iPhone?", isPresented: $showEndRoundConfirm) {
       Button("Cancel", role: .cancel) {}
       Button("End Round", role: .destructive) {
+        haptic(.notification)
         session.sendEndRound { ok in
+          haptic(ok ? .success : .failure)
           flash(ok ? "Sent — confirm on iPhone" : "Keep iPhone unlocked nearby, then try again")
         }
       }
@@ -186,32 +193,39 @@ struct ContentView: View {
     List {
       Button("Add Shot") {
         if session.clubs.isEmpty {
+          haptic(.failure)
           flash(session.roundActive ? "Waiting for phone data" : "No active round")
           return
         }
+        haptic(.click)
         showClubPicker = true
       }
       .disabled(!session.roundActive)
 
       Button("Add Putt") {
+        haptic(.click)
         session.sendAddPutt { ok in
+          haptic(ok ? .success : .failure)
           flash(ok ? "Putt logged" : "Phone not connected")
         }
       }
       .disabled(!session.roundActive)
 
       Button("Refresh Round") {
+        haptic(.click)
         session.refreshRound()
       }
 
       if session.roundActive {
         Button("Finish Round") {
+          haptic(.click)
           showEndRoundConfirm = true
         }
         .foregroundStyle(.red)
       }
 
       Button("Close App") {
+        haptic(.click)
         session.dismissApp()
       }
       .foregroundStyle(.red)
@@ -302,13 +316,11 @@ struct ContentView: View {
       Section {
         ForEach(session.clubs, id: \.self) { club in
           Button(club) {
+            haptic(.click)
             showClubPicker = false
             session.sendAddShot(club: club) { ok in
-              if ok {
-                flash("Shot logged")
-              } else {
-                flash("Phone not connected")
-              }
+              haptic(ok ? .success : .failure)
+              flash(ok ? "Shot logged" : "Phone not connected")
             }
           }
         }

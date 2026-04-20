@@ -2421,12 +2421,16 @@ export function GpsRoundScreen({
             ],
       };
     });
+    // Success haptic the moment a shot lands on the hole — fires for
+    // on-phone taps, watch-initiated Add Shot, and retrospective adds.
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     setLieToast(lie);
     if (lieToastTimeoutRef.current) clearTimeout(lieToastTimeoutRef.current);
     lieToastTimeoutRef.current = setTimeout(() => setLieToast(null), 2500);
   }, [detectLieAtCoordinate, isReasonableShot, userPos, visibleHoles]);
 
   const handleWatchPutt = useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
     // Close out any dangling approach shot so its "to" point is set to the green.
     closeLastOpenShotToGreen(currentHoleIndex, greenCenter);
     // Match the native "+PUTTS" button: just increment the summary counter.
@@ -2540,6 +2544,7 @@ export function GpsRoundScreen({
     setMeasurePin(null);
     setPinCoords(null);
     if (nextIndex !== currentHoleIndex) {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
       const currentShots = loggedShotsByHole[currentHoleIndex] || [];
       const currentScore = currentHoleSummary?.putts !== null || currentShots.length > 0
         ? currentShots.length + (currentPutts || 0)
@@ -3177,6 +3182,7 @@ export function GpsRoundScreen({
   }, [courseId, courseName, currentHoleIndex, onBack, visibleHoles]);
 
   const handleEndRoundPress = useCallback(() => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => undefined);
     const fromWatch = watchInvokedEndRoundRef.current;
     watchInvokedEndRoundRef.current = false;
     const message = currentHoleIndex < visibleHoles.length - 1
@@ -3972,6 +3978,7 @@ export function GpsRoundScreen({
         suggestionActive={suggestionTipExpanded}
         nudgeOverlayBottom={coachingOverlayBottom}
         onPressSuggestion={() => {
+          void Haptics.selectionAsync().catch(() => undefined);
           setSuggestionTipExpanded(false);
           overlayRef.current?.openClubPicker?.();
         }}
@@ -3987,24 +3994,31 @@ export function GpsRoundScreen({
         bottomBarHeight={GPS_BAR.BOTTOM_ACTION}
         yardageBarHeight={GPS_BAR.YARDAGE}
         currentPutts={currentPutts}
-        onDecrementPutts={() => setHoleSummariesByHole((prev) => ({
-          ...prev,
-          [currentHoleIndex]: {
-            ...currentHoleSummary,
-            putts: Math.max(0, currentPutts - 1),
-          },
-        }))}
+        onDecrementPutts={() => {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+          setHoleSummariesByHole((prev) => ({
+            ...prev,
+            [currentHoleIndex]: {
+              ...currentHoleSummary,
+              putts: Math.max(0, currentPutts - 1),
+            },
+          }));
+        }}
         onBeforeIncrementPutts={() => closeLastOpenShotToGreen(currentHoleIndex, greenCenter)}
-        onIncrementPutts={() => setHoleSummariesByHole((prev) => ({
-          ...prev,
-          [currentHoleIndex]: {
-            ...currentHoleSummary,
-            putts: currentPutts + 1,
-          },
-        }))}
+        onIncrementPutts={() => {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+          setHoleSummariesByHole((prev) => ({
+            ...prev,
+            [currentHoleIndex]: {
+              ...currentHoleSummary,
+              putts: currentPutts + 1,
+            },
+          }));
+        }}
         addShotLabel="ADD SHOT"
         onPressAddShot={() => {
           if (overlayState.anySheet || overlayState.shotFlow !== 'idle') return;
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
           setMeasurePin(null);
           overlayRef.current?.startShotEntry?.();
         }}

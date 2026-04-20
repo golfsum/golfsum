@@ -1,6 +1,7 @@
 import Foundation
 import UserNotifications
 import WatchConnectivity
+import WatchKit
 
 /// watchOS: receives application context + immediate messages from iPhone, sends shot / putt / hole commands.
 final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
@@ -305,6 +306,9 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
   private func notifyRoundStartedIfNeeded() {
     guard !hasNotifiedRoundStart else { return }
     hasNotifiedRoundStart = true
+    // Success buzz so the player knows the watch has synced — pairs with the
+    // optional notification below if they're not currently looking at the watch.
+    WKInterfaceDevice.current().play(.success)
     let content = UNMutableNotificationContent()
     content.title = "Round started"
     content.body = "GolfSum is tracking your round. Open the app to log shots."
