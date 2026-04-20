@@ -176,10 +176,10 @@ export default function App() {
       if (
         teeBack &&
         greenFront && greenCenter && greenBack &&
-        Number.isFinite(teeBack.Latitude) &&
-        Number.isFinite(teeBack.Longitude)
+        Number.isFinite(Number(teeBack.Latitude)) &&
+        Number.isFinite(Number(teeBack.Longitude))
       ) {
-        frt = Math.round(
+        const hFrt = Math.round(
           haversineYards(
             Number(teeBack.Latitude),
             Number(teeBack.Longitude),
@@ -187,7 +187,7 @@ export default function App() {
             Number(greenFront.Longitude),
           ) ?? 0,
         );
-        ctr = Math.round(
+        const hCtr = Math.round(
           haversineYards(
             Number(teeBack.Latitude),
             Number(teeBack.Longitude),
@@ -195,7 +195,7 @@ export default function App() {
             Number(greenCenter.Longitude),
           ) ?? 0,
         );
-        bck = Math.round(
+        const hBck = Math.round(
           haversineYards(
             Number(teeBack.Latitude),
             Number(teeBack.Longitude),
@@ -203,6 +203,14 @@ export default function App() {
             Number(greenBack.Longitude),
           ) ?? 0,
         );
+        // Only override the scorecard fallback if haversine actually produced
+        // a sane center distance. Partial/invalid POI data returns 0 and would
+        // otherwise clobber the 382-yard scorecard number with zeros.
+        if (hCtr > 0) {
+          frt = hFrt > 0 ? hFrt : ctr;
+          ctr = hCtr;
+          bck = hBck > 0 ? hBck : ctr;
+        }
       }
 
       const holesForWatch = holes.map((hole: any, index: number) => {
@@ -225,33 +233,17 @@ export default function App() {
         if (
           tbH &&
           gfH && gcH && gbH &&
-          Number.isFinite(tbH.Latitude) &&
-          Number.isFinite(tbH.Longitude)
+          Number.isFinite(Number(tbH.Latitude)) &&
+          Number.isFinite(Number(tbH.Longitude))
         ) {
-          frtH = Math.round(
-            haversineYards(
-              Number(tbH.Latitude),
-              Number(tbH.Longitude),
-              Number(gfH.Latitude),
-              Number(gfH.Longitude),
-            ) ?? 0,
-          );
-          ctrH = Math.round(
-            haversineYards(
-              Number(tbH.Latitude),
-              Number(tbH.Longitude),
-              Number(gcH.Latitude),
-              Number(gcH.Longitude),
-            ) ?? 0,
-          );
-          bckH = Math.round(
-            haversineYards(
-              Number(tbH.Latitude),
-              Number(tbH.Longitude),
-              Number(gbH.Latitude),
-              Number(gbH.Longitude),
-            ) ?? 0,
-          );
+          const hF = Math.round(haversineYards(Number(tbH.Latitude), Number(tbH.Longitude), Number(gfH.Latitude), Number(gfH.Longitude)) ?? 0);
+          const hC = Math.round(haversineYards(Number(tbH.Latitude), Number(tbH.Longitude), Number(gcH.Latitude), Number(gcH.Longitude)) ?? 0);
+          const hB = Math.round(haversineYards(Number(tbH.Latitude), Number(tbH.Longitude), Number(gbH.Latitude), Number(gbH.Longitude)) ?? 0);
+          if (hC > 0) {
+            frtH = hF > 0 ? hF : ctrH;
+            ctrH = hC;
+            bckH = hB > 0 ? hB : ctrH;
+          }
         }
         return { number, par, frt: frtH, ctr: ctrH, bck: bckH };
       });
@@ -802,8 +794,12 @@ export default function App() {
           logger.warn('Watch start failed to hydrate GPS round setup', error);
         }
         if (!hasRealSetup) {
-          Alert.alert('Watch round unavailable', 'Could not load Haven GPS hole data on iPhone. Open the course once on iPhone and try again.');
-          return;
+          // Previously we bailed here — which left watch commands (addShot / addPutt /
+          // endRound) dangling because GpsRoundScreen never mounted. Instead, start the
+          // round anyway. GpsRoundScreen has its own course loader; without POIs the
+          // round degrades to map-only with scorecard yardages, which is still better
+          // than locking the watch out of shot entry.
+          logger.warn('Starting watch round without cached GPS hole data; yardages will be scorecard-only.');
         }
 
         handleStartGpsRoundRef.current(WATCH_HAVEN_COURSE_ID, cn, {

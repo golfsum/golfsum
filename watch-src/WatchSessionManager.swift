@@ -97,7 +97,7 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     ])
     DispatchQueue.main.async {
       self.applyPersistedState()
-      self.applyIncomingState(session.applicationContext)
+      self.applyIncomingState(session.receivedApplicationContext)
       self.phoneReachable = session.isReachable
       self.sessionStateLabel = self.label(for: session.activationState)
       if !self.roundActive {
@@ -509,7 +509,7 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
       self.sessionStateLabel = self.label(for: activationState)
       if activationState == .activated {
         self.applyPersistedState()
-        self.applyIncomingState(session.applicationContext)
+        self.applyIncomingState(session.receivedApplicationContext)
         self.flushPendingLifecycleMessages()
         if !self.roundActive {
           self.scheduleRetrySync()

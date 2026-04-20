@@ -2753,24 +2753,15 @@ export function GpsRoundScreen({
         && Number.isFinite(Number(teeBackPoi?.Latitude))
         && Number.isFinite(Number(teeBackPoi?.Longitude))
       ) {
-        holeFrt = Math.round(haversineYards(
-          Number(teeBackPoi.Latitude),
-          Number(teeBackPoi.Longitude),
-          Number(greenFrontPoi.Latitude),
-          Number(greenFrontPoi.Longitude),
-        ) ?? 0);
-        holeCtr = Math.round(haversineYards(
-          Number(teeBackPoi.Latitude),
-          Number(teeBackPoi.Longitude),
-          Number(greenCenterPoi.Latitude),
-          Number(greenCenterPoi.Longitude),
-        ) ?? 0);
-        holeBck = Math.round(haversineYards(
-          Number(teeBackPoi.Latitude),
-          Number(teeBackPoi.Longitude),
-          Number(greenBackPoi.Latitude),
-          Number(greenBackPoi.Longitude),
-        ) ?? 0);
+        const hF = Math.round(haversineYards(Number(teeBackPoi.Latitude), Number(teeBackPoi.Longitude), Number(greenFrontPoi.Latitude), Number(greenFrontPoi.Longitude)) ?? 0);
+        const hC = Math.round(haversineYards(Number(teeBackPoi.Latitude), Number(teeBackPoi.Longitude), Number(greenCenterPoi.Latitude), Number(greenCenterPoi.Longitude)) ?? 0);
+        const hB = Math.round(haversineYards(Number(teeBackPoi.Latitude), Number(teeBackPoi.Longitude), Number(greenBackPoi.Latitude), Number(greenBackPoi.Longitude)) ?? 0);
+        // Don't clobber scorecard fallback with zeros on partial/invalid POI data.
+        if (hC > 0) {
+          holeFrt = hF > 0 ? hF : holeCtr;
+          holeCtr = hC;
+          holeBck = hB > 0 ? hB : holeCtr;
+        }
       }
       return {
         number,
