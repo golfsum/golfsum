@@ -77,14 +77,24 @@ function patchAppDelegate(filePath) {
 
 /** Ensure a source file is registered with the main app target as both a file
  *  reference and a Compile Sources build phase entry. Idempotent: running the
- *  plugin multiple times won't create duplicates. */
+ *  plugin multiple times won't create duplicates.
+ *
+ *  The file is referenced with sourceTree=SOURCE_ROOT and a path relative to
+ *  the Xcode project's SRCROOT (i.e. `GolfSum/<fileName>`). This sidesteps the
+ *  fragile group-lookup machinery — no matter which group we attach to, the
+ *  build system always resolves to `ios/GolfSum/<fileName>`. */
 function ensureSourceFileInTarget(pbxProject, fileName, group, target) {
-  // Look for an existing file reference with this name anywhere in the project.
+  const relativePath = `${MAIN_APP_NAME}/${fileName}`;
+
+  // Look for an existing file reference by path OR by name to dedupe.
   const existing = Object.entries(pbxProject.hash.project.objects.PBXFileReference || {})
-    .find(([, ref]) => ref && typeof ref === 'object' && ref.path === fileName);
+    .find(([, ref]) => {
+      if (!ref || typeof ref !== 'object') return false;
+      const refPath = (ref.path || '').replace(/^"|"$/g, '');
+      return refPath === relativePath || refPath === fileName;
+    });
 
   if (existing) {
-    // File already referenced; make sure it's in the target's Compile Sources phase.
     const [fileRefKey] = existing;
     const sourcesPhase = pbxProject.pbxSourcesBuildPhaseObj(target);
     const alreadyInBuild = sourcesPhase && sourcesPhase.files && sourcesPhase.files.some((f) => {
@@ -104,9 +114,14 @@ function ensureSourceFileInTarget(pbxProject, fileName, group, target) {
     return;
   }
 
-  // Add a fresh file reference + build file entry to the target.
-  pbxProject.addSourceFile(fileName, { target }, group);
-  console.log(`[withWatchApp] Registered with Xcode target: ${fileName}`);
+  // Fresh file: register with sourceTree=SOURCE_ROOT + full relative path so
+  // the path is unambiguous and doesn't depend on group resolution.
+  pbxProject.addSourceFile(
+    relativePath,
+    { target, sourceTree: 'SOURCE_ROOT' },
+    group
+  );
+  console.log(`[withWatchApp] Registered with Xcode target: ${relativePath}`);
 }
 
 module.exports = function withWatchApp(config) {
