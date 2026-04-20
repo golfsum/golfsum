@@ -285,6 +285,25 @@ export default function App() {
       updateWatchGpsContext(payload);
     } catch (error) {
       logger.warn('Could not hydrate full round data for watch sync', error);
+      // Still push an active heartbeat so the watch doesn't hang at "Last Sync: Never"
+      // when course POIs fail to load — yardages will fill in from GpsRoundScreen.
+      updateWatchGpsContext({
+        type: 'startRound',
+        action: 'roundState',
+        active: true,
+        roundActive: true,
+        roundID: roundId || `gps-${courseId}-${Date.now()}`,
+        roundId: roundId || `gps-${courseId}-${Date.now()}`,
+        course: courseName || 'Haven',
+        courseName: courseName || 'Haven',
+        currentHole: Math.max(1, startingHole),
+        hole: Math.max(1, startingHole),
+        par: 4,
+        tee: teeName || 'Blue',
+        teeName: teeName || 'Blue',
+        timestamp: Date.now() / 1000,
+        lastSyncAt: Date.now() / 1000,
+      });
     }
   }, []);
 
@@ -705,8 +724,27 @@ export default function App() {
     const teeName = settings?.teeName || 'Blue';
     const currentHole = settings?.startingHole || 1;
     const roundId = `gps-${courseId}-${Date.now()}`;
-    // Push real POI-derived yardages immediately so the watch doesn't sit at 0/0/0
-    // while waiting for GpsRoundScreen's first update effect.
+    // Immediate synchronous heartbeat so the watch sees Messages > 0 even if
+    // POI hydration below fails or takes a while. Without this, the watch sits
+    // at "Last Sync: Never" forever when course data isn't cached locally.
+    updateWatchGpsContext({
+      type: 'startRound',
+      action: 'roundState',
+      active: true,
+      roundActive: true,
+      roundID: roundId,
+      roundId,
+      course: courseName || 'Haven',
+      courseName: courseName || 'Haven',
+      currentHole,
+      hole: currentHole,
+      par: 4,
+      tee: teeName,
+      teeName,
+      timestamp: Date.now() / 1000,
+      lastSyncAt: Date.now() / 1000,
+    });
+    // Async follow-up with real POI-derived yardages.
     void sendFullRoundDataToWatch(courseId, courseName, teeName, currentHole, roundId);
 
     setGpsResumeData(null);
@@ -734,16 +772,37 @@ export default function App() {
         const tn = event.tee || event.teeName || 'Blue';
         const holeNumber = event.currentHole || event.holeNumber || 1;
         logger.debug('Start round requested from watch', event);
+
+        // Ack the watch immediately so its debug panel moves off "Last Sync: Never"
+        // regardless of whether course data loads. Real yardages follow below.
+        const ackRoundId = `gps-${WATCH_HAVEN_COURSE_ID}-${Date.now()}`;
+        updateWatchGpsContext({
+          type: 'startRound',
+          action: 'roundState',
+          active: true,
+          roundActive: true,
+          roundID: ackRoundId,
+          roundId: ackRoundId,
+          course: cn,
+          courseName: cn,
+          currentHole: holeNumber,
+          hole: holeNumber,
+          par: 4,
+          tee: tn,
+          teeName: tn,
+          timestamp: Date.now() / 1000,
+          lastSyncAt: Date.now() / 1000,
+        });
+
+        let hasRealSetup = false;
         try {
           const setup = await loadGpsRoundSetup(WATCH_HAVEN_COURSE_ID, cn);
-          const hasRealSetup = !!(setup?.course && hasGpsHoleData(setup.course));
-          if (!hasRealSetup) {
-            Alert.alert('Watch round unavailable', 'Could not load Haven GPS hole data on iPhone. Open the course once on iPhone and try again.');
-            return;
-          }
+          hasRealSetup = !!(setup?.course && hasGpsHoleData(setup.course));
         } catch (error) {
           logger.warn('Watch start failed to hydrate GPS round setup', error);
-          Alert.alert('Watch round unavailable', 'Could not load course GPS data on iPhone. Try again in a moment.');
+        }
+        if (!hasRealSetup) {
+          Alert.alert('Watch round unavailable', 'Could not load Haven GPS hole data on iPhone. Open the course once on iPhone and try again.');
           return;
         }
 
