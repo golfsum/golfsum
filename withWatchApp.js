@@ -2,17 +2,29 @@
  * withWatchApp.js
  *
  * Syncs Swift sources from watch-src/ into targets/watch (for @bacons/apple-targets)
- * and Watch bridge + phone WatchSessionManager into the main iOS app folder.
+ * and Watch bridge + phone WatchSessionManager into the main iOS app folder, then
+ * registers the bridge files with the main app's Xcode target so the Obj-C
+ * RCT_EXTERN_MODULE actually gets compiled (otherwise NativeModules.GolfSumWatchBridge
+ * is undefined at runtime — the .m file is silently excluded from Compile Sources
+ * by default).
  *
  * Watch target is created by @bacons/apple-targets from targets/watch/expo-target.config.js.
  */
 
-const { withDangerousMod } = require('@expo/config-plugins');
+const { withDangerousMod, withXcodeProject } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
 const MAIN_APP_NAME = 'GolfSum';
 const APP_DELEGATE_MARKER = 'WatchSessionManager.shared.start() // withWatchApp';
+/** Bridge + shared sources that must end up in the main app target's Compile Sources. */
+const PHONE_TARGET_SOURCES = [
+  'GolfSumWatchBridge.m',
+  'GolfSumWatchBridge.swift',
+  'WatchSessionManager.swift',
+  'ActiveRound.swift',
+  'SharedRoundStore.swift',
+];
 
 function copyIfChanged(src, dst) {
   if (!fs.existsSync(src)) {
@@ -63,8 +75,43 @@ function patchAppDelegate(filePath) {
   }
 }
 
+/** Ensure a source file is registered with the main app target as both a file
+ *  reference and a Compile Sources build phase entry. Idempotent: running the
+ *  plugin multiple times won't create duplicates. */
+function ensureSourceFileInTarget(pbxProject, fileName, group, target) {
+  // Look for an existing file reference with this name anywhere in the project.
+  const existing = Object.entries(pbxProject.hash.project.objects.PBXFileReference || {})
+    .find(([, ref]) => ref && typeof ref === 'object' && ref.path === fileName);
+
+  if (existing) {
+    // File already referenced; make sure it's in the target's Compile Sources phase.
+    const [fileRefKey] = existing;
+    const sourcesPhase = pbxProject.pbxSourcesBuildPhaseObj(target);
+    const alreadyInBuild = sourcesPhase && sourcesPhase.files && sourcesPhase.files.some((f) => {
+      const bf = pbxProject.hash.project.objects.PBXBuildFile?.[f.value];
+      return bf && bf.fileRef === fileRefKey;
+    });
+    if (!alreadyInBuild) {
+      pbxProject.addToPbxBuildFileSection({
+        uuid: pbxProject.generateUuid(),
+        fileRef: fileRefKey,
+        basename: fileName,
+        group: 'Sources',
+        target,
+      });
+      console.log(`[withWatchApp] Added existing file ref to Compile Sources: ${fileName}`);
+    }
+    return;
+  }
+
+  // Add a fresh file reference + build file entry to the target.
+  pbxProject.addSourceFile(fileName, { target }, group);
+  console.log(`[withWatchApp] Registered with Xcode target: ${fileName}`);
+}
+
 module.exports = function withWatchApp(config) {
-  return withDangerousMod(config, [
+  // Step 1: copy files into the generated iOS project and patch AppDelegate.
+  config = withDangerousMod(config, [
     'ios',
     async (modConfig) => {
       const projectRoot = modConfig.modRequest.projectRoot;
@@ -110,4 +157,39 @@ module.exports = function withWatchApp(config) {
       return modConfig;
     },
   ]);
+
+  // Step 2: add the bridge files to the main app target's Compile Sources phase.
+  // Without this, NativeModules.GolfSumWatchBridge is undefined because the .m
+  // file never gets compiled (auto-linking doesn't cover locally-added sources).
+  config = withXcodeProject(config, (modConfig) => {
+    const pbxProject = modConfig.modResults;
+    const mainTargetUuid = pbxProject.findTargetKey(MAIN_APP_NAME)
+      || pbxProject.getFirstTarget()?.uuid;
+
+    if (!mainTargetUuid) {
+      console.warn('[withWatchApp] Could not locate main app target; skipping source registration.');
+      return modConfig;
+    }
+
+    // Find (or create) a group inside the main app folder to host the files.
+    let group = pbxProject.pbxGroupByName(MAIN_APP_NAME);
+    if (!group) {
+      console.warn('[withWatchApp] Could not locate main app group; skipping source registration.');
+      return modConfig;
+    }
+    const groupKey = pbxProject.findPBXGroupKey({ name: MAIN_APP_NAME })
+      || pbxProject.findPBXGroupKey({ path: MAIN_APP_NAME });
+
+    PHONE_TARGET_SOURCES.forEach((fileName) => {
+      try {
+        ensureSourceFileInTarget(pbxProject, fileName, groupKey, mainTargetUuid);
+      } catch (err) {
+        console.warn(`[withWatchApp] Could not register ${fileName}: ${err.message}`);
+      }
+    });
+
+    return modConfig;
+  });
+
+  return config;
 };
