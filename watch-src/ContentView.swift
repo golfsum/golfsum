@@ -50,103 +50,97 @@ struct ContentView: View {
     }
   }
 
+  @ViewBuilder
   private var distancesPage: some View {
-    ScrollView {
-    VStack(spacing: 8) {
-      if session.roundActive {
-        Text(session.courseName)
-          .font(.headline)
-          .lineLimit(1)
-        Text("Hole \(session.hole) • Par \(session.par) • \(session.yardage) yds")
-          .font(.caption2)
-          .foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
-        if !session.teeName.isEmpty {
-          Text(session.teeName)
-            .font(.caption2)
-            .foregroundStyle(.green)
-        }
-        HStack(spacing: 12) {
-          yardColumn("FRT", session.frt)
-          yardColumn("MID", session.ctr)
-          yardColumn("BCK", session.bck)
-        }
-        if session.windMph > 0 {
-          HStack(spacing: 6) {
-            Image(systemName: "location.north.fill")
-              .rotationEffect(.degrees(session.windArrowDegrees))
-            Text("\(session.windMph) mph")
-              .font(.caption)
+    if session.roundActive {
+      // Active round: use List so the digital crown scrolls cleanly without
+      // fighting the TabView's horizontal paging gesture.
+      List {
+        Section {
+          VStack(spacing: 4) {
+            Text(session.courseName)
+              .font(.headline)
+              .lineLimit(1)
+            Text("Hole \(session.hole) • Par \(session.par) • \(session.yardage) yds")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+            if !session.teeName.isEmpty {
+              Text(session.teeName)
+                .font(.caption2)
+                .foregroundStyle(.green)
+            }
+            HStack(spacing: 12) {
+              yardColumn("FRT", session.frt)
+              yardColumn("MID", session.ctr)
+              yardColumn("BCK", session.bck)
+            }
+            if session.windMph > 0 {
+              HStack(spacing: 6) {
+                Image(systemName: "location.north.fill")
+                  .rotationEffect(.degrees(session.windArrowDegrees))
+                Text("\(session.windMph) mph").font(.caption)
+              }
+              .foregroundStyle(.green)
+            }
+            if !session.suggestedClub.isEmpty {
+              Text(session.suggestedClub).font(.title3.weight(.semibold))
+            }
           }
-          .foregroundStyle(.green)
+          .frame(maxWidth: .infinity)
         }
-        if !session.suggestedClub.isEmpty {
-          Text(session.suggestedClub)
-            .font(.title3.weight(.semibold))
+        Section {
+          Button("Refresh") { session.refreshRound() }
+          Button("Finish Round") { showEndRoundConfirm = true }
+            .foregroundStyle(.red)
+          Button("Close App") { session.dismissApp() }
+            .foregroundStyle(.red)
         }
-        if !session.coachingFocus.isEmpty {
-          Text(session.coachingFocus)
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-            .lineLimit(2)
+        Section("Debug") {
+          debugRow("Reachable", session.phoneReachable ? "Yes" : "No")
+          debugRow("Last Sync", session.lastSyncDescription)
+          debugRow("Messages", "\(session.messagesReceivedCount)")
+          debugRow("Yards", session.lastContextYardageLine)
         }
-        Button("Refresh") {
-          session.refreshRound()
-        }
-        .buttonStyle(.bordered)
-        Button("Send Test Log") {
-          session.sendLogToPhone(level: "debug", message: "Manual test log from Watch", extra: [
-            "testValue": 123
-          ])
-          flash("Test log sent")
-        }
-        .buttonStyle(.bordered)
-        Button("Finish Round") {
-          showEndRoundConfirm = true
-        }
-        .buttonStyle(.borderedProminent)
-        Button("Close App") {
-          session.dismissApp()
-        }
-        .buttonStyle(.bordered)
-        .tint(.red)
-        if session.isRefreshing {
-          ProgressView()
-            .progressViewStyle(.circular)
-        }
-        debugPanel
-      } else {
+      }
+      .listStyle(.carousel)
+    } else {
+      // Inactive state: compact layout that fits without scrolling. Re-renders
+      // from Published var updates no longer bounce the view.
+      VStack(spacing: 8) {
         Image(systemName: "iphone.gen3")
-          .font(.title2)
+          .font(.title3)
           .foregroundStyle(.green)
         Text("Start on iPhone")
           .font(.headline)
-        Text("Open GolfSum on your iPhone and start a GPS round. Yardages will appear here automatically.")
-          .font(.caption2)
+        Text("Start a GPS round on your iPhone — yardages will appear here automatically.")
+          .font(.system(size: 11))
           .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
-        Button("Refresh") {
-          session.refreshRound()
+          .lineLimit(3)
+        HStack(spacing: 6) {
+          Button("Refresh") { session.refreshRound() }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+          Button("Close") { session.dismissApp() }
+            .buttonStyle(.bordered)
+            .tint(.red)
+            .controlSize(.small)
         }
-        .buttonStyle(.borderedProminent)
-        Button("Close App") {
-          session.dismissApp()
-        }
-        .buttonStyle(.bordered)
-        .tint(.red)
-        if session.isRefreshing {
-          ProgressView()
-            .progressViewStyle(.circular)
-        }
-        debugPanel
+        Text("\(session.phoneReachable ? "iPhone ready" : "iPhone asleep") · Msgs \(session.messagesReceivedCount)")
+          .font(.system(size: 9))
+          .foregroundStyle(.secondary)
       }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .padding(.horizontal, 6)
     }
-    .frame(maxWidth: .infinity)
-    .padding(.horizontal, 4)
-    .padding(.vertical, 4)
+  }
+
+  private func debugRow(_ label: String, _ value: String) -> some View {
+    HStack {
+      Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
+      Spacer()
+      Text(value).font(.system(size: 10, weight: .medium)).lineLimit(1)
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
   private func yardColumn(_ label: String, _ value: Int) -> some View {
@@ -161,50 +155,40 @@ struct ContentView: View {
   }
 
   private var shotTrackingPage: some View {
-    ScrollView {
-      VStack(spacing: 12) {
-        Button("Add Shot") {
-          if session.clubs.isEmpty {
-            flash(session.roundActive ? "Waiting for phone data" : "No active round")
-            return
-          }
-          showClubPicker = true
+    List {
+      Button("Add Shot") {
+        if session.clubs.isEmpty {
+          flash(session.roundActive ? "Waiting for phone data" : "No active round")
+          return
         }
-        .buttonStyle(.borderedProminent)
-
-        Button("Add Putt") {
-          session.sendAddPutt { ok in
-            if ok {
-              flash("Putt logged")
-            } else {
-              flash("Phone not connected")
-            }
-          }
-        }
-        .buttonStyle(.bordered)
-
-        Button("Refresh Round") {
-          session.refreshRound()
-        }
-        .buttonStyle(.bordered)
-
-        if session.roundActive {
-          Button("Finish Round") {
-            showEndRoundConfirm = true
-          }
-          .buttonStyle(.borderedProminent)
-        }
-
-        Button("Close App") {
-          session.dismissApp()
-        }
-        .buttonStyle(.bordered)
-        .tint(.red)
+        showClubPicker = true
       }
-      .frame(maxWidth: .infinity)
-      .padding(.vertical, 4)
+      .disabled(!session.roundActive)
+
+      Button("Add Putt") {
+        session.sendAddPutt { ok in
+          flash(ok ? "Putt logged" : "Phone not connected")
+        }
+      }
+      .disabled(!session.roundActive)
+
+      Button("Refresh Round") {
+        session.refreshRound()
+      }
+
+      if session.roundActive {
+        Button("Finish Round") {
+          showEndRoundConfirm = true
+        }
+        .foregroundStyle(.red)
+      }
+
+      Button("Close App") {
+        session.dismissApp()
+      }
+      .foregroundStyle(.red)
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .listStyle(.carousel)
   }
 
   private var dismissedPage: some View {
