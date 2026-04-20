@@ -34,6 +34,7 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
   @Published var messagesReceivedCount = 0
   @Published var lastContextType: String = "—"
   @Published var lastContextYardageLine: String = "—"
+  @Published var dismissed: Bool = false
   private var hasNotifiedRoundStart = false
   private var refreshRetryTask: Task<Void, Never>?
   private var pendingLifecycleMessages: [[String: Any]] = []
@@ -331,6 +332,31 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     content.sound = .default
     let request = UNNotificationRequest(identifier: "golfsum.round.started", content: content, trigger: nil)
     UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+  }
+
+  /// Locally clears round state and flips the watch UI to a "press crown to close"
+  /// prompt. The iPhone keeps its round untouched — user can come back in via Refresh.
+  func dismissApp() {
+    SharedRoundStore.save(nil)
+    DispatchQueue.main.async {
+      self.roundActive = false
+      self.hasNotifiedRoundStart = false
+      self.currentYardage = 0
+      self.frtYards = 0
+      self.midYards = 0
+      self.bckYards = 0
+      self.frt = 0
+      self.ctr = 0
+      self.bck = 0
+      self.yardage = 0
+      self.dismissed = true
+    }
+  }
+
+  func resetDismissed() {
+    DispatchQueue.main.async {
+      self.dismissed = false
+    }
   }
 
   func sendAddShot(club: String, reply: @escaping (Bool) -> Void) {

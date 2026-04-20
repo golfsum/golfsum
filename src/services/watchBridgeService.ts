@@ -153,7 +153,8 @@ export async function getQueuedWatchEvents(): Promise<WatchBridgeEvent[]> {
 }
 
 export function initializeWatchReceiver(
-  onEvent?: (event: WatchBridgeEvent) => void
+  onEvent?: (event: WatchBridgeEvent) => void,
+  onGpsCommand?: (payload: Record<string, unknown>) => void,
 ): () => void {
   if (!isWatchBridgeAvailable() || !nativeModule) {
     return () => {};
@@ -165,7 +166,11 @@ export function initializeWatchReceiver(
       if (typeof __DEV__ !== 'undefined' && __DEV__) {
         logger.debug('[WatchBridge] GolfSumWatchGpsCommand:', payload);
       }
-      watchGpsCommandHandler?.(payload as Record<string, unknown>);
+      if (watchGpsCommandHandler) {
+        watchGpsCommandHandler(payload as Record<string, unknown>);
+      } else {
+        onGpsCommand?.(payload as Record<string, unknown>);
+      }
     } catch (error) {
       logger.warn('Failed handling watch GPS command:', error);
     }

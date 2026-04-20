@@ -650,6 +650,7 @@ export function GpsRoundScreen({
   onFinishRound,
   resumedRoundData = null,
   watchEndRoundRequest = 0,
+  watchGpsCommandRequest = null,
 }) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -671,6 +672,7 @@ export function GpsRoundScreen({
   const lastMapTapRef = useRef(0);
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const lastHandledWatchEndRoundRef = useRef(0);
+  const lastHandledWatchGpsCommandRef = useRef(0);
   /** Watch “end round” fires before this callback exists in source order; keep a ref. */
   const handleEndRoundPressRef = useRef(() => {});
   const watchInvokedEndRoundRef = useRef(false);
@@ -2615,28 +2617,48 @@ export function GpsRoundScreen({
     overlayRef.current?.resetOverlay?.();
   }, [currentHole, currentHoleIndex, currentHoleSummary?.putts, currentPutts, loggedShotsByHole, markHoleFlag, missedShotBanner?.holeIndex, missedShotBanner?.kind, missedShotBanner?.targetHoleIndex, selectedTeeYardage, visibleHoles, currentHolePausedMs]);
 
+  const dispatchWatchGpsCommand = useCallback((msg) => {
+    const action = msg?.action;
+    if (action === 'addShot') {
+      const club = String(msg.club || '');
+      // overlayRef may be null on cold-start navigation from watch → gps-round.
+      // Retry until the imperative handle is attached (≤2 s) so the shot isn't lost.
+      let attempts = 0;
+      const tryStart = () => {
+        if (overlayRef.current?.startShotEntryFromWatch) {
+          overlayRef.current.startShotEntryFromWatch(club);
+          return;
+        }
+        attempts += 1;
+        if (attempts < 20) setTimeout(tryStart, 100);
+      };
+      tryStart();
+      return;
+    }
+    if (action === 'addPutt') {
+      handleWatchPutt();
+      return;
+    }
+    if (action === 'advanceHole') {
+      const h = Number(msg.hole);
+      if (!Number.isFinite(h)) return;
+      const idx = visibleHoles.findIndex((vh) => (vh.hole ?? vh.number) === h);
+      if (idx >= 0) handleSelectHole(idx);
+    }
+  }, [handleSelectHole, handleWatchPutt, visibleHoles]);
+
   useEffect(() => {
     if (Platform.OS !== 'ios') return undefined;
-    setWatchGpsCommandHandler((msg) => {
-      const action = msg?.action;
-      if (action === 'addShot') {
-        const club = String(msg.club || '');
-        overlayRef.current?.startShotEntryFromWatch?.(club);
-        return;
-      }
-      if (action === 'addPutt') {
-        handleWatchPutt();
-        return;
-      }
-      if (action === 'advanceHole') {
-        const h = Number(msg.hole);
-        if (!Number.isFinite(h)) return;
-        const idx = visibleHoles.findIndex((vh) => (vh.hole ?? vh.number) === h);
-        if (idx >= 0) handleSelectHole(idx);
-      }
-    });
+    setWatchGpsCommandHandler(dispatchWatchGpsCommand);
     return () => setWatchGpsCommandHandler(null);
-  }, [handleSelectHole, handleWatchPutt, visibleHoles]);
+  }, [dispatchWatchGpsCommand]);
+
+  useEffect(() => {
+    if (!watchGpsCommandRequest?.id) return;
+    if (watchGpsCommandRequest.id === lastHandledWatchGpsCommandRef.current) return;
+    lastHandledWatchGpsCommandRef.current = watchGpsCommandRequest.id;
+    dispatchWatchGpsCommand(watchGpsCommandRequest.payload || {});
+  }, [dispatchWatchGpsCommand, watchGpsCommandRequest]);
 
   useEffect(() => {
     if (Platform.OS !== 'ios') return undefined;

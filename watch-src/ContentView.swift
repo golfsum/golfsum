@@ -11,11 +11,17 @@ struct ContentView: View {
   private let quickStartTees = ["Blue", "White", "Gold", "Red"]
 
   var body: some View {
-    TabView {
-      distancesPage
-      shotTrackingPage
+    Group {
+      if session.dismissed {
+        dismissedPage
+      } else {
+        TabView {
+          distancesPage
+          shotTrackingPage
+        }
+        .tabViewStyle(.page)
+      }
     }
-    .tabViewStyle(.page)
     .sheet(isPresented: $showClubPicker) {
       clubPickerSheet
     }
@@ -105,6 +111,11 @@ struct ContentView: View {
           showEndRoundConfirm = true
         }
         .buttonStyle(.borderedProminent)
+        Button("Close App") {
+          session.dismissApp()
+        }
+        .buttonStyle(.bordered)
+        .tint(.red)
         if session.isRefreshing {
           ProgressView()
             .progressViewStyle(.circular)
@@ -132,6 +143,11 @@ struct ContentView: View {
           showQuickStart = true
         }
         .buttonStyle(.bordered)
+        Button("Close App") {
+          session.dismissApp()
+        }
+        .buttonStyle(.bordered)
+        .tint(.red)
         if session.isRefreshing {
           ProgressView()
             .progressViewStyle(.circular)
@@ -188,11 +204,38 @@ struct ContentView: View {
           }
           .buttonStyle(.borderedProminent)
         }
+
+        Button("Close App") {
+          session.dismissApp()
+        }
+        .buttonStyle(.bordered)
+        .tint(.red)
       }
       .frame(maxWidth: .infinity)
       .padding(.vertical, 4)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  private var dismissedPage: some View {
+    VStack(spacing: 10) {
+      Image(systemName: "moon.zzz.fill")
+        .font(.title2)
+        .foregroundStyle(.secondary)
+      Text("GolfSum paused")
+        .font(.headline)
+      Text("Press the Digital Crown or side button to return to the watch face.")
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+      Button("Reopen") {
+        session.resetDismissed()
+        session.refreshRound()
+      }
+      .buttonStyle(.borderedProminent)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .padding(.horizontal, 6)
   }
 
   private var debugPanel: some View {

@@ -70,7 +70,7 @@ import { ProUpgradeScreen } from './src/screens/ProUpgradeScreen';
 import { appStyles as styles } from './src/app/appStyles';
 import { AppScreen } from './src/app/appTypes';
 import { AppMainContent } from './src/app/AppMainContent';
-import { loadGpsRoundSetup } from './src/services/gpsRoundSetup';
+import { hasGpsHoleData, loadGpsRoundSetup } from './src/services/gpsRoundSetup';
 import { haversineYards } from './src/services/haversine';
 import { GpsRoundScreen } from './src/screens/GpsRoundScreen';
 import { WebGpsRoundPreview } from './src/screens/WebGpsRoundPreview';
@@ -323,6 +323,7 @@ export default function App() {
     tournamentMode?: boolean;
   } | null>(null);
   const [watchEndRoundRequest, setWatchEndRoundRequest] = useState(0);
+  const [watchGpsCommandRequest, setWatchGpsCommandRequest] = useState<{ id: number; payload: Record<string, unknown> } | null>(null);
   const [planningCourse, setPlanningCourse] = useState<{
     courseId: string;
     courseName?: string;
@@ -343,6 +344,7 @@ export default function App() {
   const [savingPausedGps, setSavingPausedGps] = useState(false);
   const currentScreenRef = useRef(currentScreen);
   const gpsRoundCourseRef = useRef(gpsRoundCourse);
+  const watchGpsCommandSeqRef = useRef(0);
 
   useEffect(() => {
     currentScreenRef.current = currentScreen;
@@ -703,31 +705,9 @@ export default function App() {
     const teeName = settings?.teeName || 'Blue';
     const currentHole = settings?.startingHole || 1;
     const roundId = `gps-${courseId}-${Date.now()}`;
-    const startRoundPayload = {
-      type: 'startRound',
-      action: 'roundState',
-      active: true,
-      roundActive: true,
-      roundID: roundId,
-      roundId,
-      course: courseName || 'Haven',
-      courseName: courseName || 'Haven',
-      currentHole,
-      hole: currentHole,
-      par: 4,
-      yardage: 382,
-      tee: teeName,
-      teeName,
-      frt: 0,
-      ctr: 0,
-      bck: 0,
-      timestamp: Date.now() / 1000,
-      lastSyncAt: Date.now() / 1000,
-      clubs: [],
-      holes: [{ number: currentHole, par: 4 }],
-    };
-    logger.debug('Sending startRound to Watch', startRoundPayload);
-    updateWatchGpsContext(startRoundPayload);
+    // Push real POI-derived yardages immediately so the watch doesn't sit at 0/0/0
+    // while waiting for GpsRoundScreen's first update effect.
+    void sendFullRoundDataToWatch(courseId, courseName, teeName, currentHole, roundId);
 
     setGpsResumeData(null);
     setGpsRoundCourse({
@@ -748,18 +728,32 @@ export default function App() {
   handleStartGpsRoundRef.current = handleStartGpsRound;
 
   useLayoutEffect(() => {
-    const teardown = initializeWatchReceiver((event: WatchBridgeEvent) => {
+    const teardown = initializeWatchReceiver(async (event: WatchBridgeEvent) => {
       if (event.type === 'startRoundFromWatch') {
         const cn = event.course || event.courseName || 'Haven';
         const tn = event.tee || event.teeName || 'Blue';
         const holeNumber = event.currentHole || event.holeNumber || 1;
         logger.debug('Start round requested from watch', event);
+        try {
+          const setup = await loadGpsRoundSetup(WATCH_HAVEN_COURSE_ID, cn);
+          const hasRealSetup = !!(setup?.course && hasGpsHoleData(setup.course));
+          if (!hasRealSetup) {
+            Alert.alert('Watch round unavailable', 'Could not load Haven GPS hole data on iPhone. Open the course once on iPhone and try again.');
+            return;
+          }
+        } catch (error) {
+          logger.warn('Watch start failed to hydrate GPS round setup', error);
+          Alert.alert('Watch round unavailable', 'Could not load course GPS data on iPhone. Try again in a moment.');
+          return;
+        }
+
         handleStartGpsRoundRef.current(WATCH_HAVEN_COURSE_ID, cn, {
           teeName: tn,
           startingHole: holeNumber,
           endingHole: 18,
           roundLength: '18',
         });
+        void sendFullRoundDataToWatch(WATCH_HAVEN_COURSE_ID, cn, tn, holeNumber);
         return;
       }
       if (event.type === 'endRound') {
@@ -774,10 +768,20 @@ export default function App() {
       if (event.type === 'end_round') {
         Alert.alert('Round synced from Apple Watch', 'Final hole saved. Finish and save on iPhone.');
       }
+    }, (payload) => {
+      logger.debug('Watch GPS command fallback routed through AppRoot', payload);
+      watchGpsCommandSeqRef.current += 1;
+      setWatchGpsCommandRequest({
+        id: watchGpsCommandSeqRef.current,
+        payload,
+      });
+      if (gpsRoundCourseRef.current && currentScreenRef.current !== 'gps-round') {
+        setCurrentScreen('gps-round');
+      }
     });
 
     return () => teardown();
-  }, []);
+  }, [sendFullRoundDataToWatch]);
 
   const handleStartPlanning = (courseId: string, courseName?: string, teeColor?: string, latitude?: number, longitude?: number) => {
     setPlanningCourse({ courseId, courseName, teeColor, latitude, longitude });
@@ -1446,6 +1450,7 @@ export default function App() {
               onFinishRound={handleFinishGpsRound}
               resumedRoundData={gpsResumeData as any}
               watchEndRoundRequest={watchEndRoundRequest}
+              watchGpsCommandRequest={watchGpsCommandRequest}
             />
           </View>
         )
