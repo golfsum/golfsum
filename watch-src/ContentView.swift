@@ -5,10 +5,7 @@ struct ContentView: View {
   @State private var toast: String?
   @State private var toastTask: Task<Void, Never>?
   @State private var showClubPicker = false
-  @State private var showQuickStart = false
   @State private var showEndRoundConfirm = false
-  @State private var quickStartTee = "Blue"
-  private let quickStartTees = ["Blue", "White", "Gold", "Red"]
 
   var body: some View {
     Group {
@@ -24,9 +21,6 @@ struct ContentView: View {
     }
     .sheet(isPresented: $showClubPicker) {
       clubPickerSheet
-    }
-    .sheet(isPresented: $showQuickStart) {
-      quickStartSheet
     }
     .alert("End round on iPhone?", isPresented: $showEndRoundConfirm) {
       Button("Cancel", role: .cancel) {}
@@ -123,9 +117,12 @@ struct ContentView: View {
         }
         debugPanel
       } else {
-        Text("No active round")
+        Image(systemName: "iphone.gen3")
+          .font(.title2)
+          .foregroundStyle(.green)
+        Text("Start on iPhone")
           .font(.headline)
-        Text("No active round detected. Tap Refresh or start one on your iPhone.")
+        Text("Open GolfSum on your iPhone and start a GPS round. Yardages will appear here automatically.")
           .font(.caption2)
           .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
@@ -133,17 +130,6 @@ struct ContentView: View {
           session.refreshRound()
         }
         .buttonStyle(.borderedProminent)
-        Button("Send Test Log") {
-          session.sendLogToPhone(level: "debug", message: "Manual test log from Watch", extra: [
-            "testValue": 123
-          ])
-          flash("Test log sent")
-        }
-        .buttonStyle(.bordered)
-        Button("Start Round") {
-          showQuickStart = true
-        }
-        .buttonStyle(.bordered)
         Button("Close App") {
           session.dismissApp()
         }
@@ -277,48 +263,6 @@ struct ContentView: View {
       Section {
         Button("Cancel") {
           showClubPicker = false
-        }
-      }
-    }
-  }
-
-  private var quickStartSheet: some View {
-    List {
-      Section("Quick Start Round") {
-        HStack {
-          Text("Course")
-          Spacer()
-          Text("Haven")
-            .foregroundStyle(.secondary)
-        }
-        Picker("Tee", selection: $quickStartTee) {
-          ForEach(quickStartTees, id: \.self) { tee in
-            Text(tee).tag(tee)
-          }
-        }
-        HStack {
-          Text("Round")
-          Spacer()
-          Text("18 Holes")
-            .foregroundStyle(.secondary)
-        }
-        HStack {
-          Text("Starting Hole")
-          Spacer()
-          Text("1")
-            .foregroundStyle(.secondary)
-        }
-      }
-      Section {
-        Button("Start on iPhone") {
-          session.quickStartRound(courseName: "Haven", teeName: quickStartTee, startingHole: 1)
-          showQuickStart = false
-          flash("Requested on iPhone")
-        }
-      }
-      Section {
-        Button("Cancel") {
-          showQuickStart = false
         }
       }
     }

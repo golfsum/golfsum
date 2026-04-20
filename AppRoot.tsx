@@ -70,7 +70,7 @@ import { ProUpgradeScreen } from './src/screens/ProUpgradeScreen';
 import { appStyles as styles } from './src/app/appStyles';
 import { AppScreen } from './src/app/appTypes';
 import { AppMainContent } from './src/app/AppMainContent';
-import { hasGpsHoleData, loadGpsRoundSetup } from './src/services/gpsRoundSetup';
+import { loadGpsRoundSetup } from './src/services/gpsRoundSetup';
 import { haversineYards } from './src/services/haversine';
 import { GpsRoundScreen } from './src/screens/GpsRoundScreen';
 import { WebGpsRoundPreview } from './src/screens/WebGpsRoundPreview';
@@ -759,58 +759,8 @@ export default function App() {
 
   useLayoutEffect(() => {
     const teardown = initializeWatchReceiver(async (event: WatchBridgeEvent) => {
-      if (event.type === 'startRoundFromWatch') {
-        const cn = event.course || event.courseName || 'Haven';
-        const tn = event.tee || event.teeName || 'Blue';
-        const holeNumber = event.currentHole || event.holeNumber || 1;
-        logger.debug('Start round requested from watch', event);
-
-        // Ack the watch immediately so its debug panel moves off "Last Sync: Never"
-        // regardless of whether course data loads. Real yardages follow below.
-        const ackRoundId = `gps-${WATCH_HAVEN_COURSE_ID}-${Date.now()}`;
-        updateWatchGpsContext({
-          type: 'startRound',
-          action: 'roundState',
-          active: true,
-          roundActive: true,
-          roundID: ackRoundId,
-          roundId: ackRoundId,
-          course: cn,
-          courseName: cn,
-          currentHole: holeNumber,
-          hole: holeNumber,
-          par: 4,
-          tee: tn,
-          teeName: tn,
-          timestamp: Date.now() / 1000,
-          lastSyncAt: Date.now() / 1000,
-        });
-
-        let hasRealSetup = false;
-        try {
-          const setup = await loadGpsRoundSetup(WATCH_HAVEN_COURSE_ID, cn);
-          hasRealSetup = !!(setup?.course && hasGpsHoleData(setup.course));
-        } catch (error) {
-          logger.warn('Watch start failed to hydrate GPS round setup', error);
-        }
-        if (!hasRealSetup) {
-          // Previously we bailed here — which left watch commands (addShot / addPutt /
-          // endRound) dangling because GpsRoundScreen never mounted. Instead, start the
-          // round anyway. GpsRoundScreen has its own course loader; without POIs the
-          // round degrades to map-only with scorecard yardages, which is still better
-          // than locking the watch out of shot entry.
-          logger.warn('Starting watch round without cached GPS hole data; yardages will be scorecard-only.');
-        }
-
-        handleStartGpsRoundRef.current(WATCH_HAVEN_COURSE_ID, cn, {
-          teeName: tn,
-          startingHole: holeNumber,
-          endingHole: 18,
-          roundLength: '18',
-        });
-        void sendFullRoundDataToWatch(WATCH_HAVEN_COURSE_ID, cn, tn, holeNumber);
-        return;
-      }
+      // `startRoundFromWatch` is intentionally NOT handled here. The watch no
+      // longer starts rounds — users start on the iPhone and the watch syncs.
       if (event.type === 'endRound') {
         logger.debug('End round requested from watch', event);
         setWatchEndRoundRequest((prev) => prev + 1);

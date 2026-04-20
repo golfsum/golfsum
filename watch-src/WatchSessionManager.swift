@@ -518,57 +518,11 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     }
   }
 
-  func quickStartRound(courseName: String = "Haven", teeName: String = "Blue", startingHole: Int = 1) {
-    let localRound = ActiveRound(
-      roundID: "watch-\(UUID().uuidString)",
-      courseName: courseName,
-      teeName: teeName,
-      startedAt: Date(),
-      currentHole: HoleSnapshot(
-        number: startingHole,
-        par: 4,
-        yardage: 382,
-        front: 0,
-        middle: 0,
-        back: 0,
-        suggestedClub: nil,
-        coachingFocus: nil
-      ),
-      wind: nil,
-      isActive: true
-    )
-    SharedRoundStore.save(localRound)
-    applyPersistedState()
-
-    guard WCSession.isSupported() else { return }
-    let session = WCSession.default
-    session.activate()
-
-    let message: [String: Any] = [
-      "type": "startRoundFromWatch",
-      "course": courseName,
-      "courseName": courseName,
-      "tee": teeName,
-      "teeName": teeName,
-      "currentHole": startingHole,
-      "holeNumber": startingHole,
-      "par": 4,
-      "yardage": 382,
-      "timestamp": Date().timeIntervalSince1970,
-    ]
-    debugLog("quickStartRound \(message)")
-    sendLogToPhone(level: "info", message: "startRoundFromWatch requested", extra: [
-      "course": courseName,
-      "tee": teeName,
-      "startingHole": startingHole,
-    ])
-    if session.activationState != .activated {
-      pendingLifecycleMessages.append(message)
-      debugLog("Queued quickStartRound until activation completes")
-      return
-    }
-    pushLifecyclePayload(message, allowReply: false, reply: { _ in })
-  }
+  // quickStartRound was removed: the watch never creates a round on its own.
+  // Phone is the single source of truth — rounds must start from the iPhone app
+  // and propagate down via updateApplicationContext. This avoids the watch
+  // showing a fake local round when WCSession delivery fails or the phone app
+  // can't hydrate course data.
 
   func sessionReachabilityDidChange(_ session: WCSession) {
     DispatchQueue.main.async {
