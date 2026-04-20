@@ -2427,7 +2427,12 @@ export function GpsRoundScreen({
   }, [detectLieAtCoordinate, isReasonableShot, userPos, visibleHoles]);
 
   const handleWatchPutt = useCallback(() => {
+    // Close out any dangling approach shot so its "to" point is set to the green.
     closeLastOpenShotToGreen(currentHoleIndex, greenCenter);
+    // Match the native "+PUTTS" button: just increment the summary counter.
+    // Do NOT also commit a putt-shaped shot — the hole score is computed as
+    // `shots.length + summary.putts`, so doing both bumped the displayed score
+    // by 2 per watch tap.
     setHoleSummariesByHole((prev) => {
       const cur = prev[currentHoleIndex] || {};
       const basePutts = typeof cur.putts === 'number' ? cur.putts : 0;
@@ -2436,24 +2441,7 @@ export function GpsRoundScreen({
         [currentHoleIndex]: { ...cur, putts: basePutts + 1 },
       };
     });
-    if (userPos) {
-      const id = `putt-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-      commitShotToHole(currentHoleIndex, {
-        id,
-        club: 'Putter',
-        lie: 'Green',
-        lieColor: '#34D399',
-        shotKind: 'putt',
-        from: { lat: userPos.lat, lng: userPos.lng },
-        to: greenCenter ? { lat: greenCenter.Latitude, lng: greenCenter.Longitude } : null,
-        actualYards: null,
-        playingYards: greenCenter
-          ? haversineYards(userPos.lat, userPos.lng, greenCenter.Latitude, greenCenter.Longitude)
-          : null,
-        loggedAt: new Date().toISOString(),
-      });
-    }
-  }, [closeLastOpenShotToGreen, commitShotToHole, currentHoleIndex, greenCenter, userPos]);
+  }, [closeLastOpenShotToGreen, currentHoleIndex, greenCenter]);
 
   const insertRetrospectiveShot = useCallback((holeIndex, insertAfterNum, shotInput) => {
     setLoggedShotsByHole((prev) => {
@@ -2617,22 +2605,34 @@ export function GpsRoundScreen({
     overlayRef.current?.resetOverlay?.();
   }, [currentHole, currentHoleIndex, currentHoleSummary?.putts, currentPutts, loggedShotsByHole, markHoleFlag, missedShotBanner?.holeIndex, missedShotBanner?.kind, missedShotBanner?.targetHoleIndex, selectedTeeYardage, visibleHoles, currentHolePausedMs]);
 
+  /** Watch Add-Shot handler: log a shot at the user's current GPS position,
+   *  using the club the user picked on the watch. Don't wait for a phone map
+   *  tap — the watch is the primary input here, so auto-commit instead of
+   *  putting the overlay in mark mode (which required phone interaction). */
+  const handleWatchAddShot = useCallback((club) => {
+    const clubLabel = (club && String(club).trim()) || 'Shot';
+    if (!userPos) {
+      // No GPS fix yet; fall back to the overlay's mark-on-map flow so the
+      // shot isn't silently lost.
+      overlayRef.current?.startShotEntryFromWatch?.(clubLabel);
+      return;
+    }
+    commitShotToHole(currentHoleIndex, {
+      id: `watch-shot-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      club: clubLabel,
+      from: { lat: userPos.lat, lng: userPos.lng },
+      to: null,
+      actualYards: null,
+      playingYards: null,
+      loggedAt: new Date().toISOString(),
+    });
+  }, [commitShotToHole, currentHoleIndex, userPos]);
+
   const dispatchWatchGpsCommand = useCallback((msg) => {
     const action = msg?.action;
     if (action === 'addShot') {
       const club = String(msg.club || '');
-      // overlayRef may be null on cold-start navigation from watch → gps-round.
-      // Retry until the imperative handle is attached (≤2 s) so the shot isn't lost.
-      let attempts = 0;
-      const tryStart = () => {
-        if (overlayRef.current?.startShotEntryFromWatch) {
-          overlayRef.current.startShotEntryFromWatch(club);
-          return;
-        }
-        attempts += 1;
-        if (attempts < 20) setTimeout(tryStart, 100);
-      };
-      tryStart();
+      handleWatchAddShot(club);
       return;
     }
     if (action === 'addPutt') {
@@ -2645,7 +2645,7 @@ export function GpsRoundScreen({
       const idx = visibleHoles.findIndex((vh) => (vh.hole ?? vh.number) === h);
       if (idx >= 0) handleSelectHole(idx);
     }
-  }, [handleSelectHole, handleWatchPutt, visibleHoles]);
+  }, [handleSelectHole, handleWatchAddShot, handleWatchPutt, visibleHoles]);
 
   useEffect(() => {
     if (Platform.OS !== 'ios') return undefined;
