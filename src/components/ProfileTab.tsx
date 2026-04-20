@@ -77,7 +77,7 @@ import { buildGolfDNA, GolfDNA } from '../services/golfDnaService';
 import { GolfDNACard } from './GolfDNACard';
 import { buildImprovementLoop, ImprovementLoopData } from '../services/improvementLoopService';
 import { ImprovementLoopScreen } from './ImprovementLoopScreen';
-import { getQueuedWatchEvents, isWatchBridgeAvailable } from '../services/watchBridgeService';
+import { getQueuedWatchEvents, isWatchBridgeAvailable, updateWatchGpsContext } from '../services/watchBridgeService';
 import {
   deactivatePushRegistrationForCurrentUser,
   getPushPermissionSnapshot,
@@ -215,6 +215,8 @@ export const ProfileTab: React.FC<Props> = ({
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [watchDebugQueueCount, setWatchDebugQueueCount] = useState(0);
   const [watchDebugLastEvent, setWatchDebugLastEvent] = useState<string>('—');
+  const [watchTestCounter, setWatchTestCounter] = useState(0);
+  const [watchTestStatus, setWatchTestStatus] = useState<string>('Not sent');
   const [isSeedingPebbleHistory, setIsSeedingPebbleHistory] = useState(false);
   const [isSeedingHavenHistory, setIsSeedingHavenHistory] = useState(false);
   const scrollRef = useRef<ScrollView | null>(null);
@@ -223,7 +225,6 @@ export const ProfileTab: React.FC<Props> = ({
   const hasProAccess = canAccess('gir');
 
   const refreshWatchDebugPanel = async () => {
-    if (!__DEV__) return;
     try {
       const events = await getQueuedWatchEvents();
       setWatchDebugQueueCount(events.length);
@@ -237,6 +238,77 @@ export const ProfileTab: React.FC<Props> = ({
     } catch {
       setWatchDebugLastEvent('error');
     }
+  };
+
+  /** Push a well-known payload to the watch and confirm the bridge / WCSession
+   * pipeline is alive. The watch's debug panel will show Last type: `watchTest`
+   * and the FRT/MID/BCK yardages will read the test counter (111/222/333+N). */
+  const handleSendWatchTest = () => {
+    if (!isWatchBridgeAvailable()) {
+      setWatchTestStatus('Bridge unavailable (not iOS?)');
+      return;
+    }
+    const nextCounter = watchTestCounter + 1;
+    setWatchTestCounter(nextCounter);
+    const now = new Date();
+    const payload = {
+      type: 'startRound',
+      action: 'roundState',
+      active: true,
+      roundActive: true,
+      roundID: `watchTest-${nextCounter}`,
+      roundId: `watchTest-${nextCounter}`,
+      course: 'Test Course',
+      courseName: 'Test Course',
+      teeName: 'Test',
+      currentHole: 1,
+      hole: 1,
+      par: 4,
+      yardage: 100 + nextCounter,
+      frt: 111 + nextCounter,
+      ctr: 222 + nextCounter,
+      bck: 333 + nextCounter,
+      currentYardage: 100 + nextCounter,
+      frtYards: 111 + nextCounter,
+      midYards: 222 + nextCounter,
+      bckYards: 333 + nextCounter,
+      suggestedClub: `Test #${nextCounter}`,
+      coachingFocus: 'Bridge test payload',
+      windMph: 0,
+      windDegrees: 0,
+      windArrowDegrees: 0,
+      clubs: ['Driver', '7i', 'Putter'],
+      holes: [{ number: 1, par: 4, yardage: 100 + nextCounter, frt: 111 + nextCounter, ctr: 222 + nextCounter, bck: 333 + nextCounter }],
+      timestamp: now.getTime() / 1000,
+      lastSyncAt: now.getTime() / 1000,
+      lastUpdated: now.getTime(),
+    };
+    try {
+      updateWatchGpsContext(payload);
+      setWatchTestStatus(`Sent #${nextCounter} at ${now.toLocaleTimeString()}`);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'unknown';
+      setWatchTestStatus(`Failed: ${msg}`);
+    }
+  };
+
+  /** Clear any fake "watchTest" state on the watch by sending a roundEnded. */
+  const handleClearWatchTest = () => {
+    if (!isWatchBridgeAvailable()) return;
+    updateWatchGpsContext({
+      type: 'roundEnded',
+      action: 'roundState',
+      active: false,
+      roundActive: false,
+      roundID: `watchTest-cleared`,
+      roundId: `watchTest-cleared`,
+      frt: 0,
+      ctr: 0,
+      bck: 0,
+      timestamp: Date.now() / 1000,
+      lastSyncAt: Date.now() / 1000,
+    });
+    setWatchTestStatus('Cleared');
   };
 
   const handleSeedPebbleHistory = async () => {
@@ -2138,6 +2210,48 @@ export const ProfileTab: React.FC<Props> = ({
                 <Text style={styles.settingValue}>Adds 3 low-80s Haven test rounds</Text>
               </View>
               <Ionicons name="add-circle-outline" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+        {/* Always-visible Watch diagnostics so users can confirm the bridge works
+            without needing a live GPS round. */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.headerLeft}>
+              <Ionicons name="watch-outline" size={20} color="#10B981" />
+              <Text style={styles.sectionTitle}>APPLE WATCH</Text>
+            </View>
+          </View>
+          <View style={styles.sectionContent}>
+            <Text style={styles.settingLabel}>Bridge: {isWatchBridgeAvailable() ? 'Available' : 'Unavailable'}</Text>
+            <Text style={styles.settingValue}>Last test: {watchTestStatus}</Text>
+            <TouchableOpacity
+              style={[styles.settingRow, { marginTop: 12 }]}
+              onPress={handleSendWatchTest}
+            >
+              <View style={styles.settingIcon}>
+                <Ionicons name="paper-plane-outline" size={18} color="#10B981" />
+              </View>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Send Test to Watch</Text>
+                <Text style={styles.settingValue}>
+                  Watch debug should show Last type: startRound, Yards: y=1{watchTestCounter + 1 < 10 ? '0' : ''}{watchTestCounter + 1} f=1{watchTestCounter + 1 < 10 ? '1' : ''}{watchTestCounter + 1}…
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.settingRow, { marginTop: 8 }]}
+              onPress={handleClearWatchTest}
+            >
+              <View style={styles.settingIcon}>
+                <Ionicons name="close-circle-outline" size={18} color="#9CA3AF" />
+              </View>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Clear Test Round on Watch</Text>
+                <Text style={styles.settingValue}>Sends roundEnded to reset watch state</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
             </TouchableOpacity>
           </View>
         </View>
