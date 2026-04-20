@@ -269,7 +269,9 @@ export default function App() {
         timestamp: Date.now() / 1000,
         lastSyncAt: Date.now() / 1000,
         lastUpdated: Date.now(),
-        clubs: [],
+        // Leave `clubs` unset so the watch preserves its existing list
+        // (populated by GpsRoundScreen's full-data effect from the user's
+        // profile). Sending `[]` would wipe it.
         holes: holesForWatch,
       };
       console.log('[AppRoot→Watch] sendFullRoundDataToWatch: hole=%d frt=%d ctr=%d bck=%d holes=%d',
@@ -828,7 +830,9 @@ export default function App() {
         frt: 0,
         ctr: 0,
         bck: 0,
-        clubs: [],
+        // Leave `clubs` unset so the watch preserves its existing list
+        // (populated by GpsRoundScreen's full-data effect from the user's
+        // profile). Sending `[]` would wipe it.
         holes: [],
       });
       setSelectedRound(saved);

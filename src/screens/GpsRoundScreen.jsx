@@ -2792,6 +2792,9 @@ export function GpsRoundScreen({
       ctr: payloadWithFullData.ctr,
       bck: payloadWithFullData.bck,
       firstHoleYardage,
+      // Include clubs so a late profile-load (which updates watchClubList) triggers
+      // a resend instead of being deduped out.
+      clubs: clubsForWatch,
     });
     if (signature === lastSentFullDataSignatureRef.current) {
       return undefined;

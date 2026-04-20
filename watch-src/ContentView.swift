@@ -11,6 +11,13 @@ struct ContentView: View {
     Group {
       if session.dismissed {
         dismissedPage
+      } else if session.roundActive {
+        TabView {
+          distancesPage
+          shotTrackingPage
+          holeOverviewPage
+        }
+        .tabViewStyle(.page)
       } else {
         TabView {
           distancesPage
@@ -65,11 +72,11 @@ struct ContentView: View {
               .font(.caption2)
               .foregroundStyle(.secondary)
             if !session.teeName.isEmpty {
-              Text(session.teeName)
-                .font(.caption2)
-                .foregroundStyle(.green)
+              teeBadge(session.teeName)
             }
-            HStack(spacing: 12) {
+            // Equal-width columns so a 3-digit MID can't overflow a column
+            // sized to its own intrinsic width and wrap onto a second line.
+            HStack(spacing: 4) {
               yardColumn("FRT", session.frt)
               yardColumn("MID", session.ctr)
               yardColumn("BCK", session.bck)
@@ -94,12 +101,6 @@ struct ContentView: View {
             .foregroundStyle(.red)
           Button("Close App") { session.dismissApp() }
             .foregroundStyle(.red)
-        }
-        Section("Debug") {
-          debugRow("Reachable", session.phoneReachable ? "Yes" : "No")
-          debugRow("Last Sync", session.lastSyncDescription)
-          debugRow("Messages", "\(session.messagesReceivedCount)")
-          debugRow("Yards", session.lastContextYardageLine)
         }
       }
       .listStyle(.carousel)
@@ -137,12 +138,35 @@ struct ContentView: View {
     }
   }
 
-  private func debugRow(_ label: String, _ value: String) -> some View {
-    HStack {
-      Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
-      Spacer()
-      Text(value).font(.system(size: 10, weight: .medium)).lineLimit(1)
+  /// Map a tee label to a foreground color. Unknown names fall back to green
+  /// so unusual tee names (e.g. "Mercedes") are still readable without picking
+  /// an arbitrary wrong color.
+  private func teeColor(_ name: String) -> Color {
+    switch name.lowercased() {
+    case "black", "tips": return .white
+    case "blue", "championship": return .blue
+    case "white": return .white
+    case "gold", "yellow", "senior": return .yellow
+    case "green": return .green
+    case "red", "forward", "ladies": return .red
+    case "silver", "grey", "gray": return .gray
+    case "orange": return .orange
+    case "purple": return .purple
+    default: return .green
     }
+  }
+
+  private func teeBadge(_ name: String) -> some View {
+    let color = teeColor(name)
+    return Text(name)
+      .font(.caption2.weight(.semibold))
+      .foregroundStyle(color == .white ? Color.black : Color.white)
+      .padding(.horizontal, 6)
+      .padding(.vertical, 1)
+      .background(
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+          .fill(color.opacity(0.9))
+      )
   }
 
   private func yardColumn(_ label: String, _ value: Int) -> some View {
@@ -151,9 +175,11 @@ struct ContentView: View {
         .font(.caption2)
         .foregroundStyle(.secondary)
       Text("\(value)")
-        .font(.system(size: 28, weight: .semibold, design: .rounded))
+        .font(.system(size: 24, weight: .semibold, design: .rounded))
+        .lineLimit(1)
         .minimumScaleFactor(0.5)
     }
+    .frame(maxWidth: .infinity) // equal column widths so 3-digit MID can't wrap
   }
 
   private var shotTrackingPage: some View {
@@ -193,6 +219,62 @@ struct ContentView: View {
     .listStyle(.carousel)
   }
 
+  /// Third page: at-a-glance hole summary — course / hole / par / scorecard yards,
+  /// tee, suggested club, coaching focus, wind. Swiped to from the shot-tracking page.
+  private var holeOverviewPage: some View {
+    List {
+      Section("Hole") {
+        overviewRow("Course", session.courseName)
+        overviewRow("Hole", "\(session.hole)  •  Par \(session.par)")
+        overviewRow("Yardage", "\(session.yardage) yds")
+        if !session.teeName.isEmpty {
+          HStack {
+            Text("Tee").font(.caption2).foregroundStyle(.secondary)
+            Spacer()
+            teeBadge(session.teeName)
+          }
+        }
+      }
+      Section("To Green") {
+        overviewRow("Front", "\(session.frt) yds")
+        overviewRow("Middle", "\(session.ctr) yds")
+        overviewRow("Back", "\(session.bck) yds")
+      }
+      if session.windMph > 0 || !session.suggestedClub.isEmpty || !session.coachingFocus.isEmpty {
+        Section("Play") {
+          if !session.suggestedClub.isEmpty {
+            overviewRow("Suggested", session.suggestedClub)
+          }
+          if session.windMph > 0 {
+            HStack {
+              Text("Wind").font(.caption2).foregroundStyle(.secondary)
+              Spacer()
+              Image(systemName: "location.north.fill")
+                .rotationEffect(.degrees(session.windArrowDegrees))
+                .foregroundStyle(.green)
+              Text("\(session.windMph) mph").font(.caption).foregroundStyle(.green)
+            }
+          }
+          if !session.coachingFocus.isEmpty {
+            Text(session.coachingFocus)
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+              .multilineTextAlignment(.leading)
+          }
+        }
+      }
+    }
+    .listStyle(.carousel)
+  }
+
+  private func overviewRow(_ label: String, _ value: String) -> some View {
+    HStack {
+      Text(label).font(.caption2).foregroundStyle(.secondary)
+      Spacer()
+      Text(value).font(.caption.weight(.medium)).lineLimit(1).minimumScaleFactor(0.7)
+    }
+  }
+
   private var dismissedPage: some View {
     VStack(spacing: 10) {
       Image(systemName: "moon.zzz.fill")
@@ -214,21 +296,6 @@ struct ContentView: View {
     .padding(.horizontal, 6)
   }
 
-  private var debugPanel: some View {
-    VStack(alignment: .leading, spacing: 2) {
-      Text("Reachable: \(session.phoneReachable ? "Yes" : "No")")
-      Text("Session: \(session.sessionStateLabel)")
-      Text("Last Sync: \(session.lastSyncDescription)")
-      Text("Messages: \(session.messagesReceivedCount)")
-      Text("Round ID: \(session.lastReceivedRoundID)")
-      Text("Last type: \(session.lastContextType)")
-      Text("Yards: \(session.lastContextYardageLine)")
-    }
-    .font(.system(size: 10, weight: .medium, design: .rounded))
-    .foregroundStyle(.secondary)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.top, 4)
-  }
 
   private var clubPickerSheet: some View {
     List {

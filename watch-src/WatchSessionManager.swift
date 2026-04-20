@@ -266,10 +266,11 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     windMph = intFrom(context["windMph"])
     windDegrees = doubleFrom(context["windDegrees"])
     windArrowDegrees = doubleFrom(context["windArrowDegrees"])
-    if let list = context["clubs"] as? [String] {
+    // Preserve existing clubs when the phone didn't send a non-empty list.
+    // Early heartbeats and round-ended signals sometimes omit clubs; clobbering
+    // with [] made the Add Shot button flash "Waiting for phone data" forever.
+    if let list = context["clubs"] as? [String], !list.isEmpty {
       clubs = list
-    } else {
-      clubs = []
     }
     updateLastSync(at: doubleFrom(context["lastSyncAt"]) == 0 ? nil : doubleFrom(context["lastSyncAt"]))
     isRefreshing = false
