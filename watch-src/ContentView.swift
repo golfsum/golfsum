@@ -57,6 +57,7 @@ struct ContentView: View {
   }
 
   private var distancesPage: some View {
+    ScrollView {
     VStack(spacing: 8) {
       if session.roundActive {
         Text(session.courseName)
@@ -155,8 +156,11 @@ struct ContentView: View {
         debugPanel
       }
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .frame(maxWidth: .infinity)
     .padding(.horizontal, 4)
+    .padding(.vertical, 4)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
   private func yardColumn(_ label: String, _ value: Int) -> some View {
