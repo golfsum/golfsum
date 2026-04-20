@@ -178,9 +178,9 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         replyHandler: { reply in
           self.debugLog("sendMessage ack: \(reply)")
         },
-        errorHandler: { _ in
+        errorHandler: { error in
           // Context still updated above; message is best-effort.
-          self.debugLog("sendMessage failed: \($0.localizedDescription)")
+          self.debugLog("sendMessage failed: \(error.localizedDescription)")
         }
       )
     } else {
