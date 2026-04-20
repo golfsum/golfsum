@@ -112,7 +112,9 @@ struct ContentView: View {
           .foregroundStyle(.green)
         Text("Start on iPhone")
           .font(.headline)
-        Text("Start a GPS round on your iPhone — yardages will appear here automatically.")
+        Text(session.phoneReachable
+             ? "Open GolfSum on your iPhone and start a GPS round."
+             : "Open GolfSum on your iPhone to connect.")
           .font(.system(size: 11))
           .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
@@ -126,9 +128,9 @@ struct ContentView: View {
             .tint(.red)
             .controlSize(.small)
         }
-        Text("\(session.phoneReachable ? "iPhone ready" : "iPhone asleep") · Msgs \(session.messagesReceivedCount)")
+        Text(session.phoneReachable ? "iPhone connected" : "Waiting for iPhone…")
           .font(.system(size: 9))
-          .foregroundStyle(.secondary)
+          .foregroundStyle(session.phoneReachable ? .green : .secondary)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .padding(.horizontal, 6)
