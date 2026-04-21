@@ -70,9 +70,10 @@ function sumScores(holes, start, end) {
   return { total, count };
 }
 
-function sumPar(holes, start, end) {
+function sumPar(holes, start, end, playedOnly = false) {
   let total = 0;
   for (let i = start; i <= end && i < holes.length; i++) {
+    if (playedOnly && holes[i].score == null) continue;
     total += holes[i].par;
   }
   return total;
@@ -239,8 +240,13 @@ function HoleRow({ hole, isCurrent, isFuture, isFlagged, onPress }) {
 }
 
 // ─── Subtotal Row ────────────────────────────────────────────────────
-function SubtotalRow({ label, scoreSub, parSub, count }) {
-  const diff = scoreSub - parSub;
+// `parSub` is full-nine par (shown in the PAR column), while `playedPar` is
+// only the par of holes the player has scored so far. `diff` (shown as the
+// to-par value) compares against `playedPar` — otherwise scoring par on hole 1
+// of the front nine would read "-32" instead of "E".
+function SubtotalRow({ label, scoreSub, parSub, playedPar, count }) {
+  const parForDiff = typeof playedPar === 'number' ? playedPar : parSub;
+  const diff = scoreSub - parForDiff;
   const diffText = count > 0
     ? diff === 0 ? 'E' : diff > 0 ? `+${diff}` : `${diff}`
     : '';
@@ -292,16 +298,21 @@ export default function ScorecardSheet({
   // Totals
   const frontScore = sumScores(holes, 0, 8);
   const frontPar = sumPar(holes, 0, 8);
+  const frontPlayedPar = sumPar(holes, 0, 8, true);
   const backScore = is18 ? sumScores(holes, 9, 17) : { total: 0, count: 0 };
   const backPar = is18 ? sumPar(holes, 9, 17) : 0;
+  const backPlayedPar = is18 ? sumPar(holes, 9, 17, true) : 0;
   const totalScore = frontScore.total + backScore.total;
   const totalPar = frontPar + backPar;
   const totalCount = frontScore.count + backScore.count;
-  const totalDiff = totalScore - totalPar;
 
-  // Header score display
+  // Header + TOT "to par" must compare against par of *played* holes only;
+  // otherwise one hole at par on a 72-par course reads as "-68" (4 - 72).
+  const playedPar = frontPlayedPar + backPlayedPar;
+  const playedDiff = totalScore - playedPar;
+  const totalDiff = playedDiff;
   const headerScore = totalCount > 0
-    ? totalDiff === 0 ? 'E' : totalDiff > 0 ? `+${totalDiff}` : `${totalDiff}`
+    ? playedDiff === 0 ? 'E' : playedDiff > 0 ? `+${playedDiff}` : `${playedDiff}`
     : '–';
 
   const handleRowPress = useCallback((hole, index) => {
@@ -413,6 +424,7 @@ export default function ScorecardSheet({
               label="OUT"
               scoreSub={frontScore.total}
               parSub={frontPar}
+              playedPar={frontPlayedPar}
               count={frontScore.count}
             />
 
@@ -425,6 +437,7 @@ export default function ScorecardSheet({
                 label="IN"
                 scoreSub={backScore.total}
                 parSub={backPar}
+                playedPar={backPlayedPar}
                 count={backScore.count}
               />
             )}
