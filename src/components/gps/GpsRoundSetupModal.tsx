@@ -48,6 +48,10 @@ type Props = {
   onSelectRoute?: (routeId: string) => void;
   selectedTeeName: string;
   onSelectTee: (teeName: string) => void;
+  /** Optional: the tee the user played most recently at this course. Renders a
+   *  "Last played" tag beside that tee so it's recognisable even when the
+   *  default selection has already moved on. */
+  lastPlayedTeeName?: string | null;
   startingHole: number;
   holesWithData?: number[];
   roundLength: RoundLength;
@@ -242,6 +246,7 @@ export function GpsRoundSetupModal({
   onSelectRoute,
   selectedTeeName,
   onSelectTee,
+  lastPlayedTeeName,
   startingHole,
   holesWithData = [],
   roundLength,
@@ -453,8 +458,10 @@ export function GpsRoundSetupModal({
                     bounces={false}
                   >
                     {standardTees.map((tee) => {
-                      const active =
-                        tee.name.trim().toLowerCase() === selectedTeeName.trim().toLowerCase();
+                      const nameLower = tee.name.trim().toLowerCase();
+                      const active = nameLower === selectedTeeName.trim().toLowerCase();
+                      const isLastPlayed = !!lastPlayedTeeName
+                        && nameLower === lastPlayedTeeName.trim().toLowerCase();
                       return (
                         <TouchableOpacity
                           key={tee.name}
@@ -463,9 +470,16 @@ export function GpsRoundSetupModal({
                         >
                           <TeePill teeName={tee.name} color={tee.color} />
                           <View style={styles.teeCopy}>
-                            <Text style={[styles.teeTitle, active && styles.teeTitleActive]}>
-                              {tee.name}
-                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Text style={[styles.teeTitle, active && styles.teeTitleActive]}>
+                                {tee.name}
+                              </Text>
+                              {isLastPlayed ? (
+                                <View style={styles.lastPlayedTag}>
+                                  <Text style={styles.lastPlayedTagText}>Last played</Text>
+                                </View>
+                              ) : null}
+                            </View>
                             <Text style={styles.teeSubtitle}>{formatYards(tee.totalYards)}</Text>
                           </View>
                         </TouchableOpacity>
@@ -874,6 +888,20 @@ const styles = StyleSheet.create({
   },
   teeTitleActive: {
     color: '#FFFFFF',
+  },
+  lastPlayedTag: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: 'rgba(16,185,129,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(16,185,129,0.45)',
+  },
+  lastPlayedTagText: {
+    color: '#34D399',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   teeSubtitle: {
     color: '#94A3B8',

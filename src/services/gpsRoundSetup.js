@@ -161,6 +161,29 @@ export async function loadGpsRoundSetup(courseId, courseName, latitude, longitud
   // Enrich tee options with full tee list from Golf Course API (has all tees with ratings/slopes)
   payload.teeOptions = await enrichTeeOptions(courseId, payload.teeOptions);
 
+  // When the local cache was hit (step 1) but we still only have a sparse tee
+  // subset — e.g. Recent tap → cached Haven with 2 GPS-derived tees, Golf
+  // Course API lookup failed during enrichTeeOptions — try a backend fetch
+  // to get the full list. Without this, the same course shows 4 tees from
+  // Nearby and 2 from Recents.
+  if (payload.cached && Array.isArray(payload.teeOptions) && payload.teeOptions.length < 3) {
+    try {
+      const remote = await fetchCourseHolesFromBackend(courseId, courseName, latitude, longitude);
+      const remoteSetup = buildSetupPayload(remote, false);
+      const remoteEnriched = await enrichTeeOptions(courseId, remoteSetup.teeOptions);
+      if (remoteEnriched.length > payload.teeOptions.length) {
+        // Merge: prefer the richer remote tee list but keep the local course
+        // data (holes + POIs) since that's what we use for GPS rendering.
+        payload.teeOptions = remoteEnriched;
+        // Backfill local cache so the next open doesn't have to hit the
+        // backend again.
+        await saveCourse(courseId, { ...payload.course, teeOptionsSnapshot: remoteEnriched }).catch(() => undefined);
+      }
+    } catch {
+      // Backend unreachable (offline / API down) — keep whatever enrichTeeOptions returned.
+    }
+  }
+
   // Persist full tee list on cached course so offline / next launch shows every tee, not just GPS-derived subset.
   if (payload.course && Array.isArray(payload.teeOptions) && payload.teeOptions.length > 0) {
     try {

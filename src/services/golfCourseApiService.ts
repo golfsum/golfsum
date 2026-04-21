@@ -1044,7 +1044,9 @@ const addToRecentCourses = async (course: CourseDetails): Promise<void> => {
     // Remove if already in list
     recentCourses = recentCourses.filter(c => c.id !== course.id);
     
-    // Add to front
+    // Add to front. Preserve latitude/longitude so Recent taps can still do
+    // a fresh backend fetch (otherwise the load path reads a possibly-sparse
+    // local cache and the tee list looks shorter than Nearby).
     recentCourses.unshift({
       id: course.id,
       name: course.name,
@@ -1055,7 +1057,9 @@ const addToRecentCourses = async (course: CourseDetails): Promise<void> => {
       par: course.par,
       rating: course.rating,
       slope: course.slope,
-      yardage: course.yardage
+      yardage: course.yardage,
+      latitude: (course as unknown as { latitude?: number }).latitude,
+      longitude: (course as unknown as { longitude?: number }).longitude,
     });
     
     // Keep only last 10

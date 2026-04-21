@@ -138,6 +138,7 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
   const [gpsRouteOptions, setGpsRouteOptions] = useState<GpsRouteOption[]>([]);
   const [selectedGpsRouteId, setSelectedGpsRouteId] = useState<string | null>(null);
   const [selectedGpsTee, setSelectedGpsTee] = useState('');
+  const [gpsSetupLastPlayedTee, setGpsSetupLastPlayedTee] = useState<string | null>(null);
   const [gpsStartingHole, setGpsStartingHole] = useState(1);
   const [gpsHoleCount, setGpsHoleCount] = useState(18);
   const [gpsTournamentMode, setGpsTournamentMode] = useState(false);
@@ -676,11 +677,13 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
       const lastPlayedTee =
         lastRound?.stats?.teeBox ||
         lastRound?.courseSnapshot?.tee?.name ||
+        lastRound?.teeName ||
         null;
 
       setGpsSetupVisible(true);
       setGpsSetupLoading(true);
       setGpsSetupCourse({ courseId: resolvedCourseId, courseName: resolvedCourseName });
+      setGpsSetupLastPlayedTee(lastPlayedTee);
       setGpsSetupLocation([course.city, course.state].filter(Boolean).join(', '));
       setGpsStartingHole(1);
       setGpsTournamentMode(false);
@@ -1709,6 +1712,7 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
         onSelectRoute={handleSelectGpsRoute}
         selectedTeeName={selectedGpsTee}
         onSelectTee={setSelectedGpsTee}
+        lastPlayedTeeName={gpsSetupLastPlayedTee}
         startingHole={gpsStartingHole}
         holesWithData={gpsHolesWithData}
         roundLength={gpsRoundLength}
