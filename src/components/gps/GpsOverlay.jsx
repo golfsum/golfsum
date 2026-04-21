@@ -129,9 +129,13 @@ const lieChoicesMap = {
   'Water': '#60A5FA',
 };
 
-function getPlacementLieOptions(activeLie, lieChoices) {
+function getPlacementLieOptions(activeLie, lieChoices, shotNumber) {
   const byName = new Map(lieChoices.map((choice) => [choice.lie, choice]));
   const currentLie = activeLie?.lie || null;
+  // On the first shot, always include Tee Box so it stays selectable even
+  // after the user taps another pill. Previously tapping "Fairway" on shot 1
+  // dropped Tee Box from the list and left no way to get back.
+  const isFirstShot = shotNumber === 1;
 
   let names;
   if (currentLie === 'Tee Box') {
@@ -150,6 +154,10 @@ function getPlacementLieOptions(activeLie, lieChoices) {
     names = [currentLie, 'Fairway', 'Left Rough', 'Right Rough', 'Sand'];
   } else {
     names = ['Fairway', 'Left Rough', 'Right Rough', 'Sand', 'Green'];
+  }
+
+  if (isFirstShot && !names.includes('Tee Box')) {
+    names = ['Tee Box', ...names];
   }
 
   const selected = names
@@ -546,8 +554,8 @@ export const GpsOverlay = forwardRef(function GpsOverlay(
     { lie: 'Water', color: '#60A5FA' },
   ]), []);
   const placementLieOptions = useMemo(
-    () => getPlacementLieOptions(activeLie, lieChoices),
-    [activeLie, lieChoices]
+    () => getPlacementLieOptions(activeLie, lieChoices, shotNumber),
+    [activeLie, lieChoices, shotNumber]
   );
 
   const targetGeo = useMemo(() => {

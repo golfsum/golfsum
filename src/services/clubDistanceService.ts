@@ -416,6 +416,12 @@ export function buildShotClubPickerRows(
     }
     if (a.typicalYards != null && b.typicalYards == null) return -1;
     if (a.typicalYards == null && b.typicalYards != null) return 1;
+    // No (or unreliable) target: sort longest-to-shortest by typical yards so
+    // the picker reads Driver → 3W → 5W → 6i → 7i → … instead of an
+    // alphabetic jumble (Driver, 3W, 5W, 9i, 8i).
+    if (a.typicalYards != null && b.typicalYards != null) {
+      return b.typicalYards - a.typicalYards;
+    }
     return a.club.localeCompare(b.club);
   });
 

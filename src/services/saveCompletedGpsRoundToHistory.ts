@@ -53,7 +53,7 @@ export async function saveCompletedGpsRoundToHistory(pending: PendingGpsRoundDat
   for (const hd of visible) {
     const holeNum = hd.hole;
     const summary = (pending.gpsHoleSummaries || []).find((s) => s.holeNumber === holeNum) || {};
-    const derived = deriveGreenSummary(shotsForHole(pending, holeNum), summary);
+    const derived = deriveGreenSummary(shotsForHole(pending, holeNum), summary, hd.par);
     const putts =
       typeof summary.putts === 'number' ? summary.putts : (derived.putts ?? null);
     // score is not always explicitly stored; for GPS we assume shots+putts when not present.
@@ -67,12 +67,22 @@ export async function saveCompletedGpsRoundToHistory(pending: PendingGpsRoundDat
 
     if (!score) continue;
 
+    // Persist derived FIR / GIR so scorecard + course-stats insights see them.
+    const fairwayHit = (summary as { fairwayHit?: RoundHole['fairwayHit'] }).fairwayHit ?? derived.fairwayHit ?? null;
+    const greenHit = derived.girAchieved === true
+      ? true
+      : derived.girAchieved === false
+        ? 'short'
+        : null;
+
     roundHoles.push({
       number: holeNum,
       par: hd.par,
       score,
       ...(statPreferences.putts && putts != null ? { putts } : {}),
       ...(typeof summary.firstPuttDistance === 'number' ? { firstPuttDistance: summary.firstPuttDistance } : {}),
+      ...(statPreferences.fairways && fairwayHit != null ? { fairwayHit } : {}),
+      ...(statPreferences.greens && greenHit != null ? { greenHit } : {}),
       dataComplete: true,
     });
   }

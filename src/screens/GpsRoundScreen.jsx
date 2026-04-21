@@ -1152,7 +1152,7 @@ export function GpsRoundScreen({
       const holeNum = h?.hole ?? h?.number ?? idx + 1;
       const shots = loggedShotsByHole[idx] || [];
       const summary = holeSummariesByHole[idx] || {};
-      const derived = deriveGreenSummary(shots, summary);
+      const derived = deriveGreenSummary(shots, summary, h?.par);
       const putts = typeof summary.putts === 'number' ? summary.putts : derived.putts;
       const hasShots = shots.length > 0;
       const hasExplicitScore = typeof summary.score === 'number' && summary.score > 0;
@@ -1168,9 +1168,15 @@ export function GpsRoundScreen({
         score: isCompleted ? (summary.score ?? shotCount + (putts || 0) + penaltyStrokes) : null,
         putts: isCompleted ? (putts ?? 0) : null,
         flagged: Boolean(flags.shotCountFlagged || flags.distanceJumpFlagged || flaggedHoles.has(holeNum)),
-        fairwayHit: summary.fairwayHit ?? null,
-        fairwayMiss: summary.fairwayMiss ?? null,
-        girAchieved: summary.girAchieved ?? null,
+        // Fallback to derived values so users don't need to explicitly tap
+        // a "fairway hit" toggle — we infer it from the second shot's lie.
+        fairwayHit: summary.fairwayHit ?? derived.fairwayHit ?? null,
+        fairwayMiss: summary.fairwayMiss ?? (
+          derived.fairwayHit === 'left' || derived.fairwayHit === 'right'
+            ? derived.fairwayHit
+            : null
+        ),
+        girAchieved: summary.girAchieved ?? derived.girAchieved ?? null,
       };
     });
   }, [visibleHoles, loggedShotsByHole, holeSummariesByHole, holeFlagsByHole, flaggedHoles]);
@@ -1787,9 +1793,30 @@ export function GpsRoundScreen({
 
   useEffect(() => {
     let active = true;
+    const normalize = (v) => String(v || '').trim().toLowerCase();
+    const targetId = normalize(courseId);
+    const targetName = normalize(courseName);
+    // Substring match on courseName handles "Haven" vs "Haven Golf Course" — the
+    // seeded rounds use the full name while a live round started from the Haven
+    // quick-launch uses the short name. Without this, seed-derived per-hole
+    // insights never show on the live round.
+    const matchesCourse = (round) => {
+      const rid = normalize(round.courseId);
+      const rname = normalize(round.courseName);
+      if (rid && targetId && rid === targetId) return true;
+      if (!rname || !targetName) return false;
+      if (rname === targetName) return true;
+      return rname.includes(targetName) || targetName.includes(rname);
+    };
     getRounds()
       .then((rounds) => {
-        if (active) setRecentRounds(rounds.filter((round) => round.courseId === courseId || round.courseName === courseName).slice(0, 12));
+        if (active) {
+          const matched = rounds.filter(matchesCourse).slice(0, 12);
+          if (__DEV__) {
+            console.log(`[GpsRound] recentRounds for course "${courseName}" (${courseId}): ${matched.length} of ${rounds.length}`);
+          }
+          setRecentRounds(matched);
+        }
       })
       .catch(() => {
         if (active) setRecentRounds([]);
@@ -2957,7 +2984,8 @@ export function GpsRoundScreen({
     const gpsHoleSummaries = Object.entries(holeSummariesByHole)
       .map(([holeIndex, summary]) => {
         const shots = loggedShotsByHole[Number(holeIndex)] || [];
-        const derived = deriveGreenSummary(shots, summary);
+        const holePar = visibleHoles[Number(holeIndex)]?.par ?? null;
+        const derived = deriveGreenSummary(shots, summary, holePar);
         return {
         holeNumber: Number(holeIndex) + 1,
         firstPuttDistance: typeof summary.firstPuttDistance === 'number' ? summary.firstPuttDistance : null,
@@ -4225,10 +4253,14 @@ export function GpsRoundScreen({
               <View>
                 <Text style={styles.historyTitle}>{holeSuggestion?.title || 'Coaching insight'}</Text>
                 <Text style={styles.historySubtitle}>
-                  {holeSuggestion?.support
-                    || (Number.isFinite(suggestionRawYardsToGreenCenter)
-                      ? `${Math.round(suggestionRawYardsToGreenCenter)}y to green center`
-                      : 'Your bag at a glance')}
+                  {(() => {
+                    const inRange = Number.isFinite(suggestionRawYardsToGreenCenter)
+                      && suggestionRawYardsToGreenCenter > 0
+                      && suggestionRawYardsToGreenCenter < 800;
+                    if (holeSuggestion?.support && inRange) return holeSuggestion.support;
+                    if (inRange) return `${Math.round(suggestionRawYardsToGreenCenter)}y to green center`;
+                    return 'Your bag at a glance';
+                  })()}
                 </Text>
               </View>
               <TouchableOpacity style={styles.historyClose} onPress={() => setShowSuggestionModal(false)}>
@@ -4251,14 +4283,17 @@ export function GpsRoundScreen({
                 const target = Number.isFinite(suggestionPlayingDistance?.adjustedYards)
                   ? suggestionPlayingDistance.adjustedYards
                   : suggestionRawYardsToGreenCenter;
-                const hasTarget = Number.isFinite(target);
+                // Clamp: only treat the target as a real "distance to green" when
+                // it's within a sane golf range. At home (miles off course) it
+                // can read 10,000+ yards and every club diff becomes nonsense.
+                const hasSaneTarget = Number.isFinite(target) && target > 0 && target < 800;
                 const rows = (activeBagClubs || []).map((club) => {
                   const key = normalizeClubKey(club);
                   const avg = clubAverages?.[key];
                   const manual = userClubs ? userClubs[key] ?? null : null;
                   const display = getClubDisplayDistance(avg, manual);
                   const yards = display?.yards ?? null;
-                  const diff = hasTarget && Number.isFinite(yards) ? Math.abs(yards - target) : null;
+                  const diff = hasSaneTarget && Number.isFinite(yards) ? Math.abs(yards - target) : null;
                   const confidenceLabel = display?.source === 'gps'
                     ? (display.confidence === 'high' ? `GPS · ${display.sampleCount} shots` : `GPS · ${display.sampleCount} shots · building`)
                     : display?.source === 'manual'
@@ -4266,16 +4301,20 @@ export function GpsRoundScreen({
                       : 'No data yet';
                   return { club, label: formatClubLabel(club), yards, diff, confidenceLabel, hasData: !!display };
                 }).sort((a, b) => {
-                  if (a.diff == null && b.diff == null) return 0;
-                  if (a.diff == null) return 1;
-                  if (b.diff == null) return -1;
-                  return a.diff - b.diff;
+                  // If we have a sane target, sort by closeness; else sort by longest club descending.
+                  if (hasSaneTarget) {
+                    if (a.diff == null && b.diff == null) return 0;
+                    if (a.diff == null) return 1;
+                    if (b.diff == null) return -1;
+                    return a.diff - b.diff;
+                  }
+                  return (b.yards || 0) - (a.yards || 0);
                 });
                 const suggestedKey = normalizeClubKey(distanceSuggestedClub?.club || '');
                 return rows.length === 0 ? null : (
                   <View style={styles.clubTable}>
                     <Text style={styles.clubTableHeader}>
-                      {hasTarget ? `Your clubs · target ${Math.round(target)}y` : 'Your clubs'}
+                      {hasSaneTarget ? `Your clubs · target ${Math.round(target)}y` : 'Your clubs (avg carry)'}
                     </Text>
                     {rows.slice(0, 8).map((row) => {
                       const isSuggested = normalizeClubKey(row.club) === suggestedKey;
@@ -4290,7 +4329,7 @@ export function GpsRoundScreen({
                             </Text>
                             {row.diff != null ? (
                               <Text style={styles.clubTableDiff}>
-                                {row.diff === 0 ? 'on' : `${row.diff > 0 ? '±' : ''}${Math.round(row.diff)}y`}
+                                {row.diff === 0 ? 'on' : `±${Math.round(row.diff)}y`}
                               </Text>
                             ) : null}
                           </View>
@@ -4504,7 +4543,7 @@ export function GpsRoundScreen({
           const holeData = visibleHoles.find(h => (h?.hole ?? h?.number) === reviewHole);
           const shots = loggedShotsByHole[reviewHole - 1] || [];
           const summary = holeSummariesByHole[reviewHole - 1] || {};
-          const derived = deriveGreenSummary(shots, summary);
+          const derived = deriveGreenSummary(shots, summary, holeData?.par);
           return {
             hole: reviewHole,
             par: holeData?.par ?? 4,

@@ -16,7 +16,47 @@ type ShotLike = {
 type HoleSummaryLike = {
   firstPuttDistance?: number | null;
   putts?: number | null;
+  fairwayHit?: boolean | 'right' | 'left' | 'short' | 'long' | null;
+  girAchieved?: boolean | null;
 };
+
+/**
+ * Infer tee-shot result from the second shot's lie (i.e., where the tee shot
+ * landed). Par-3 holes return null — FIR is not tracked on par-3.
+ * Returns true/'left'/'right'/false for other pars, or null if undetermined.
+ */
+function deriveFairwayHit(sortedShots: ShotLike[], par?: number | null): boolean | 'left' | 'right' | null {
+  if (par === 3) return null;
+  if (!sortedShots.length) return null;
+  // Tee shot = shot #1. Second shot's lie reveals where the ball landed.
+  const secondShot = sortedShots[1];
+  const lie = String(secondShot?.lie || '').toLowerCase();
+  if (!lie) return null;
+  if (lie.includes('fairway') || lie === 'green') return true;
+  if (lie.includes('left rough') || lie === 'left') return 'left';
+  if (lie.includes('right rough') || lie === 'right') return 'right';
+  if (lie.includes('tee box') || lie === 'tee') return null; // still on tee, can't infer
+  // Trees / Sand / Water / Off Course / etc. — counts as a miss with no direction inferred.
+  return false;
+}
+
+/**
+ * GIR = reached the green in (par − 2) strokes or fewer. We determine this
+ * by finding the first putt-shot (shotKind='putt' or lie='Green') and counting
+ * the non-putt strokes before it. Returns null when undetermined (not enough
+ * shots logged).
+ */
+function deriveGirAchieved(sortedShots: ShotLike[], firstPuttIndex: number, par?: number | null): boolean | null {
+  if (!par || par < 3) return null;
+  const regulationStrokes = Math.max(1, par - 2);
+  if (firstPuttIndex >= 0) {
+    // firstPuttIndex === N means N non-putt shots preceded the first putt.
+    return firstPuttIndex <= regulationStrokes;
+  }
+  // No putt logged yet — only conclude false if we've already played past regulation.
+  if (sortedShots.length > regulationStrokes) return false;
+  return null;
+}
 
 function isPuttShot(shot: ShotLike): boolean {
   if (shot.shotKind === 'putt') return true;
@@ -67,7 +107,7 @@ function shotSegmentFeet(from: ShotLike['from'] | null | undefined, to: ShotLike
   return Math.round(yards * 3);
 }
 
-export function deriveGreenSummary(shots: ShotLike[] = [], summary: HoleSummaryLike = {}) {
+export function deriveGreenSummary(shots: ShotLike[] = [], summary: HoleSummaryLike = {}, par?: number | null) {
   const sortedShots = [...shots]
     .map((shot, index) => ({ shot, index }))
     .sort((left, right) => {
@@ -98,6 +138,9 @@ export function deriveGreenSummary(shots: ShotLike[] = [], summary: HoleSummaryL
     return shotDistance != null ? Math.round(shotDistance * 3) : null;
   }).filter((value): value is number => Number.isFinite(value));
 
+  const derivedFairway = deriveFairwayHit(sortedShots, par);
+  const derivedGir = deriveGirAchieved(sortedShots, firstPuttIndex, par);
+
   return {
     putts: typeof summary.putts === 'number'
       ? summary.putts
@@ -107,6 +150,11 @@ export function deriveGreenSummary(shots: ShotLike[] = [], summary: HoleSummaryL
       : (puttDistances.length > 0 ? puttDistances[0] : null),
     puttDistances,
     firstPuttIndex,
+    // Auto-derived stats from the shot log. Summaries take precedence when set
+    // (user overrides), otherwise these become the effective values for
+    // scorecard display and for persistence when saving the round.
+    fairwayHit: summary.fairwayHit ?? derivedFairway ?? null,
+    girAchieved: summary.girAchieved ?? derivedGir,
   };
 }
 
