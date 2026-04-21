@@ -1,5 +1,6 @@
 import { MAPBOX_PUBLIC_TOKEN } from '../config/mapbox';
 import { getCourseDetail } from '../services/golfApiIoService';
+import { getCourse } from '../services/courseCache';
 import type { GpsShotLog, PendingGpsRoundData } from '../types';
 
 type PoiLike = { POI?: string; Location?: string; Longitude?: number; Latitude?: number };
@@ -148,14 +149,31 @@ export async function resolveHoleMapUrlsForRoundSave(
 
   let gapFill: Record<number, string> = {};
   if (missing.length && courseId) {
+    // First try the local courseCache — this works for any course that has
+    // been opened once (seed data, Haven internal IDs like
+    // "haven_golf_course_green_valley_az", etc.). Only fall through to the
+    // golfapi.io network fetch when the local cache doesn't have POIs.
     try {
-      const detail = await getCourseDetail(courseId);
-      const holes = detail?.holesData || [];
+      const local = await getCourse(courseId);
+      const holes = (local && Array.isArray((local as { holes?: unknown }).holes))
+        ? (local as { holes: unknown[] }).holes
+        : [];
       if (holes.length) {
         gapFill = buildHoleMapUrlsFromCourseHolesAndShots(holes as HoleWithPois[], gpsRoundData.gpsShots);
       }
     } catch {
-      /* keep existing only */
+      /* ignore */
+    }
+    if (!Object.keys(gapFill).length) {
+      try {
+        const detail = await getCourseDetail(courseId);
+        const holes = detail?.holesData || [];
+        if (holes.length) {
+          gapFill = buildHoleMapUrlsFromCourseHolesAndShots(holes as HoleWithPois[], gpsRoundData.gpsShots);
+        }
+      } catch {
+        /* keep existing only */
+      }
     }
   }
   const merged = { ...gapFill, ...existing };

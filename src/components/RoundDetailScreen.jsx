@@ -248,6 +248,25 @@ function FullScorecard({ holes, onHolePress }) {
 
   const sumScore = (arr) => arr.reduce((s, h) => s + (h.score || 0), 0);
   const sumPar = (arr) => arr.reduce((s, h) => s + h.par, 0);
+  // Subtotal "to-par" uses only the par of played holes so the OUT / IN / TOT
+  // diffs read "E" on a par-scored round instead of −NN when later holes are
+  // unplayed.
+  const sumPlayedPar = (arr) => arr.reduce((s, h) => s + (h.score != null ? h.par : 0), 0);
+
+  const renderFirDisplay = (hole) => {
+    if (hole?.par === 3) return '—';  // FIR not tracked on par 3
+    if (hole?.fairwayHit === true) return 'Y';
+    if (hole?.fairwayHit === 'left') return 'L';
+    if (hole?.fairwayHit === 'right') return 'R';
+    if (hole?.fairwayHit === false || hole?.fairwayHit === 'short' || hole?.fairwayHit === 'long') return 'N';
+    return '–';
+  };
+  const renderGirDisplay = (hole) => {
+    if (hole?.greenHit === true) return 'Y';
+    if (hole?.greenHit === false || hole?.greenHit === 'short' || hole?.greenHit === 'long'
+        || hole?.greenHit === 'left' || hole?.greenHit === 'right') return 'N';
+    return '–';
+  };
   const sumPutts = (arr) => arr.reduce((s, h) => s + (h.putts || 0), 0);
 
   const renderRow = (hole) => {
@@ -289,6 +308,12 @@ function FullScorecard({ holes, onHolePress }) {
         <View style={styles.scCellPutts}>
           <Text style={styles.scCellTextMuted}>{hole.putts ?? '-'}</Text>
         </View>
+        <View style={styles.scCellFirGir}>
+          <Text style={[styles.scCellTextSmall, styles.scFirGirCell]}>{renderFirDisplay(hole)}</Text>
+        </View>
+        <View style={styles.scCellFirGir}>
+          <Text style={[styles.scCellTextSmall, styles.scFirGirCell]}>{renderGirDisplay(hole)}</Text>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -296,7 +321,8 @@ function FullScorecard({ holes, onHolePress }) {
   const renderSubtotal = (label, arr) => {
     const s = sumScore(arr);
     const p = sumPar(arr);
-    const diff = s - p;
+    const playedP = sumPlayedPar(arr);
+    const diff = s - playedP;
     return (
       <View style={styles.scSubRow} key={label}>
         <View style={styles.scCellHole}><Text style={styles.scSubLabel}>{label}</Text></View>
@@ -308,9 +334,13 @@ function FullScorecard({ holes, onHolePress }) {
             diff > 0 && { color: colors.score.bogey },
             diff < 0 && { color: colors.score.birdie },
           ]}>
-            {diff === 0 ? 'E' : diff > 0 ? `+${diff}` : `${diff}`}
+            {arr.filter((h) => h.score != null).length > 0
+              ? (diff === 0 ? 'E' : diff > 0 ? `+${diff}` : `${diff}`)
+              : ''}
           </Text>
         </View>
+        <View style={styles.scCellFirGir} />
+        <View style={styles.scCellFirGir} />
       </View>
     );
   };
@@ -325,6 +355,8 @@ function FullScorecard({ holes, onHolePress }) {
         <View style={styles.scCellHcp}><Text style={styles.scColHeader}>HCP</Text></View>
         <View style={styles.scCellScore}><Text style={styles.scColHeader}>SCORE</Text></View>
         <View style={styles.scCellPutts}><Text style={styles.scColHeader}>PUTTS</Text></View>
+        <View style={styles.scCellFirGir}><Text style={styles.scColHeader}>FIR</Text></View>
+        <View style={styles.scCellFirGir}><Text style={styles.scColHeader}>GIR</Text></View>
       </View>
       {front9.map(renderRow)}
       {front9.length > 0 && renderSubtotal('OUT', front9)}
@@ -874,14 +906,23 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255,255,255,0.06)',
   },
-  scCellHole: { width: 48, flexDirection: 'row', alignItems: 'center' },
-  scCellPar: { width: 40, alignItems: 'center' },
-  scCellHcp: { width: 36, alignItems: 'center' },
-  scCellScore: { width: 52, alignItems: 'center', justifyContent: 'center' },
+  scCellHole: { width: 40, flexDirection: 'row', alignItems: 'center' },
+  scCellPar: { width: 36, alignItems: 'center' },
+  scCellHcp: { width: 32, alignItems: 'center' },
+  scCellScore: { width: 48, alignItems: 'center', justifyContent: 'center' },
   // Fixed width (was flex:1) so PUTTS column sits tight against SCORE instead
   // of stretching to absorb all remaining row space — same bug that was in
   // the in-round ScorecardSheet.
-  scCellPutts: { width: 48, alignItems: 'center' },
+  scCellPutts: { width: 44, alignItems: 'center' },
+  scCellFirGir: { width: 32, alignItems: 'center' },
+  scCellTextSmall: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    fontVariant: ['tabular-nums'],
+  },
+  scFirGirCell: {
+    fontWeight: '600',
+  },
   scCellText: {
     ...typography.bodyMd,
     color: colors.text.primary,

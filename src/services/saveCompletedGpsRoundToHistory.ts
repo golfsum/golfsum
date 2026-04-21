@@ -78,6 +78,10 @@ export async function saveCompletedGpsRoundToHistory(pending: PendingGpsRoundDat
     roundHoles.push({
       number: holeNum,
       par: hd.par,
+      // Persist hole handicap index so the scorecard HCP column and the
+      // net-stroke calculations have something to read. Previously this was
+      // left undefined and the HCP column rendered blank.
+      handicapIndex: typeof hd.handicap === 'number' ? hd.handicap : undefined,
       score,
       ...(statPreferences.putts && putts != null ? { putts } : {}),
       ...(typeof summary.firstPuttDistance === 'number' ? { firstPuttDistance: summary.firstPuttDistance } : {}),
