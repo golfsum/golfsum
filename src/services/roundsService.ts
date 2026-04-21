@@ -642,36 +642,54 @@ function buildHavenSeedRounds(): Omit<SavedRound, 'id'>[] {
     approachDistance?: RoundHole['approachDistance'];
     upDown?: boolean | null;
   }> = [
-    { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '9i', approachDistance: '125-150' },
-    { par: 4, score: 5, putts: 2, fairwayHit: 'right', greenHit: 'short', teeClub: 'Driver', approachClub: '8i', approachDistance: '125-150', upDown: true },
-    { par: 3, score: 3, putts: 1, greenHit: 'right', teeClub: '8i', approachClub: 'SW', approachDistance: '125-150', upDown: true },
-    { par: 5, score: 6, putts: 2, fairwayHit: 'right', greenHit: 'short', teeClub: 'Driver', approachClub: '5i', approachDistance: '175-200', upDown: false },
-    { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: 'PW', approachDistance: '100-125' },
-    { par: 4, score: 5, putts: 2, fairwayHit: 'right', greenHit: 'right', teeClub: 'Driver', approachClub: '9i', approachDistance: '100-125', upDown: false },
-    { par: 3, score: 4, putts: 2, greenHit: 'short', teeClub: '9i', approachClub: '9i', approachDistance: '100-125', upDown: true },
-    { par: 5, score: 5, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '7i', approachDistance: '150-175' },
-    { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: '8i', approachDistance: '125-150' },
-    { par: 4, score: 5, putts: 2, fairwayHit: 'right', greenHit: 'short', teeClub: 'Driver', approachClub: 'PW', approachDistance: '100-125', upDown: true },
-    { par: 5, score: 6, putts: 2, fairwayHit: 'right', greenHit: 'left', teeClub: 'Driver', approachClub: '6i', approachDistance: '175-200', upDown: false },
-    { par: 3, score: 3, putts: 1, greenHit: true, teeClub: '9i', approachClub: '9i', approachDistance: '100-125' },
-    { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '8i', approachDistance: '125-150' },
-    { par: 4, score: 5, putts: 2, fairwayHit: 'left', greenHit: 'right', teeClub: 'Driver', approachClub: '7i', approachDistance: '150-175', upDown: false },
-    { par: 3, score: 3, putts: 1, greenHit: 'short', teeClub: '8i', approachClub: 'SW', approachDistance: '125-150', upDown: true },
-    { par: 5, score: 6, putts: 2, fairwayHit: true, greenHit: 'short', teeClub: 'Driver', approachClub: '5i', approachDistance: '175-200', upDown: true },
-    { par: 4, score: 4, putts: 2, fairwayHit: 'right', greenHit: true, teeClub: '3w', approachClub: 'PW', approachDistance: '100-125' },
-    { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '9i', approachDistance: '125-150' },
+    // Base distribution across 14 par-4/5 holes: 9 fairways / 4 right misses / 1 left
+    // ≈ 64% / 29% / 7%. Matches "slight right miss tendency" player profile.
+    // Per-round overrides in `fairwayAdjustments` below create round-to-round variation.
+    { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '9i', approachDistance: '125-150' },            // H1  fairway
+    { par: 4, score: 5, putts: 2, fairwayHit: 'right', greenHit: 'short', teeClub: 'Driver', approachClub: '8i', approachDistance: '125-150', upDown: true }, // H2  right
+    { par: 3, score: 3, putts: 1, greenHit: 'right', teeClub: '8i', approachClub: 'SW', approachDistance: '125-150', upDown: true },                 // H3  par 3
+    { par: 5, score: 6, putts: 2, fairwayHit: true, greenHit: 'short', teeClub: 'Driver', approachClub: '5i', approachDistance: '175-200', upDown: false }, // H4  fairway (was right)
+    { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: 'PW', approachDistance: '100-125' },                // H5  fairway
+    { par: 4, score: 5, putts: 2, fairwayHit: 'right', greenHit: 'right', teeClub: 'Driver', approachClub: '9i', approachDistance: '100-125', upDown: false }, // H6 right
+    { par: 3, score: 4, putts: 2, greenHit: 'short', teeClub: '9i', approachClub: '9i', approachDistance: '100-125', upDown: true },                 // H7  par 3
+    { par: 5, score: 5, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '7i', approachDistance: '150-175' },           // H8  fairway
+    { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: '3w', approachClub: '8i', approachDistance: '125-150' },                // H9  fairway
+    { par: 4, score: 5, putts: 2, fairwayHit: 'right', greenHit: 'short', teeClub: 'Driver', approachClub: 'PW', approachDistance: '100-125', upDown: true }, // H10 right
+    { par: 5, score: 6, putts: 2, fairwayHit: true, greenHit: 'left', teeClub: 'Driver', approachClub: '6i', approachDistance: '175-200', upDown: false }, // H11 fairway (was right)
+    { par: 3, score: 3, putts: 1, greenHit: true, teeClub: '9i', approachClub: '9i', approachDistance: '100-125' },                                   // H12 par 3
+    { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '8i', approachDistance: '125-150' },            // H13 fairway
+    { par: 4, score: 5, putts: 2, fairwayHit: 'left', greenHit: 'right', teeClub: 'Driver', approachClub: '7i', approachDistance: '150-175', upDown: false }, // H14 LEFT (rare)
+    { par: 3, score: 3, putts: 1, greenHit: 'short', teeClub: '8i', approachClub: 'SW', approachDistance: '125-150', upDown: true },                 // H15 par 3
+    { par: 5, score: 6, putts: 2, fairwayHit: true, greenHit: 'short', teeClub: 'Driver', approachClub: '5i', approachDistance: '175-200', upDown: true }, // H16 fairway
+    { par: 4, score: 4, putts: 2, fairwayHit: 'right', greenHit: true, teeClub: '3w', approachClub: 'PW', approachDistance: '100-125' },             // H17 right
+    { par: 4, score: 4, putts: 2, fairwayHit: true, greenHit: true, teeClub: 'Driver', approachClub: '9i', approachDistance: '125-150' },            // H18 fairway
   ];
 
   const yardages = [382, 394, 162, 518, 408, 386, 171, 542, 401, 410, 509, 167, 414, 389, 160, 533, 404, 398];
+  // Tee-shot distribution across the 3 rounds is tuned to ~60% fairway / 30% right /
+  // 10% left on average — representative of an 80-shooter with a slight slice tendency.
+  // Per-round counts below match the fairwayAdjustments overrides.
   const rounds = [
-    { daysAgo: 6, score: 80, putts: 31, fairways: 7, greens: 8, upDownMade: 4, upDownAttempts: 8, notes: 'Solid Haven round. Driver carried well but the stock miss stayed right.' },
-    { daysAgo: 3, score: 81, putts: 32, fairways: 6, greens: 8, upDownMade: 3, upDownAttempts: 8, notes: 'A few more right misses off the tee, but enough short-game saves to stay near 80.' },
-    { daysAgo: 1, score: 79, putts: 30, fairways: 8, greens: 10, upDownMade: 5, upDownAttempts: 7, notes: 'Best Haven sample. Same right-miss tendency, but sharper wedges and cleaner putting.' },
+    { daysAgo: 6, score: 80, putts: 31, fairways: 8, greens: 8, upDownMade: 4, upDownAttempts: 8, notes: 'Solid Haven round. Mostly on line, one stray right miss off the tee.' },
+    { daysAgo: 3, score: 81, putts: 32, fairways: 7, greens: 8, upDownMade: 3, upDownAttempts: 8, notes: 'Typical day — the slice showed up a couple times, saved par with the wedge.' },
+    { daysAgo: 1, score: 79, putts: 30, fairways: 9, greens: 10, upDownMade: 5, upDownAttempts: 7, notes: 'Best Haven sample. Driver mostly in play, sharper wedges and cleaner putting.' },
   ];
   const scoreAdjustments: Array<Record<number, number>> = [
     {},
     { 6: 1 },
     { 14: -1 },
+  ];
+  // Per-round tee-shot adjustments so each round feels distinct while averaging
+  // to ~60/30/10 fairway/right/left across the three rounds.
+  // Round 0 (6d, 80): 8T / 5R / 1L = 57% fairway — one stray right.
+  // Round 1 (3d, 81): 7T / 6R / 1L = 50% fairway — slice showed up twice.
+  // Round 2 (1d, 79): 9T / 4R / 1L = 64% fairway — best day, base template.
+  // Hole numbers are 1-indexed. Values replace the base template's fairwayHit.
+  type FairwayOutcome = true | 'right' | 'left';
+  const fairwayAdjustments: Array<Record<number, FairwayOutcome>> = [
+    { 9: 'right' },                             // round 0: 1 extra right miss
+    { 9: 'right', 16: 'right' },                // round 1: 2 extra right misses
+    {},                                         // round 2: best day, use base template
   ];
 
   return rounds.map((roundSeed, roundIndex) => {
@@ -679,20 +697,26 @@ function buildHavenSeedRounds(): Omit<SavedRound, 'id'>[] {
     date.setDate(baseDate.getDate() - roundSeed.daysAgo);
     date.setHours(8 + roundIndex, 15, 0, 0);
 
-    const holes: RoundHole[] = holeTemplates.map((hole, holeIndex) => ({
-      number: holeIndex + 1,
-      par: hole.par,
-      handicapIndex: HAVEN_HOLE_HANDICAPS[holeIndex] ?? holeIndex + 1,
-      score: hole.score + (scoreAdjustments[roundIndex]?.[holeIndex + 1] ?? 0),
-      putts: hole.putts,
-      fairwayHit: hole.par === 3 ? null : hole.fairwayHit ?? null,
-      greenHit: hole.greenHit ?? null,
-      approachDistance: hole.approachDistance ?? null,
-      teeClub: hole.teeClub,
-      approachClub: hole.approachClub ?? null,
-      upDown: hole.upDown ?? null,
-      isSaved: true,
-    }));
+    const fairwayOverride = fairwayAdjustments[roundIndex] || {};
+    const holes: RoundHole[] = holeTemplates.map((hole, holeIndex) => {
+      const holeNumber = holeIndex + 1;
+      const baseFairway = hole.par === 3 ? null : hole.fairwayHit ?? null;
+      const adjustedFairway = hole.par === 3 ? null : (fairwayOverride[holeNumber] ?? baseFairway);
+      return {
+        number: holeNumber,
+        par: hole.par,
+        handicapIndex: HAVEN_HOLE_HANDICAPS[holeIndex] ?? holeNumber,
+        score: hole.score + (scoreAdjustments[roundIndex]?.[holeNumber] ?? 0),
+        putts: hole.putts,
+        fairwayHit: adjustedFairway,
+        greenHit: hole.greenHit ?? null,
+        approachDistance: hole.approachDistance ?? null,
+        teeClub: hole.teeClub,
+        approachClub: hole.approachClub ?? null,
+        upDown: hole.upDown ?? null,
+        isSaved: true,
+      };
+    });
 
     const stats = summarizeRoundStats(holes);
     const adjustedScore = roundSeed.score;
