@@ -669,10 +669,12 @@ function buildHavenSeedRounds(): Omit<SavedRound, 'id'>[] {
   // Tee-shot distribution across the 3 rounds is tuned to ~60% fairway / 30% right /
   // 10% left on average — representative of an 80-shooter with a slight slice tendency.
   // Per-round counts below match the fairwayAdjustments overrides.
+  // Seed-round notes written in a coach voice: no em-dashes, no filler
+  // ("solid", "typical"), concrete observations plus a drill when warranted.
   const rounds = [
-    { daysAgo: 6, score: 80, putts: 31, fairways: 8, greens: 8, upDownMade: 4, upDownAttempts: 8, notes: 'Solid Haven round. Mostly on line, one stray right miss off the tee.' },
-    { daysAgo: 3, score: 81, putts: 32, fairways: 7, greens: 8, upDownMade: 3, upDownAttempts: 8, notes: 'Typical day — the slice showed up a couple times, saved par with the wedge.' },
-    { daysAgo: 1, score: 79, putts: 30, fairways: 9, greens: 10, upDownMade: 5, upDownAttempts: 7, notes: 'Best Haven sample. Driver mostly in play, sharper wedges and cleaner putting.' },
+    { daysAgo: 6, score: 80, putts: 31, fairways: 8, greens: 8, upDownMade: 4, upDownAttempts: 8, notes: 'Driver was on line today. One stray right off the tee, but you held it together. Keep the tempo you had on the back nine.' },
+    { daysAgo: 3, score: 81, putts: 32, fairways: 7, greens: 8, upDownMade: 3, upDownAttempts: 8, notes: 'The right miss showed up more today. Check your grip pressure on the tee and trust the full turn. Wedges bailed you out.' },
+    { daysAgo: 1, score: 79, putts: 30, fairways: 9, greens: 10, upDownMade: 5, upDownAttempts: 7, notes: 'Sharp round. The right miss was quieter and your wedges were dialed. Repeat whatever you did before the round next time.' },
   ];
   const scoreAdjustments: Array<Record<number, number>> = [
     {},

@@ -289,6 +289,10 @@ export default function ScorecardSheet({
   onPuttsChange,
 }) {
   const [editingHole, setEditingHole] = useState(null);
+  // 'all' | 'front' | 'back' — segmented toggle at the top of the scorecard
+  // so players can zoom into a single nine without scrolling through the
+  // whole round. Defaults to 'all' to preserve the existing behaviour.
+  const [nineView, setNineView] = useState('all');
   const scrollRef = useRef(null);
 
   const is18 = holes.length > 9;
@@ -399,6 +403,30 @@ export default function ScorecardSheet({
             </View>
           </View>
 
+          {/* Front 9 / Back 9 / All toggle — only render when there's a back 9 to split to. */}
+          {is18 ? (
+            <View style={styles.nineToggleRow}>
+              {[
+                { key: 'all', label: 'All 18' },
+                { key: 'front', label: 'Front 9' },
+                { key: 'back', label: 'Back 9' },
+              ].map((opt) => {
+                const active = nineView === opt.key;
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    style={[styles.nineToggleChip, active && styles.nineToggleChipActive]}
+                    onPress={() => setNineView(opt.key)}
+                  >
+                    <Text style={[styles.nineToggleText, active && styles.nineToggleTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : null}
+
           {/* Column headers */}
           <View style={styles.colHeaders}>
             <View style={styles.cellHole}><Text style={styles.colHeaderText}>HOLE</Text></View>
@@ -416,23 +444,21 @@ export default function ScorecardSheet({
             style={styles.scrollArea}
             showsVerticalScrollIndicator={false}
           >
-            {/* Front 9 */}
-            {front9.map((h, i) => renderHoleRow(h, i))}
+            {/* Front 9 — shown when the toggle is 'all' or 'front'. */}
+            {(nineView === 'all' || nineView === 'front') && front9.map((h, i) => renderHoleRow(h, i))}
+            {(nineView === 'all' || nineView === 'front') && (
+              <SubtotalRow
+                label="OUT"
+                scoreSub={frontScore.total}
+                parSub={frontPar}
+                playedPar={frontPlayedPar}
+                count={frontScore.count}
+              />
+            )}
 
-            {/* Front 9 subtotal */}
-            <SubtotalRow
-              label="OUT"
-              scoreSub={frontScore.total}
-              parSub={frontPar}
-              playedPar={frontPlayedPar}
-              count={frontScore.count}
-            />
-
-            {/* Back 9 */}
-            {back9.map((h, i) => renderHoleRow(h, i + 9))}
-
-            {/* Back 9 subtotal */}
-            {is18 && (
+            {/* Back 9 — shown when the toggle is 'all' or 'back'. */}
+            {is18 && (nineView === 'all' || nineView === 'back') && back9.map((h, i) => renderHoleRow(h, i + 9))}
+            {is18 && (nineView === 'all' || nineView === 'back') && (
               <SubtotalRow
                 label="IN"
                 scoreSub={backScore.total}
@@ -552,6 +578,36 @@ const styles = StyleSheet.create({
     ...typography.bodySm,
     color: colors.text.tertiary,
     marginTop: -2,
+  },
+
+  // Front 9 / Back 9 / All 18 toggle chips above the column headers.
+  nineToggleRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: spacing.sm,
+    paddingHorizontal: 2,
+  },
+  nineToggleChip: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+  },
+  nineToggleChipActive: {
+    backgroundColor: 'rgba(16,185,129,0.16)',
+    borderColor: 'rgba(16,185,129,0.5)',
+  },
+  nineToggleText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  nineToggleTextActive: {
+    color: '#34D399',
   },
 
   // Column headers
