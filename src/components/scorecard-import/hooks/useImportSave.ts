@@ -1,4 +1,5 @@
 import { Alert } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { saveRound } from '../../../services/roundsService';
 import type { SavedRound } from '../../../types';
 import { FEEDBACK_COPY } from '../../../constants/feedbackCopy';
@@ -24,9 +25,11 @@ export function useImportSave(params: UseImportSaveParams) {
       const scorecardImageUrl = await uploadScorecardImageSafe(params.imageUri, course.id);
       syncCommunityCourseSafe(course, scorecardImageUrl);
 
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
       params.onCourseReady(course);
     } catch (error) {
       logger.error('Save course failed:', error);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
       Alert.alert(FEEDBACK_COPY.alerts.saveFailedTitle, FEEDBACK_COPY.alerts.saveCourseFailedBody);
     } finally {
       params.setIsProcessing(false);
@@ -74,10 +77,12 @@ export function useImportSave(params: UseImportSaveParams) {
       syncCommunityCourseSafe(course, params.imageUri || undefined);
 
       const savedRound = await saveRound(round);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
       Alert.alert(FEEDBACK_COPY.alerts.importCompleteTitle, FEEDBACK_COPY.alerts.importCompleteBody);
       onRoundSaved(savedRound);
     } catch (error) {
       logger.error('Save round failed:', error);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
       Alert.alert(FEEDBACK_COPY.alerts.saveFailedTitle, FEEDBACK_COPY.alerts.saveRoundFailedBody);
     } finally {
       params.setIsProcessing(false);

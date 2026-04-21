@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import type { PurchasesPackage } from 'react-native-purchases';
 import { GolfSumLogo } from '../components/ui/GolfSumLogo';
 import { PlanCard } from '../components/subscription/PlanCard';
@@ -96,6 +97,7 @@ export const ProUpgradeScreen: React.FC<ProUpgradeScreenProps> = ({
       const result = await purchasePackage(selectedPackage);
       if (result.success) {
         logEvent('purchase_completed', { source, plan: selectedPlan });
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
         Alert.alert('Pro is active', 'Your subscription is active.');
         onPurchased?.();
         onBack();
@@ -107,6 +109,7 @@ export const ProUpgradeScreen: React.FC<ProUpgradeScreenProps> = ({
       }
       logEvent('purchase_cancelled', { source, plan: selectedPlan });
     } catch (e: any) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
       const message = String(e?.message || '');
       if (/network|fetch|internet|offline/i.test(message)) {
         Alert.alert('No internet connection', 'Try again when you have signal.');
@@ -125,6 +128,7 @@ export const ProUpgradeScreen: React.FC<ProUpgradeScreenProps> = ({
       const result = await restorePurchases();
       logEvent('restore_result', { found: result.success });
       if (result.success) {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
         Alert.alert('Purchase restored', 'Your subscription is active.');
         onPurchased?.();
         onBack();

@@ -2568,6 +2568,7 @@ export function GpsRoundScreen({
             flags: { shotCountFlagged: true },
           });
         } else {
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => undefined);
           setMissedShotBanner({
             kind: 'shot_count',
             targetHoleIndex: nextIndex,
@@ -3610,7 +3611,10 @@ export function GpsRoundScreen({
                   <View style={styles.measurePinActions}>
                     <TouchableOpacity
                       style={[styles.measurePinActionBtn, measurePin.locked && styles.measurePinActionBtnActive]}
-                      onPress={() => setMeasurePin((prev) => prev ? { ...prev, locked: !prev.locked } : prev)}
+                      onPress={() => {
+                        void Haptics.selectionAsync().catch(() => undefined);
+                        setMeasurePin((prev) => prev ? { ...prev, locked: !prev.locked } : prev);
+                      }}
                     >
                       <Ionicons name={measurePin.locked ? 'lock-closed' : 'lock-open'} size={12} color={measurePin.locked ? '#0f1419' : '#fff'} />
                       <Text style={[styles.measurePinActionText, measurePin.locked && styles.measurePinActionTextActive]}>
@@ -3619,7 +3623,10 @@ export function GpsRoundScreen({
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.measurePinDismissBtn}
-                      onPress={() => setMeasurePin(null)}
+                      onPress={() => {
+                        void Haptics.selectionAsync().catch(() => undefined);
+                        setMeasurePin(null);
+                      }}
                     >
                       <Ionicons name="close" size={12} color="rgba(255,255,255,0.8)" />
                     </TouchableOpacity>
@@ -3734,6 +3741,7 @@ export function GpsRoundScreen({
                 : null;
 
               if (distanceJump) {
+                void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => undefined);
                 markHoleFlag(currentHoleIndex, {
                   flags: { distanceJumpFlagged: true },
                 });

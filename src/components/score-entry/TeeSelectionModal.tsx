@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import type { CourseDetails, TeeBox } from '../../services/golfCourseApiService';
 import { formatYardage, getYardageUnitLabel, type DistanceUnit } from '../../utils/distance';
 
@@ -128,7 +129,10 @@ export const TeeSelectionModal: React.FC<TeeSelectionModalProps> = ({
                 styles.teeBoxOption,
                 selectedTeeBox?.name === tee.name && styles.teeBoxOptionSelected,
               ]}
-              onPress={() => onSelectTeeBox(tee)}
+              onPress={() => {
+                void Haptics.selectionAsync().catch(() => undefined);
+                onSelectTeeBox(tee);
+              }}
               accessibilityRole="button"
               accessibilityLabel={`${tee.name} tees${selectedTeeBox?.name === tee.name ? ', selected' : ''}`}
             >

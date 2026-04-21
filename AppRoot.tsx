@@ -12,6 +12,7 @@ import {
   Modal,
   ActivityIndicator,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -935,6 +936,8 @@ export default function App() {
 
   // Round saved — show confirmation overlay then navigate to detail
   const handleRoundSaved = (round: SavedRound) => {
+    // Celebratory success buzz — the round made it safely to history.
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     // Clear entry state
     setSelectedCourseId(null);
     setSelectedCourseData(null);
@@ -949,6 +952,11 @@ export default function App() {
     const bests = detectPersonalBests(round, rounds);
     if (bests.length > 0) {
       setPersonalBests(bests);
+      // Second success buzz ~400ms after the save buzz — doubled pattern
+      // cues the player that something extra (a PB) landed.
+      setTimeout(() => {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      }, 400);
       appendPersonalBests(bests).catch(() => undefined);
       requestAppReviewIfEligible({
         trigger: 'personal_best',
