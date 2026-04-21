@@ -173,6 +173,7 @@ export function AppMainContent(props: AppMainContentProps): React.ReactNode {
         onPlayAgain={() => props.onPlayAgain(props.selectedRound!)}
         onReviewShots={() => props.onSetCurrentScreen('gps-round-review')}
         isNewRound={props.isNewRound || false}
+        allRounds={props.rounds}
       />
     );
   }

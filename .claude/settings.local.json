@@ -8,7 +8,8 @@
       "Bash(cmd.exe /c \"where gh\")",
       "Read(//c/Users/ND/AppData/Local/GitHubDesktop/bin//**)",
       "Read(//c/Users/ND/scoop/**)",
-      "Read(//c/ProgramData/chocolatey/lib//**)"
+      "Read(//c/ProgramData/chocolatey/lib//**)",
+      "Bash(grep -nE \"\\(actionable|body|title|message|insight|recommend\\):\\\\s*[\\\\`'\\\\\"]\" src/services/coachingInsights.ts src/services/roundInsightsEngine.ts src/services/courseStatsService.ts)"
     ]
   }
 }

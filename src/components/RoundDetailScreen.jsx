@@ -14,92 +14,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import PlayerRatingDelta from './PlayerRatingDelta';
 import HoleReviewModal from './gps/HoleReviewModal';
+import { buildCaddieNotes } from '../services/caddieNotes';
 
-/**
- * Build 2–3 short, coach-voice observations from a round's stats. Avoids
- * em-dashes, buzzwords ("solid", "typical day"), and AI-sounding cadence.
- * Everything that slots in here needs to read like something a coach
- * would actually say to you on the range. No filler.
- */
-function buildCoachNotes(round) {
-  const notes = [];
-  const holes = round.holes || [];
-  const stats = round.stats || {};
-
-  // FIR / miss direction — the most actionable bit of driver feedback.
-  const firAttempts = holes.filter((h) => h.par >= 4 && h.fairwayHit != null);
-  if (firAttempts.length >= 3) {
-    const hits = firAttempts.filter((h) => h.fairwayHit === true).length;
-    const missesRight = firAttempts.filter((h) => h.fairwayHit === 'right').length;
-    const missesLeft = firAttempts.filter((h) => h.fairwayHit === 'left').length;
-    const firPct = Math.round((hits / firAttempts.length) * 100);
-    if (missesRight >= 3 && missesRight > missesLeft) {
-      notes.push(`You missed right ${missesRight} times off the tee. Face is open at impact. Strengthen your lead-hand grip and check your divot pattern at the range.`);
-    } else if (missesLeft >= 3 && missesLeft > missesRight) {
-      notes.push(`You missed left ${missesLeft} times off the tee. That's usually a steep path or a flip. Ball slightly forward, focus on a full turn back.`);
-    } else if (firPct >= 60) {
-      notes.push(`You hit ${hits} of ${firAttempts.length} fairways. Keep the same setup and tempo next round.`);
-    }
-  }
-
-  // GIR — focus on approach proximity when low.
-  const girAttempts = holes.filter((h) => h.greenHit != null);
-  if (girAttempts.length >= 6) {
-    const hits = girAttempts.filter((h) => h.greenHit === true).length;
-    const girPct = Math.round((hits / girAttempts.length) * 100);
-    if (girPct < 30) {
-      notes.push(`Only ${hits} of ${girAttempts.length} greens hit. Work on mid-iron distance control. Pick one club on the range and log ten carries.`);
-    } else if (girPct >= 60) {
-      notes.push(`You hit ${hits} of ${girAttempts.length} greens. That's tour-level ball-striking for today. Keep that approach game.`);
-    }
-  }
-
-  // Putting.
-  const puttsTotal = typeof stats.putts === 'number' ? stats.putts : null;
-  const puttsPerHole = puttsTotal != null && holes.length > 0 ? puttsTotal / holes.length : null;
-  if (puttsPerHole != null) {
-    if (puttsPerHole >= 2.2) {
-      notes.push(`You averaged ${puttsPerHole.toFixed(1)} putts per hole. Lag drills next session. 30, 40, 50 feet, goal is within three feet.`);
-    } else if (puttsPerHole <= 1.8) {
-      notes.push(`${puttsTotal} putts on the round. That's sharp. Whatever you did before the round, do it again.`);
-    }
-  }
-
-  // 3-putt count.
-  const threePutts = holes.filter((h) => (h.putts || 0) >= 3).length;
-  if (threePutts >= 3) {
-    notes.push(`${threePutts} three-putts today. Usually lag distance, not short putts. Practice the 30–50 foot ladder.`);
-  }
-
-  // Scrambling — where did they scramble well / poorly.
-  const scrambleAttempts = holes.filter((h) => h.greenHit === false);
-  const scrambleSaves = scrambleAttempts.filter((h) => (h.putts ?? 99) <= 1).length;
-  if (scrambleAttempts.length >= 4) {
-    const pct = Math.round((scrambleSaves / scrambleAttempts.length) * 100);
-    if (pct >= 40) {
-      notes.push(`You got up-and-down ${scrambleSaves} of ${scrambleAttempts.length} times. Short game kept you in the round.`);
-    } else if (pct <= 15 && scrambleAttempts.length >= 6) {
-      notes.push(`Only ${scrambleSaves} of ${scrambleAttempts.length} up-and-downs. Spend a session on 40-yard wedges and green-side chips.`);
-    }
-  }
-
-  // De-dup and cap at 3.
-  return notes.slice(0, 3);
-}
-
-function CoachNotes({ round }) {
-  const notes = useMemo(() => buildCoachNotes(round), [round]);
+function CoachNotes({ round, baselineRounds }) {
+  const notes = useMemo(() => buildCaddieNotes(round, baselineRounds || []), [round, baselineRounds]);
   const customNote = typeof round.notes === 'string' && round.notes.trim().length > 0
     ? round.notes.trim()
     : null;
   if (!notes.length && !customNote) return null;
   return (
     <View style={coachStyles.section}>
-      <Text style={coachStyles.title}>COACH'S NOTES</Text>
-      {notes.map((note, i) => (
-        <View key={`cn-${i}`} style={coachStyles.row}>
+      <Text style={coachStyles.title}>CADDIE NOTES</Text>
+      {notes.map((note) => (
+        <View key={note.id} style={coachStyles.row}>
           <View style={coachStyles.bullet} />
-          <Text style={coachStyles.body}>{note}</Text>
+          <Text style={coachStyles.body}>{note.text}</Text>
         </View>
       ))}
       {customNote ? (
@@ -680,6 +609,7 @@ export default function RoundDetailScreen({
   isNewRound = false,
   ratingDelta = null,    // { newRating, oldRating }
   averageStats = null,   // { fir, putts, gir, upDown, roundCount }
+  allRounds = [],        // other rounds in history, used as baselines for caddie notes
 }) {
   const [reviewHoleNum, setReviewHoleNum] = useState(null);
   const [pageTitle, setPageTitle] = useState(null);
@@ -782,8 +712,9 @@ export default function RoundDetailScreen({
         {/* 3. Stats Summary */}
         <StatsSummary stats={stats} averages={averageStats} />
 
-        {/* 3.5. Coach's Notes — observations + drills from this round's stats. */}
-        <CoachNotes round={round} />
+        {/* 3.5. Caddie notes — observations + drills from this round's stats,
+            with course-baseline comparisons when enough history is present. */}
+        <CoachNotes round={round} baselineRounds={allRounds} />
 
         {/* 4. Scoring Distribution */}
         <ScoringDistribution holes={holes} isNewRound={isNewRound} />
