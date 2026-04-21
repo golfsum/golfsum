@@ -352,11 +352,21 @@ export function buildInRoundNudgeContext(rounds: SavedRound[]): InRoundNudgeCont
           approachClub,
           betterApproachBand: betterApproachDecision?.band ?? null,
           betterApproachClub: betterApproachDecision?.club ?? null,
-          betterApproachSide: betterApproachSideDecision?.band === betterApproachDecision?.band
-            ? betterApproachSideDecision.side
-            : betterApproachSideDecision?.band === approachBand
-              ? betterApproachSideDecision.side
-              : null,
+          betterApproachSide: (() => {
+            // Guard: when `betterApproachSideDecision` is null, both `?.band`
+            // comparisons below evaluate `undefined === undefined === true`
+            // and we'd crash dereferencing `.side` on null. Require the row
+            // to exist before matching its band against a target band.
+            if (!betterApproachSideDecision) return null;
+            if (betterApproachDecision?.band != null
+                && betterApproachSideDecision.band === betterApproachDecision.band) {
+              return betterApproachSideDecision.side;
+            }
+            if (approachBand != null && betterApproachSideDecision.band === approachBand) {
+              return betterApproachSideDecision.side;
+            }
+            return null;
+          })(),
           saferTeeClub,
           sampleCount: value.sampleCount,
           approachSampleCount: value.approachSampleCount,

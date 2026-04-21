@@ -336,14 +336,17 @@ function FullScorecard({ holes, onHolePress }) {
 }
 
 // ─── Section 6: Hole Highlights Strip ────────────────────────────────
-function HoleHighlightsStrip({ holes, gpsHoleSummaries, isNewRound, onHolePress }) {
+function HoleHighlightsStrip({ holes, gpsHoleSummaries, holeMapUrls, isNewRound, onHolePress }) {
   const scrollRef = useRef(null);
   const holesWithSnapshots = useMemo(() =>
     (holes || []).filter(h => {
       const summary = (gpsHoleSummaries || []).find(s => s.holeNumber === h.number);
-      return summary?.mapSnapshotUrl || h.mapSnapshotUrl;
+      // Fallback to the round-level `holeMapUrls` map — that's where GPS round
+      // saves currently stash snapshots. Without this, HoleHighlightsStrip
+      // shows nothing even after resolveHoleMapUrlsForRoundSave succeeds.
+      return summary?.mapSnapshotUrl || h.mapSnapshotUrl || holeMapUrls?.[h.number];
     }),
-    [holes, gpsHoleSummaries]
+    [holes, gpsHoleSummaries, holeMapUrls]
   );
 
   useEffect(() => {
@@ -375,7 +378,7 @@ function HoleHighlightsStrip({ holes, gpsHoleSummaries, isNewRound, onHolePress 
         contentContainerStyle={{ paddingRight: spacing.lg }}
         renderItem={({ item: hole }) => {
           const summary = (gpsHoleSummaries || []).find(s => s.holeNumber === hole.number);
-          const snapshotUrl = summary?.mapSnapshotUrl || hole.mapSnapshotUrl;
+          const snapshotUrl = summary?.mapSnapshotUrl || hole.mapSnapshotUrl || holeMapUrls?.[hole.number];
           const color = hole.score != null ? getScoreColor(hole.score, hole.par) : colors.text.tertiary;
 
           return (
@@ -620,6 +623,7 @@ export default function RoundDetailScreen({
         <HoleHighlightsStrip
           holes={holes}
           gpsHoleSummaries={round.gpsHoleSummaries}
+          holeMapUrls={round.holeMapUrls}
           isNewRound={isNewRound}
           onHolePress={setReviewHoleNum}
         />
@@ -874,7 +878,10 @@ const styles = StyleSheet.create({
   scCellPar: { width: 40, alignItems: 'center' },
   scCellHcp: { width: 36, alignItems: 'center' },
   scCellScore: { width: 52, alignItems: 'center', justifyContent: 'center' },
-  scCellPutts: { flex: 1, alignItems: 'center' },
+  // Fixed width (was flex:1) so PUTTS column sits tight against SCORE instead
+  // of stretching to absorb all remaining row space — same bug that was in
+  // the in-round ScorecardSheet.
+  scCellPutts: { width: 48, alignItems: 'center' },
   scCellText: {
     ...typography.bodyMd,
     color: colors.text.primary,

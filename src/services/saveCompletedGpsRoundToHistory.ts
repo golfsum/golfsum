@@ -90,6 +90,26 @@ export async function saveCompletedGpsRoundToHistory(pending: PendingGpsRoundDat
   const totalScore = roundHoles.reduce((sum, h) => sum + h.score, 0);
   const totalPutts = roundHoles.reduce((sum, h) => sum + (typeof h.putts === 'number' ? h.putts : 0), 0);
 
+  // Compute FIR / GIR / scrambling percentages from the holes we just built.
+  // RoundDetailScreen reads stats.fir and stats.gir as integer percentages,
+  // so we must pre-compute them here — otherwise the round detail shows "--".
+  const firTracked = roundHoles.filter((h) => h.par > 3 && h.fairwayHit != null);
+  const firHits = firTracked.filter((h) => h.fairwayHit === true).length;
+  const firPct = firTracked.length > 0 ? Math.round((firHits / firTracked.length) * 100) : null;
+
+  const girTracked = roundHoles.filter((h) => h.greenHit != null);
+  const girHits = girTracked.filter((h) => h.greenHit === true).length;
+  const girPct = girTracked.length > 0 ? Math.round((girHits / girTracked.length) * 100) : null;
+
+  // Scrambling / up-and-down %: of holes where GIR wasn't made AND putts === 1,
+  // the player "got up and down." This is a standard proxy when explicit
+  // `upDown` toggles weren't used during GPS entry.
+  const scrambleAttempts = roundHoles.filter((h) => h.greenHit === false && typeof h.putts === 'number');
+  const scrambleMade = scrambleAttempts.filter((h) => (h.putts ?? 99) <= 1).length;
+  const scramblePct = scrambleAttempts.length > 0
+    ? Math.round((scrambleMade / scrambleAttempts.length) * 100)
+    : null;
+
   let holeMapUrls = pending.holeMapUrls;
   if (!holeMapUrls || Object.keys(holeMapUrls).length === 0) {
     try {
@@ -122,6 +142,12 @@ export async function saveCompletedGpsRoundToHistory(pending: PendingGpsRoundDat
       stats: {
         score: totalScore,
         ...(statPreferences.putts && totalPutts > 0 ? { putts: totalPutts } : {}),
+        // Fairway/Green/Scramble percentages for the Round Detail summary.
+        // Only included when we actually tracked enough data to compute them
+        // (avoids showing "0%" when nothing was tracked).
+        ...(firPct != null ? { fir: firPct, fairways: firHits, fairwaysPossible: firTracked.length } : {}),
+        ...(girPct != null ? { gir: girPct, greens: girHits, greensPossible: girTracked.length } : {}),
+        ...(scramblePct != null ? { upDown: scramblePct, upDownMade: scrambleMade, upDownAttempts: scrambleAttempts.length } : {}),
         teeBox: teeBox.name,
       },
       html: '',

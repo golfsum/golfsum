@@ -1036,9 +1036,30 @@ export default function App() {
       Alert.alert('Missing Course', 'This round is missing course details. Please re-select the course.');
       return;
     }
+    const teeName = round.teeName || round.stats?.teeBox || 'Blue';
+
+    // If the original round was a GPS round (has GPS shots or gpsShotCount > 0),
+    // relaunch into the GPS flow instead of the manual score-entry screen.
+    // Otherwise score-entry calls getCourseDetails(courseId) which fails for
+    // GPS-only course IDs (like Haven) and surfaces as "Could not load the
+    // course."
+    const wasGpsRound = (round.gpsShots && round.gpsShots.length > 0)
+      || (typeof round.gpsShotCount === 'number' && round.gpsShotCount > 0)
+      || round.roundSource === 'gps';
+
+    if (wasGpsRound) {
+      handleStartGpsRound(courseId, round.courseName, {
+        teeName,
+        startingHole: 1,
+        endingHole: 18,
+        roundLength: (round.roundLength as '18' | 'front9' | 'back9') || '18',
+      });
+      return;
+    }
+
     setSelectedCourseId(courseId);
     setSelectedCourseData(null);
-    setQuickStartSettings({ teeName: round.teeName || round.stats?.teeBox, startingHole: 1 });
+    setQuickStartSettings({ teeName, startingHole: 1 });
     setResumeDraft(null);
     setPendingGpsRoundData(null);
     setCurrentScreen('score-entry');
