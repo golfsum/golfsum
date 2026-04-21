@@ -24,11 +24,14 @@ import {
   buildEffectiveClubDistanceMap,
   buildManualYardageDisplayMap,
   dedupeActiveBagClubs,
+  formatClubLabel,
   getActiveBagClubs,
   getBestClubForPar3,
   getClubAverages,
+  getClubDisplayDistance,
   getWatchClubNamesForBridge,
   lookupYardsInClubMap,
+  normalizeClubKey,
 } from '../services/clubDistanceService';
 import { checkDistanceJump, checkShotCount, getMidpoint } from '../services/missedShotDetector';
 import { buildHazardCarryModel, buildHoleStrategyModel, getPreferredLeaveYards } from '../services/holeStrategyModel';
@@ -3986,18 +3989,17 @@ export function GpsRoundScreen({
         suggestionActive={suggestionTipExpanded}
         nudgeOverlayBottom={coachingOverlayBottom}
         onPressSuggestion={() => {
+          // Tap opens the coaching insights modal — shows the percentage
+          // stats / recommendation copy, and offers a "pick different club"
+          // button. Long-press is the fast path to the club picker.
           void Haptics.selectionAsync().catch(() => undefined);
           setSuggestionTipExpanded(false);
-          overlayRef.current?.openClubPicker?.();
+          setShowSuggestionModal(true);
         }}
         onLongPressSuggestion={() => {
-          if (displayNudge) {
-            setSuggestionTipExpanded((open) => !open);
-            return;
-          }
-          if (holeSuggestion?.state && holeSuggestion.state !== 'no_history') {
-            setShowSuggestionModal(true);
-          }
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+          setSuggestionTipExpanded(false);
+          overlayRef.current?.openClubPicker?.();
         }}
         bottomBarHeight={GPS_BAR.BOTTOM_ACTION}
         yardageBarHeight={GPS_BAR.YARDAGE}
@@ -4221,16 +4223,98 @@ export function GpsRoundScreen({
             <View style={styles.historyHandle} />
             <View style={styles.historyHeader}>
               <View>
-                <Text style={styles.historyTitle}>{holeSuggestion?.title || 'Hole tip'}</Text>
-                <Text style={styles.historySubtitle}>{holeSuggestion?.support || 'Hole history'}</Text>
+                <Text style={styles.historyTitle}>{holeSuggestion?.title || 'Coaching insight'}</Text>
+                <Text style={styles.historySubtitle}>
+                  {holeSuggestion?.support
+                    || (Number.isFinite(suggestionRawYardsToGreenCenter)
+                      ? `${Math.round(suggestionRawYardsToGreenCenter)}y to green center`
+                      : 'Your bag at a glance')}
+                </Text>
               </View>
               <TouchableOpacity style={styles.historyClose} onPress={() => setShowSuggestionModal(false)}>
                 <Text style={styles.historyCloseText}>✕</Text>
               </TouchableOpacity>
             </View>
-            <View style={styles.suggestionModalBody}>
-              <CoachingInsightCard suggestion={holeSuggestion} holeNumber={currentHole?.hole || currentHoleIndex + 1} />
-            </View>
+            <ScrollView style={styles.suggestionModalScroll} contentContainerStyle={styles.suggestionModalBody}>
+              {holeSuggestion && holeSuggestion.state !== 'no_history' ? (
+                <CoachingInsightCard suggestion={holeSuggestion} holeNumber={currentHole?.hole || currentHoleIndex + 1} />
+              ) : (
+                <View style={styles.suggestionEmptyNote}>
+                  <Text style={styles.suggestionEmptyTitle}>Building coaching history</Text>
+                  <Text style={styles.suggestionEmptyBody}>
+                    Play a few rounds (or seed history from Profile → Add Haven Golf Course rounds) and tips will appear here.
+                  </Text>
+                </View>
+              )}
+
+              {(() => {
+                const target = Number.isFinite(suggestionPlayingDistance?.adjustedYards)
+                  ? suggestionPlayingDistance.adjustedYards
+                  : suggestionRawYardsToGreenCenter;
+                const hasTarget = Number.isFinite(target);
+                const rows = (activeBagClubs || []).map((club) => {
+                  const key = normalizeClubKey(club);
+                  const avg = clubAverages?.[key];
+                  const manual = userClubs ? userClubs[key] ?? null : null;
+                  const display = getClubDisplayDistance(avg, manual);
+                  const yards = display?.yards ?? null;
+                  const diff = hasTarget && Number.isFinite(yards) ? Math.abs(yards - target) : null;
+                  const confidenceLabel = display?.source === 'gps'
+                    ? (display.confidence === 'high' ? `GPS · ${display.sampleCount} shots` : `GPS · ${display.sampleCount} shots · building`)
+                    : display?.source === 'manual'
+                      ? 'From profile'
+                      : 'No data yet';
+                  return { club, label: formatClubLabel(club), yards, diff, confidenceLabel, hasData: !!display };
+                }).sort((a, b) => {
+                  if (a.diff == null && b.diff == null) return 0;
+                  if (a.diff == null) return 1;
+                  if (b.diff == null) return -1;
+                  return a.diff - b.diff;
+                });
+                const suggestedKey = normalizeClubKey(distanceSuggestedClub?.club || '');
+                return rows.length === 0 ? null : (
+                  <View style={styles.clubTable}>
+                    <Text style={styles.clubTableHeader}>
+                      {hasTarget ? `Your clubs · target ${Math.round(target)}y` : 'Your clubs'}
+                    </Text>
+                    {rows.slice(0, 8).map((row) => {
+                      const isSuggested = normalizeClubKey(row.club) === suggestedKey;
+                      return (
+                        <View key={row.club} style={[styles.clubTableRow, isSuggested && styles.clubTableRowActive]}>
+                          <Text style={[styles.clubTableClub, isSuggested && styles.clubTableClubActive]}>
+                            {isSuggested ? '★ ' : ''}{row.label}
+                          </Text>
+                          <View style={styles.clubTableMeta}>
+                            <Text style={[styles.clubTableYards, isSuggested && styles.clubTableYardsActive]}>
+                              {row.yards != null ? `${Math.round(row.yards)}y` : '—'}
+                            </Text>
+                            {row.diff != null ? (
+                              <Text style={styles.clubTableDiff}>
+                                {row.diff === 0 ? 'on' : `${row.diff > 0 ? '±' : ''}${Math.round(row.diff)}y`}
+                              </Text>
+                            ) : null}
+                          </View>
+                          <Text style={styles.clubTableConfidence}>{row.confidenceLabel}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })()}
+
+              <TouchableOpacity
+                style={styles.suggestionModalCta}
+                onPress={() => {
+                  void Haptics.selectionAsync().catch(() => undefined);
+                  setShowSuggestionModal(false);
+                  // Open picker on next tick so the modal animates out first.
+                  setTimeout(() => overlayRef.current?.openClubPicker?.(), 100);
+                }}
+              >
+                <Text style={styles.suggestionModalCtaText}>Pick a different club</Text>
+              </TouchableOpacity>
+              <Text style={styles.suggestionModalHint}>Tip: long-press the suggested chip to skip straight to the club picker.</Text>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -5972,9 +6056,113 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingBottom: 24,
   },
+  suggestionModalScroll: {
+    maxHeight: '75%',
+  },
   suggestionModalBody: {
     paddingHorizontal: 18,
     paddingBottom: 24,
+    gap: 14,
+  },
+  suggestionEmptyNote: {
+    backgroundColor: 'rgba(15,23,42,0.6)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.18)',
+    padding: 12,
+  },
+  suggestionEmptyTitle: {
+    color: '#F8FAFC',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  suggestionEmptyBody: {
+    color: '#94A3B8',
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 4,
+  },
+  clubTable: {
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.18)',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  clubTableHeader: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 6,
+    backgroundColor: 'rgba(15,23,42,0.55)',
+  },
+  clubTableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(148,163,184,0.12)',
+  },
+  clubTableRowActive: {
+    backgroundColor: 'rgba(16,185,129,0.12)',
+  },
+  clubTableClub: {
+    color: '#CBD5E1',
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+  clubTableClubActive: {
+    color: '#34D399',
+    fontWeight: '800',
+  },
+  clubTableMeta: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+    marginRight: 10,
+    minWidth: 80,
+    justifyContent: 'flex-end',
+  },
+  clubTableYards: {
+    color: '#E2E8F0',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  clubTableYardsActive: {
+    color: '#34D399',
+  },
+  clubTableDiff: {
+    color: '#64748B',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  clubTableConfidence: {
+    color: '#64748B',
+    fontSize: 10,
+    width: 90,
+    textAlign: 'right',
+  },
+  suggestionModalCta: {
+    marginTop: 8,
+    backgroundColor: '#10B981',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  suggestionModalCtaText: {
+    color: '#0f1419',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  suggestionModalHint: {
+    color: '#64748B',
+    fontSize: 10,
+    textAlign: 'center',
   },
   greenSheetBody: {
     paddingHorizontal: 18,
