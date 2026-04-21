@@ -1144,7 +1144,7 @@ const buildPatternInsights = (
       badge: 'L',
       title: `${worstLie.label} penalty`,
       tone: worstLie.label.includes('Bunker') ? 'red' : 'amber',
-      note: `${worstLie.label} averaged ${worstLie.deltaVsFairway?.toFixed(1)} shots worse than fairway. Respect the lie and adjust club plus target.`,
+      note: `${worstLie.label} averaged ${worstLie.deltaVsFairway?.toFixed(1)} shots higher than fairway. Respect the lie and adjust club plus target.`,
       resources: worstLie.label === 'Fairway Bunker' ? getCoachResources('fairway-bunker') : getCoachResources('rough'),
     });
   }

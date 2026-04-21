@@ -140,7 +140,7 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
       const windyAvg = averageScore(windyRounds);
       if (calmAvg !== null && windyAvg !== null) {
         const diff = windyAvg - calmAvg;
-        const direction = diff > 0 ? 'worse' : 'better';
+        const direction = diff > 0 ? 'higher' : 'lower';
         splits.push({
           label: 'Wind Impact',
           summary: `Windy rounds are ${Math.abs(diff).toFixed(1)} strokes ${direction} than calm rounds`,
@@ -153,7 +153,7 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
       const moderateAvg = averageScore(moderateWindRounds);
       if (calmAvg !== null && moderateAvg !== null) {
         const diff = moderateAvg - calmAvg;
-        const direction = diff > 0 ? 'worse' : 'better';
+        const direction = diff > 0 ? 'higher' : 'lower';
         splits.push({
           label: 'Breezy Rounds',
           summary: `Moderate wind rounds are ${Math.abs(diff).toFixed(1)} strokes ${direction} than calm rounds`,
@@ -166,7 +166,7 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
       const rainAvg = averageScore(rainyRounds);
       if (dryAvg !== null && rainAvg !== null) {
         const diff = rainAvg - dryAvg;
-        const direction = diff > 0 ? 'worse' : 'better';
+        const direction = diff > 0 ? 'higher' : 'lower';
         splits.push({
           label: 'Rain Impact',
           summary: `Rainy rounds are ${Math.abs(diff).toFixed(1)} strokes ${direction} than dry rounds`,
@@ -179,7 +179,7 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
       const dryAvg = averageScore(dryHumidityRounds);
       if (humidAvg !== null && dryAvg !== null) {
         const diff = humidAvg - dryAvg;
-        const direction = diff > 0 ? 'worse' : 'better';
+        const direction = diff > 0 ? 'higher' : 'lower';
         splits.push({
           label: 'Humidity Impact',
           summary: `Humid rounds are ${Math.abs(diff).toFixed(1)} strokes ${direction} than dry-air rounds`,
@@ -192,7 +192,7 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
       const lowAvg = averageScore(lowElevationRounds);
       if (highAvg !== null && lowAvg !== null) {
         const diff = highAvg - lowAvg;
-        const direction = diff > 0 ? 'worse' : 'better';
+        const direction = diff > 0 ? 'higher' : 'lower';
         splits.push({
           label: 'Elevation Impact',
           summary: `High-elevation rounds are ${Math.abs(diff).toFixed(1)} strokes ${direction} than low-elevation rounds`,
@@ -205,7 +205,7 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
       const hotAvg = averageScore(hotRounds);
       if (coldAvg !== null && hotAvg !== null) {
         const diff = hotAvg - coldAvg;
-        const direction = diff > 0 ? 'worse' : 'better';
+        const direction = diff > 0 ? 'higher' : 'lower';
         splits.push({
           label: 'Temperature',
           summary: `Hot rounds are ${Math.abs(diff).toFixed(1)} strokes ${direction} than cold rounds`,
@@ -231,14 +231,14 @@ export const AveragesTab: React.FC<Props> = ({ refreshTrigger, onNavigateToPlay,
     const par4Over = parSplit(4);
     const par5Over = parSplit(5);
     if (par3Over !== null && par4Over !== null && par5Over !== null) {
-      const best = Math.min(par3Over, par4Over, par5Over);
-      const worst = Math.max(par3Over, par4Over, par5Over);
-      const bestLabel = best === par3Over ? 'Par 3s' : best === par4Over ? 'Par 4s' : 'Par 5s';
-      const worstLabel = worst === par3Over ? 'Par 3s' : worst === par4Over ? 'Par 4s' : 'Par 5s';
-      if (worst - best >= 0.4) {
+      const strongest = Math.min(par3Over, par4Over, par5Over);
+      const toughest = Math.max(par3Over, par4Over, par5Over);
+      const strongestLabel = strongest === par3Over ? 'Par 3s' : strongest === par4Over ? 'Par 4s' : 'Par 5s';
+      const toughestLabel = toughest === par3Over ? 'Par 3s' : toughest === par4Over ? 'Par 4s' : 'Par 5s';
+      if (toughest - strongest >= 0.4) {
         splits.push({
           label: 'Par Type Gap',
-          summary: `${worstLabel} cost about ${(worst - best).toFixed(1)} more strokes per hole than ${bestLabel}`,
+          summary: `${toughestLabel} cost about ${(toughest - strongest).toFixed(1)} more strokes per hole than ${strongestLabel}`,
         });
       }
     }

@@ -39,7 +39,7 @@ export const ScoreInputSection: React.FC<ScoreInputSectionProps> = ({
       : scoreValue === par - 1 ? 'birdie'
       : scoreValue === par ? 'par'
       : scoreValue === par + 1 ? 'bogey'
-      : 'double bogey or worse';
+      : 'double bogey or higher';
 
   const puttValue = putts ?? 2;
   const isGreenHit = greenHit === true;

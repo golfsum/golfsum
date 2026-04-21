@@ -560,15 +560,15 @@ function ClubDistanceSummary({ gpsShots }) {
   );
 }
 
-// ─── Section 8: Best & Worst Holes ───────────────────────────────────
+// ─── Section 8: Best & Toughest Holes ────────────────────────────────
 function BestWorstHoles({ holes, onHolePress }) {
   const scored = (holes || []).filter(h => h.score != null);
   if (scored.length < 9) return null;
 
   const sorted = [...scored].sort((a, b) => (a.score - a.par) - (b.score - b.par));
   const best = sorted[0];
-  const worst = sorted[sorted.length - 1];
-  if (!best || !worst) return null;
+  const toughest = sorted[sorted.length - 1];
+  if (!best || !toughest) return null;
 
   const renderCard = (hole, title) => {
     const color = getScoreColor(hole.score, hole.par);
@@ -594,7 +594,7 @@ function BestWorstHoles({ holes, onHolePress }) {
       <Text style={styles.sectionTitle}>HIGHLIGHTS</Text>
       <View style={styles.bwRow}>
         {renderCard(best, 'Best')}
-        {renderCard(worst, 'Worst')}
+        {renderCard(toughest, 'Toughest')}
       </View>
     </View>
   );
@@ -729,7 +729,7 @@ export default function RoundDetailScreen({
         {/* 7. Club Distance Summary */}
         <ClubDistanceSummary gpsShots={round.gpsShots} />
 
-        {/* 8. Best & Worst Holes */}
+        {/* 8. Best & Toughest Holes */}
         <BestWorstHoles holes={holes} onHolePress={setReviewHoleNum} />
 
         <View style={{ height: spacing.xxxl }} />

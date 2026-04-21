@@ -10,6 +10,8 @@
  *   - NO filler words: "solid", "nice job", "typical", "overall", "truly".
  *   - NO "AI" cadence: no "strategic approach", "utilize", "optimize",
  *     "leverage", "establish", "maintain" (used as fluff).
+ *   - NO "worse" or "worst". Use "off", "below", "higher than par",
+ *     "toughest", "trickiest" instead. A caddie frames constructively.
  *   - It's okay to sound blunt. A real caddie doesn't cushion.
  *
  * The catalog here runs on a single saved round plus the rest of the
@@ -294,7 +296,7 @@ function par5Notes(round: SavedRound): CaddieNote[] {
       id: 'par5_blow_up',
       kind: 'par5',
       severity: 4,
-      text: `${overBy2} par-5s played two-over or worse. Usually the second shot got ambitious. Lay up to your favourite wedge yardage, not the longest layup.`,
+      text: `${overBy2} par-5s played two-over or higher. Usually the second shot got ambitious. Lay up to your favourite wedge yardage, not the longest layup.`,
     }];
   }
   return [];
@@ -360,7 +362,7 @@ function streakNotes(round: SavedRound): CaddieNote[] {
       id: 'streak_bogeys',
       kind: 'streak',
       severity: 3,
-      text: `${worstRun} bogeys or worse in a row. Next time it starts, reset after the hole. Deep breath, next shot is the only one that matters.`,
+      text: `${worstRun} bogeys or higher in a row. Next time it starts, reset after the hole. Deep breath, next shot is the only one that matters.`,
     });
   }
   return out;

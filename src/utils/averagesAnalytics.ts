@@ -288,7 +288,7 @@ export function getConfidenceLabel(confidence: ConfidenceLevel): string {
 export function getConfidenceTooltip(confidence: ConfidenceLevel): string {
   switch (confidence) {
     case ConfidenceLevel.RELIABLE:
-      return 'This reflects your most typical performance, not your best or worst result.';
+      return 'This reflects your most typical performance, not your best or toughest round.';
     case ConfidenceLevel.DEVELOPING:
       return 'This will become more accurate as additional rounds are recorded. Variation like this is normal in golf.';
     case ConfidenceLevel.EARLY:

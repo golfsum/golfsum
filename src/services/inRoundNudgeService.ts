@@ -639,7 +639,7 @@ export function buildInRoundNudge(input: InRoundNudgeInput): RoundNudge | null {
         priority: 88,
         tone: penalty.deltaVsFairway >= 1.1 ? 'red' : 'amber',
         title: 'Lie penalty',
-        body: `${liveLie} has been about ${penalty.deltaVsFairway.toFixed(1)} shots worse than fairway. Adjust club and target.`,
+        body: `${liveLie} has been about ${penalty.deltaVsFairway.toFixed(1)} shots higher than fairway. Adjust club and target.`,
         support: 'From your recent scoring trend',
       };
     }

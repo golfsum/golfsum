@@ -73,7 +73,7 @@ const buildFinding = (pattern: FadePattern, closing: WindowStats, opening: Windo
   if (pattern === 'LATE_FADE') {
     return {
       type: 'LATE_FADE',
-      message: `Closing holes run ${(closing.avgScoreToPar - middle.avgScoreToPar).toFixed(2)} strokes/hole worse than middle window.`,
+      message: `Closing holes run ${(closing.avgScoreToPar - middle.avgScoreToPar).toFixed(2)} strokes/hole higher than middle window.`,
       actionable: 'From holes 7 and 16 onward, switch to conservative targets and strict routine pace.',
       preRoundMessage: 'You fade late in each nine. Play conservative from hole 7 onward.',
     };
@@ -81,7 +81,7 @@ const buildFinding = (pattern: FadePattern, closing: WindowStats, opening: Windo
   if (pattern === 'EARLY_STRUGGLE') {
     return {
       type: 'EARLY_STRUGGLE',
-      message: `Opening holes run ${(opening.avgScoreToPar - middle.avgScoreToPar).toFixed(2)} strokes/hole worse than middle window.`,
+      message: `Opening holes run ${(opening.avgScoreToPar - middle.avgScoreToPar).toFixed(2)} strokes/hole higher than middle window.`,
       actionable: 'Warm up earlier and treat opening holes as rhythm holes with conservative lines.',
       preRoundMessage: 'You lose strokes early in each nine. Warm up and play safe targets on opening holes.',
     };

@@ -376,7 +376,7 @@ export function generateRoundInsights(input: InsightRoundInput, handicap?: numbe
 
   if (holeCount > 0 && (doubles / holeCount) >= 0.11) {
     push('critical', 'scoring', 'Big numbers hurt',
-      `${doubles} double bogeys or worse. Eliminating blow-up holes saves ${doubles}+ strokes.`);
+      `${doubles} double bogeys or higher. Trimming the blow-up holes saves ${doubles}+ strokes.`);
   }
 
   if (doubles === 0 && bogeys <= 3) {

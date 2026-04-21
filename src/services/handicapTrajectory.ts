@@ -87,7 +87,7 @@ const buildTrajectoryFinding = (
   if (direction === 'DECLINING' && scoreTrend != null && attr?.primaryDecliner) {
     return {
       type: 'DECLINING_ATTRIBUTED',
-      message: `Scores worsened ${Math.abs(scoreTrend).toFixed(1)} strokes recently. Largest decline: ${label[attr.primaryDecliner]}.`,
+      message: `Scores are up ${Math.abs(scoreTrend).toFixed(1)} strokes recently. Largest factor: ${label[attr.primaryDecliner]}.`,
       actionable: `Target ${label[attr.primaryDecliner]} directly for the next 3-5 rounds.`,
     };
   }

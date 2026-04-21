@@ -220,15 +220,15 @@ export function analyzeConditionsImpact(rounds: SavedRound[]): ConditionsFinding
     const abs = Math.abs(delta);
     if (abs < 2.5 || abs <= bestAbs) return;
     bestAbs = abs;
-    const worseCondition = delta > 0 ? candidate.bLabel : candidate.aLabel;
-    const betterCondition = delta > 0 ? candidate.aLabel : candidate.bLabel;
+    const toughCondition = delta > 0 ? candidate.bLabel : candidate.aLabel;
+    const easyCondition = delta > 0 ? candidate.aLabel : candidate.bLabel;
     const smallSample = candidate.a.length < 5 || candidate.b.length < 5;
     best = {
       dominantCondition: candidate.label,
       deltaStrokes: abs,
       direction: delta > 0 ? 'WORSE_IN' : 'BETTER_IN',
-      description: `${candidate.label}: ${worseCondition} rounds average ${abs.toFixed(1)} strokes worse than ${betterCondition} rounds.${smallSample ? ' (limited sample)' : ''}`,
-      nudgeMessage: `You trend ${abs.toFixed(1)} strokes worse in ${worseCondition} conditions. Adjust targets and club selection accordingly.`,
+      description: `${candidate.label}: ${toughCondition} rounds average ${abs.toFixed(1)} strokes higher than ${easyCondition} rounds.${smallSample ? ' (limited sample)' : ''}`,
+      nudgeMessage: `You average ${abs.toFixed(1)} strokes higher in ${toughCondition} conditions. Adjust targets and club selection accordingly.`,
       confidenceNote: smallSample ? `Limited sample size in one side of the split.` : '',
     };
   });

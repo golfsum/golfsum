@@ -1267,7 +1267,7 @@ function analyzeBackNineScoringDrop(rounds: SavedRound[], userHandicap?: number)
   return {
     type,
     title: getHandicapAwareTitle(type, userHandicap),
-    patternObserved: `Back nine is ${drop.toFixed(1)} strokes worse than front nine on average.`,
+    patternObserved: `Back nine is ${drop.toFixed(1)} strokes higher than front nine on average.`,
     whatThisIndicates: 'Late-round routine and decision quality are slipping.',
     commonContributors: ['Decision fatigue', 'Tempo slipping late', 'Reduced commitment to target lines'],
     whatToWorkOn: ['Use the same routine cadence after hole 12', 'Take one reset breath before every tee shot', 'Favor conservative targets late'],
@@ -1359,7 +1359,7 @@ function analyzeHighBogeyConversion(rounds: SavedRound[], userHandicap?: number)
   return {
     type,
     title: getHandicapAwareTitle(type, userHandicap),
-    patternObserved: `${Math.round(rate * 100)}% of bogeys are followed by another bogey or worse.`,
+    patternObserved: `${Math.round(rate * 100)}% of bogeys are followed by another bogey or higher.`,
     whatThisIndicates: 'Score damage is compounding after mistakes.',
     commonContributors: ['Carrying previous-hole frustration', 'Aggressive immediate recovery choices', 'Routine breakdown after mistakes'],
     whatToWorkOn: ['Use a fixed reset routine after every bogey', 'Play next hole to safest target first', 'Prioritize one stable swing cue'],
@@ -1392,7 +1392,7 @@ function analyzeFrontNineBlowup(rounds: SavedRound[], userHandicap?: number): Pa
   return {
     type,
     title: getHandicapAwareTitle(type, userHandicap),
-    patternObserved: `Front nine is ${drop.toFixed(1)} strokes worse than back nine on average.`,
+    patternObserved: `Front nine is ${drop.toFixed(1)} strokes higher than back nine on average.`,
     whatThisIndicates: 'Pre-round warmup and early-hole decision rhythm are costing strokes.',
     commonContributors: ['Cold start physically', 'No first-hole routine anchor', 'Overly aggressive early decisions'],
     whatToWorkOn: ['Use structured 10-15 minute warmup', 'Start with conservative targets first 3 holes', 'Commit to full routine on first tee'],

@@ -59,7 +59,7 @@ export function buildHoleQualityRead(hole: {
   if (diff === 2) {
     if (strokeHole) return { text: 'Double on your stroke hole. That one hurts.', tone: 'bad' };
     if (hole.fairwayBunker) return { text: 'Double. Fairway bunker started the trouble.', tone: 'bad' };
-    if (threePutt) return { text: 'Double. Three putts made it worse than it needed to be.', tone: 'bad' };
+    if (threePutt) return { text: 'Double. The three-putt cost you a stroke you could keep.', tone: 'bad' };
     return { text: 'Double. Contain it from here.', tone: 'bad' };
   }
 

@@ -84,9 +84,9 @@ const GENERIC_CARDS: CoachingNudgeCard[] = [
   { id: 'g20', category: 'course', title: 'Pick Your Bail-Out', body: 'Before every approach, define your safe miss. It saves strokes when confidence is low.', badge: 'Tip', ctaText: 'Track GIR misses to learn tendencies', ctaAction: 'start_round' },
 
   { id: 'g21', category: 'mental', title: 'The Blow-Up Hole', body: 'A bad swing and a hero recovery usually make the number bigger. Take your medicine and move on.', badge: 'Tip', ctaText: 'Log your next round', ctaAction: 'start_round' },
-  { id: 'g22', category: 'mental', title: 'Let the Last Hole Go', body: 'Scores often worsen right after a double. Slow down, breathe, and play only the next shot.', badge: 'Tip', ctaText: 'Track your bounce-back rate', ctaAction: 'start_round' },
-  { id: 'g23', category: 'mental', title: 'Commit to the Shot', body: 'The worst thing you can do is stand over the ball unsure. Pick a club, pick a target, and go.', badge: 'Tip', ctaText: 'Start a round and play with conviction', ctaAction: 'start_round' },
-  { id: 'g24', category: 'mental', title: "You're Closer Than You Think", body: 'Look at your last round. Turn your 3 worst holes into bogeys instead of doubles and the score drops fast.', badge: 'Tip', ctaText: 'Import scorecards to find hidden strokes', ctaAction: 'import_scorecard' },
+  { id: 'g22', category: 'mental', title: 'Let the Last Hole Go', body: 'Scores tend to slip right after a double. Slow down, breathe, and play only the next shot.', badge: 'Tip', ctaText: 'Track your bounce-back rate', ctaAction: 'start_round' },
+  { id: 'g23', category: 'mental', title: 'Commit to the Shot', body: 'The biggest mistake you can make is standing over the ball unsure. Pick a club, pick a target, and go.', badge: 'Tip', ctaText: 'Start a round and play with conviction', ctaAction: 'start_round' },
+  { id: 'g24', category: 'mental', title: "You're Closer Than You Think", body: 'Look at your last round. Turn your 3 toughest holes into bogeys instead of doubles and the score drops fast.', badge: 'Tip', ctaText: 'Import scorecards to find hidden strokes', ctaAction: 'import_scorecard' },
 ];
 
 interface DerivedStats {

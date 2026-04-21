@@ -134,7 +134,7 @@ function detectPatterns(
         type: 'BOGEY_CHAINS',
         strength: Math.min(1, Math.max(chainEffect / 0.3, compoundEffect / 0.25)),
         sampleSize: bogeyTotal,
-        description: `After bogey, bogey-or-worse is ${((transitions.afterBogey.bogeyRate + transitions.afterBogey.doublePlusRate) * 100).toFixed(0)}% (baseline ${((transitions.afterBogey.baseline.bogeyRate + transitions.afterBogey.baseline.doublePlusRate) * 100).toFixed(0)}%).`,
+        description: `After bogey, bogey or higher hits ${((transitions.afterBogey.bogeyRate + transitions.afterBogey.doublePlusRate) * 100).toFixed(0)}% of the time (baseline ${((transitions.afterBogey.baseline.bogeyRate + transitions.afterBogey.baseline.doublePlusRate) * 100).toFixed(0)}%).`,
         actionable: 'Use a deliberate reset cue after every bogey before next tee shot.',
       });
     } else if (Math.abs(chainEffect) < 0.08 && Math.abs(compoundEffect) < 0.08) {
@@ -158,7 +158,7 @@ function detectPatterns(
         type: 'DOUBLE_COMPOUNDS',
         strength: Math.min(1, compoundEffect / 0.35),
         sampleSize: doubleTotal,
-        description: `After double, bogey-or-worse remains elevated at ${((transitions.afterDouble.bogeyRate + transitions.afterDouble.doublePlusRate) * 100).toFixed(0)}%.`,
+        description: `After double, bogey or higher stays elevated at ${((transitions.afterDouble.bogeyRate + transitions.afterDouble.doublePlusRate) * 100).toFixed(0)}%.`,
         actionable: 'After double, play next hole to a bogey-max plan and remove hero decisions.',
       });
     } else if (compoundEffect < 0.08) {

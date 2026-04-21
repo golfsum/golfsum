@@ -733,7 +733,7 @@ export const buildCourseHoleInsights = (
 
   const puttingText = [
     puttRounds.length ? `You average ${fmt1(avgPuttsAtCourse)} putts here.` : 'Putting data is still limited here.',
-    worstPuttHoles.length ? `Worst putting holes: ${worstPuttHoles.join(', ')}.` : '',
+    worstPuttHoles.length ? `Toughest putting holes: ${worstPuttHoles.join(', ')}.` : '',
     bestPuttHoles.length ? `Best putting holes: ${bestPuttHoles.join(', ')}.` : '',
   ].filter(Boolean).join(' ');
 

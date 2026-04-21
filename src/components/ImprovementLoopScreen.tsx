@@ -29,7 +29,7 @@ const TimelineRow: React.FC<{ timeline: StatTimeline }> = ({ timeline }) => {
   const changeAmount = Math.abs(timeline.totalDelta).toFixed(1);
   const deltaLabel = improved
     ? `Improved ${changeAmount} ${timeline.unit}`
-    : `Worsened ${changeAmount} ${timeline.unit}`;
+    : `Slipped ${changeAmount} ${timeline.unit}`;
 
   return (
     <View style={styles.timelineCard}>

@@ -965,7 +965,7 @@ export function generateCoachingInsights(
           buildInsight({
             id: 'post-practice-overload-effect',
             title: 'Post-Practice Scores Slip',
-            description: 'Rounds right after practice are coming in worse than your baseline, likely from overload.',
+            description: 'Rounds right after practice are coming in below your baseline, likely from overload.',
             actionable: 'Before rounds, use one swing cue only; avoid technical changes on course days.',
             minimumRounds: 6,
             roundsUsed,
@@ -987,15 +987,15 @@ export function generateCoachingInsights(
       })
       .filter(Boolean) as Array<{ par: 3 | 4 | 5; avgToPar: number; count: number }>;
     if (byPar.length >= 2) {
-      const worst = byPar.reduce((max, cur) => (cur.avgToPar > max.avgToPar ? cur : max));
-      const best = byPar.reduce((min, cur) => (cur.avgToPar < min.avgToPar ? cur : min));
-      if (worst.avgToPar - best.avgToPar >= 0.35) {
+      const toughestPar = byPar.reduce((max, cur) => (cur.avgToPar > max.avgToPar ? cur : max));
+      const strongestPar = byPar.reduce((min, cur) => (cur.avgToPar < min.avgToPar ? cur : min));
+      if (toughestPar.avgToPar - strongestPar.avgToPar >= 0.35) {
         insights.push(
           buildInsight({
             id: 'score-distribution-by-par-type',
-            title: `Par ${worst.par} Is Your Main Leak`,
-            description: `Your scoring spread is uneven by par type: Par ${worst.par} is highest relative to par.`,
-            actionable: `Set one tactical focus for Par ${worst.par} next round to reduce that gap.`,
+            title: `Par ${toughestPar.par}s Are Your Main Leak`,
+            description: `Your scoring spread is uneven by par type: Par ${toughestPar.par}s run highest relative to par.`,
+            actionable: `Set one tactical focus for Par ${toughestPar.par}s next round to close that gap.`,
             minimumRounds: 3,
             roundsUsed,
             priorityWeight: 'PAR_TYPE_DISTRIBUTION',
@@ -1525,7 +1525,7 @@ export function generateCoachingInsights(
           buildInsight({
             id: 'score-after-bogey-vs-birdie',
             title: 'Response Hole Trend',
-            description: 'Your hole after a bogey trends worse than your hole after a birdie. The response hole is a key scoring swing point.',
+            description: 'Your hole after a bogey trends higher than your hole after a birdie. The response hole is a key scoring swing point.',
             actionable: 'Adopt a “neutral reset” routine after bogeys: fairway-first then center-green.',
             minimumRounds: 4,
             roundsUsed,
@@ -1776,7 +1776,7 @@ export function generateCoachingInsights(
           buildInsight({
             id: 'post-double-compounding-pattern',
             title: 'Compounding After Double-Bogeys',
-            description: 'The hole after a double is trending worse than your normal response holes.',
+            description: 'The hole after a double is trending higher than your normal response holes.',
             actionable: 'After any double, play the next hole as a full reset: fairway-first, center-green, two-putt plan.',
             minimumRounds: 4,
             roundsUsed,
@@ -1935,7 +1935,7 @@ export function generateCoachingInsights(
         buildInsight({
           id: 'scoring-archetype-ceiling-chaser',
           title: 'Big Numbers Are Costing You',
-          description: `Birdie rate is ${birdieRatePct}%, but double-or-worse is ${blowupRatePct}% and costs about ${scoringProfile.distribution.blowupCost.toFixed(1)} extra strokes per round.`,
+          description: `Birdie rate is ${birdieRatePct}%, but doubles and higher hit ${blowupRatePct}% of holes and cost about ${scoringProfile.distribution.blowupCost.toFixed(1)} extra strokes per round.`,
           actionable: 'Use a bogey-max rule after trouble. Recovery hero shots usually add cost.',
           minimumRounds: 5,
           roundsUsed,
@@ -1963,7 +1963,7 @@ export function generateCoachingInsights(
         buildInsight({
           id: 'scoring-archetype-floor-raiser',
           title: 'Remarkably Consistent',
-          description: `Double-or-worse is only ${blowupRatePct}% of holes. Your floor is stable.`,
+          description: `Doubles or higher are only ${blowupRatePct}% of holes. Your floor is stable.`,
           actionable: 'Pick 2-3 best birdie opportunities pre-round and allow more aggression only there.',
           minimumRounds: 5,
           roundsUsed,

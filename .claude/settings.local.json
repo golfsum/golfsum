@@ -9,7 +9,13 @@
       "Read(//c/Users/ND/AppData/Local/GitHubDesktop/bin//**)",
       "Read(//c/Users/ND/scoop/**)",
       "Read(//c/ProgramData/chocolatey/lib//**)",
-      "Bash(grep -nE \"\\(actionable|body|title|message|insight|recommend\\):\\\\s*[\\\\`'\\\\\"]\" src/services/coachingInsights.ts src/services/roundInsightsEngine.ts src/services/courseStatsService.ts)"
+      "Bash(grep -nE \"\\(actionable|body|title|message|insight|recommend\\):\\\\s*[\\\\`'\\\\\"]\" src/services/coachingInsights.ts src/services/roundInsightsEngine.ts src/services/courseStatsService.ts)",
+      "Bash(perl -i -pe \"s/diff > 0 \\\\? 'worse' : 'better'/diff > 0 ? 'higher' : 'lower'/g\" src/components/averages/AveragesContainer.tsx)",
+      "Bash(grep -rnE \"'[^']*worse[^']*'|\\\\\"[^\\\\\"]*worse[^\\\\\"]*\\\\\"|\\\\`[^\\\\`]*worse[^\\\\`]*\\\\`|'[^']*[Ww]orst[^']*'|\\\\\"[^\\\\\"]*[Ww]orst[^\\\\\"]*\\\\\"|\\\\`[^\\\\`]*[Ww]orst[^\\\\`]*\\\\`\" src/ AppRoot.tsx --include=\"*.ts\" --include=\"*.tsx\" --include=\"*.js\" --include=\"*.jsx\")",
+      "Bash(grep -vE \"^\\\\s*//\")",
+      "Bash(grep -rnE \"'[^']*\\\\b\\(worse|[Ww]orst\\)\\\\b[^']*'|\\\\\"[^\\\\\"]*\\\\b\\(worse|[Ww]orst\\)\\\\b[^\\\\\"]*\\\\\"|\\\\`[^\\\\`]*\\\\b\\(worse|[Ww]orst\\)\\\\b[^\\\\`]*\\\\`\" src/ --include=\"*.ts\" --include=\"*.tsx\" --include=\"*.js\" --include=\"*.jsx\")",
+      "Bash(grep -vE \"\\(//|\\\\*\\\\s|type:|title:|kind:|id:|case\\\\s+\\)\")",
+      "Bash(grep -rnE \"'[^']*\\\\bworse\\\\b[^']*'|\\\\\"[^\\\\\"]*\\\\bworse\\\\b[^\\\\\"]*\\\\\"|\\\\`[^\\\\`]*\\\\bworse\\\\b[^\\\\`]*\\\\`\" src/ --include=\"*.ts\" --include=\"*.tsx\" --include=\"*.js\" --include=\"*.jsx\")"
     ]
   }
 }

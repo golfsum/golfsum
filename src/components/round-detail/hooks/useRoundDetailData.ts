@@ -218,7 +218,7 @@ export const useRoundDetailData = ({
       const results: RoundInsight[] = [];
       if (birdies >= 3) results.push({ type: 'positive', label: `${birdies} birdies`, detail: 'Plenty of scoring ability out there.' });
       if (doubles === 0 && normalizedHoles.length >= 9) results.push({ type: 'positive', label: 'No big numbers', detail: 'Solid course management.' });
-      if (doubles >= 3) results.push({ type: 'warning', label: `${doubles} doubles or worse`, detail: 'Eliminating blow-up holes is the fastest path to lower scores.' });
+      if (doubles >= 3) results.push({ type: 'warning', label: `${doubles} doubles or higher`, detail: 'Trimming the big numbers is the fastest path to a lower score.' });
       return results.slice(0, 3);
     }
 

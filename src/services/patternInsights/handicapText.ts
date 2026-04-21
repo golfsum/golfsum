@@ -183,7 +183,7 @@ export const getCoachExplanation = (type: PatternInsightType, isRight?: boolean)
     case PatternInsightType.FAIRWAYS_MISSED_RIGHT:
       return 'A right miss usually means the clubface is open to your swing path at impact. Aiming further left often increases curvature if the face stays open.';
     case PatternInsightType.FAIRWAYS_MISSED_LEFT:
-      return 'A left miss often means the clubface is closing relative to your path. Aiming right can actually make the hook worse if the face remains closed.';
+      return 'A left miss often means the clubface is closing relative to your path. Aiming right can actually amplify the hook if the face stays closed.';
     case PatternInsightType.APPROACHES_MISSED_SHORT:
       return 'Short misses are often caused by under-clubbing, heavy contact, or underestimating wind. Trust carry distances over total yardage.';
     case PatternInsightType.APPROACHES_MISSED_LONG:

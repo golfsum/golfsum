@@ -120,7 +120,7 @@ const RoundCardComponent: React.FC<RoundCardProps> = ({
     scoreDeltaVsCourseAvg !== null && Math.abs(scoreDeltaVsCourseAvg) >= 1
       ? scoreDeltaVsCourseAvg > 0
         ? `${Math.abs(scoreDeltaVsCourseAvg).toFixed(1)} better than your avg here`
-        : `${Math.abs(scoreDeltaVsCourseAvg).toFixed(1)} worse than your avg here`
+        : `${Math.abs(scoreDeltaVsCourseAvg).toFixed(1)} off your avg here`
       : summaryText;
   const normalizedScore = buildNormalizedScore(round);
   const isImported =
