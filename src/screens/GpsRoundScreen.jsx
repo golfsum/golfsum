@@ -2724,9 +2724,14 @@ export function GpsRoundScreen({
 
   useEffect(() => {
     if (Platform.OS !== 'ios') return undefined;
-    const frtVal = yardageToWatchInt(yardages.front) || yardageToWatchInt(staticWatchYardages.front);
-    const ctrVal = yardageToWatchInt(yardages.center) || yardageToWatchInt(staticWatchYardages.center);
-    const bckVal = yardageToWatchInt(yardages.back) || yardageToWatchInt(staticWatchYardages.back);
+    // Scorecard fallback so hole changes always have something to send even
+    // when POIs haven't resolved yet for the new hole. Without this, moving
+    // to a hole whose greens haven't rendered keeps hole 1's data on the
+    // watch indefinitely (the `hasRealCurrentHoleData` gate below would bail).
+    const scorecardFallback = yardageToWatchInt(selectedTeeYardage || currentHole?.yardage || 0);
+    const frtVal = yardageToWatchInt(yardages.front) || yardageToWatchInt(staticWatchYardages.front) || scorecardFallback;
+    const ctrVal = yardageToWatchInt(yardages.center) || yardageToWatchInt(staticWatchYardages.center) || scorecardFallback;
+    const bckVal = yardageToWatchInt(yardages.back) || yardageToWatchInt(staticWatchYardages.back) || scorecardFallback;
     const currentYardage = yardageToWatchInt(
       selectedTeeYardage
         || currentHole?.yardage

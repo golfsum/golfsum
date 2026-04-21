@@ -211,6 +211,17 @@ struct ContentView: View {
       }
       .disabled(!session.roundActive)
 
+      if session.roundActive {
+        Button("Next Hole") {
+          haptic(.click)
+          session.sendAdvanceHole(session.hole + 1) { ok in
+            haptic(ok ? .success : .failure)
+            flash(ok ? "Moved to hole \(session.hole + 1)" : "Phone not connected")
+          }
+        }
+        .disabled(session.hole <= 0 || session.hole >= 18)
+      }
+
       Button("Refresh Round") {
         haptic(.click)
         session.refreshRound()
