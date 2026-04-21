@@ -78,6 +78,7 @@ import { WebGpsRoundPreview } from './src/screens/WebGpsRoundPreview';
 import SaveConfirmationOverlay from './src/components/SaveConfirmationOverlay';
 import { detectMilestone, MilestoneEvent } from './src/services/milestoneDetector';
 import { consumeWatchEndRoundFlag, initializeWatchReceiver, updateWatchGpsContext, type WatchBridgeEvent } from './src/services/watchBridgeService';
+import { prefetchNearbyCourses } from './src/services/golfCourseApiService';
 import {
   initializePushNotifications,
   syncPushRegistrationForProfile,
@@ -315,6 +316,32 @@ export default function App() {
   useEffect(() => {
     if (isOffline) return;
     processQueuedSync().catch(() => undefined);
+  }, [isOffline]);
+
+  // App-launch nearby-courses prefetch. Silently warms the local + Firestore
+  // caches so the first tap on "Find Nearby Courses" is instant instead of
+  // spinning for 10–20 s on the Overpass API. Only fires when location is
+  // already authorised — we don't prompt for permission on launch.
+  useEffect(() => {
+    if (Platform.OS === 'web' || isOffline) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        // Dynamic import so web bundles don't pull in expo-location.
+        const Location = await import('expo-location');
+        const perms = await Location.getForegroundPermissionsAsync();
+        if (!perms.granted || cancelled) return;
+        const pos = await Location.getLastKnownPositionAsync({
+          maxAge: 15 * 60 * 1000, // accept anything from the last 15 min
+          requiredAccuracy: 2000, // within ~2km is plenty for nearby search
+        }).catch(() => null);
+        if (cancelled || !pos?.coords) return;
+        void prefetchNearbyCourses(pos.coords.latitude, pos.coords.longitude, 25);
+      } catch {
+        // Non-fatal — the cache just stays cold until the user taps the button.
+      }
+    })();
+    return () => { cancelled = true; };
   }, [isOffline]);
   
   // Data state

@@ -512,6 +512,85 @@ export const searchCoursesNearby = async (
 };
 
 /**
+ * Silent background nearby prefetch. Kicks off searchCoursesNearby without
+ * blocking UI or surfacing errors — purely to warm the local + Firestore
+ * caches so the user's first "Find Nearby" tap feels instant.
+ *
+ * Safe to call on every app launch: if the nearby cache is fresh (<12 h,
+ * within 2 miles of `lat/lng`), it's a no-op network read; otherwise it
+ * refreshes in the background.
+ */
+export const prefetchNearbyCourses = async (
+  latitude: number,
+  longitude: number,
+  radiusMiles: number = 25,
+): Promise<void> => {
+  try {
+    const results = await searchCoursesNearby(latitude, longitude, radiusMiles);
+    logger.debug(`🔥 Nearby prefetch complete (${results.length} courses cached)`);
+  } catch (err) {
+    logger.debug('Nearby prefetch failed (non-fatal):', err);
+  }
+};
+
+/**
+ * Bulk-add OSM search results to the persistent course catalog. OSM gives us
+ * course names + coordinates but not full details (yardage/par/ratings) —
+ * we still save a lightweight CourseDetails-shaped record so future nearby
+ * lookups can resolve "same course seen before" without another Overpass hit.
+ *
+ * Fires to both the local course cache and the Firestore community catalog.
+ */
+export const rememberOsmCourses = async (
+  courses: Array<{
+    id: string;
+    name: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    latitude?: number;
+    longitude?: number;
+    distance?: number;
+  }>,
+): Promise<void> => {
+  if (!Array.isArray(courses) || courses.length === 0) return;
+  try {
+    const raw = await Storage.getItem(CACHE_KEY);
+    const cacheData: Record<string, CachedCourse> = raw ? JSON.parse(raw) : {};
+    const now = Date.now();
+    let mutations = 0;
+    for (const c of courses) {
+      if (!c.id || !c.name) continue;
+      if (cacheData[c.id]) continue; // already have richer data
+      cacheData[c.id] = {
+        cachedAt: now,
+        course: {
+          id: c.id,
+          name: c.name,
+          city: c.city || '',
+          state: c.state || '',
+          country: c.country || 'United States',
+          holes: 18,
+          par: 72,
+          latitude: c.latitude,
+          longitude: c.longitude,
+        } as CourseDetails,
+      };
+      mutations += 1;
+      // Fire-and-forget Firestore catalog save so the next user searching
+      // this area benefits from our discovery.
+      saveToFirebase(cacheData[c.id].course, 'OSM').catch(() => undefined);
+    }
+    if (mutations > 0) {
+      await Storage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+      logger.debug(`📦 Remembered ${mutations} OSM courses in local cache + Firestore`);
+    }
+  } catch (err) {
+    logger.debug('rememberOsmCourses failed (non-fatal):', err);
+  }
+};
+
+/**
  * Reverse geocode a lat/lng to city + state using OpenStreetMap Nominatim.
  * Free, no API key needed, reasonable rate limits for this use case.
  */

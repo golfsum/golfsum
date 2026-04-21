@@ -20,6 +20,8 @@ import {
   getFavoriteCourses,
   addToFavorites,
   removeFromFavorites,
+  rememberOsmCourses,
+  searchCoursesNearby,
   GolfCourse,
   CourseDetails,
 } from '../services/golfCourseApiService';
@@ -1036,12 +1038,54 @@ export const CourseSearchScreen: React.FC<CourseSearchScreenProps> = ({
       }
 
       setUserLocation({ latitude, longitude });
+
+      // Cache-first: show whatever we have (local cache + Firestore catalog)
+      // immediately so the screen isn't blank for 10–20 s, then kick off the
+      // OSM Overpass search in the background to enrich / discover new
+      // courses. New OSM discoveries are saved to the catalog for next time.
+      try {
+        const cachedCourses = await searchCoursesNearby(latitude, longitude, 50);
+        if (cachedCourses.length > 0) {
+          const asOsm: OSMGolfCourse[] = cachedCourses
+            .filter((c) => Number.isFinite(c.latitude) && Number.isFinite(c.longitude))
+            .map((c) => ({
+              id: c.id,
+              name: c.name,
+              latitude: c.latitude as number,
+              longitude: c.longitude as number,
+              distance: c.distance,
+              city: c.city,
+              state: c.state,
+              country: c.country,
+            }));
+          if (asOsm.length > 0) {
+            setOsmResults(asOsm);
+            setError(null);
+            logger.debug(`⚡ Cache-first nearby: ${asOsm.length} courses (instant)`);
+          }
+        }
+      } catch (e) {
+        logger.debug('Cached nearby read failed (non-fatal):', e);
+      }
+
       logger.debug('🔍 Searching OSM nearby golf courses within 50 miles');
       const nearbyCourses = await searchGolfCoursesNearby(latitude, longitude, 50);
       if (nearbyCourses.length > 0) {
         setOsmResults(nearbyCourses);
         setError(null);
         logger.debug(`✅ OSM nearby: ${nearbyCourses.length} courses`);
+        // Persist OSM discoveries to the local course cache + Firestore
+        // community catalog so subsequent searches (this user, or anyone else)
+        // see these courses without having to hit Overpass again.
+        rememberOsmCourses(nearbyCourses.map((c) => ({
+          id: c.id,
+          name: c.name,
+          city: c.city,
+          state: c.state,
+          latitude: c.latitude,
+          longitude: c.longitude,
+          distance: c.distance,
+        }))).catch(() => undefined);
       } else {
         setError('No courses found nearby. Try searching by name.');
         Alert.alert(

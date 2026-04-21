@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls .github/pull_request_template*)",
+      "Bash(ls .github/PULL_REQUEST_TEMPLATE*)",
+      "Bash(ls docs/pull_request_template*)",
+      "Bash(winget list *)",
+      "Bash(cmd.exe /c \"where gh\")",
+      "Read(//c/Users/ND/AppData/Local/GitHubDesktop/bin//**)",
+      "Read(//c/Users/ND/scoop/**)",
+      "Read(//c/ProgramData/chocolatey/lib//**)"
+    ]
+  }
+}
