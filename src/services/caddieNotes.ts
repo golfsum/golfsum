@@ -12,6 +12,12 @@
  *     "leverage", "establish", "maintain" (used as fluff).
  *   - NO "worse" or "worst". Use "off", "below", "higher than par",
  *     "toughest", "trickiest" instead. A caddie frames constructively.
+ *   - DON'T diagnose swing faults from stats. A caddie can't see your
+ *     face-angle, path, or setup from a miss direction. List possible
+ *     causes ("could be face, path, aim, or the tee box lining you up"),
+ *     then give a course-management move they can make tomorrow (aim
+ *     bias, club selection, target of the fat side of the green).
+ *     Leave swing prescriptions to the player's coach.
  *   - It's okay to sound blunt. A real caddie doesn't cushion.
  *
  * The catalog here runs on a single saved round plus the rest of the
@@ -73,35 +79,35 @@ function driverNotes(round: SavedRound): CaddieNote[] {
       id: 'driver_right',
       kind: 'driver',
       severity: 3 + missRight * 0.3,
-      text: `You leaked ${missRight} tee shots right. That's an open face at impact. Check your lead-hand grip, then hit ten balls working on a full finish with the chest pointing left of target.`,
+      text: `Tee ball leaked right ${missRight} times. Could be face, path, aim, or the tee box itself pointing you there. Next round, pick a spot a yard or two in front of the ball and aim that, then set your feet. Play your tee shots with a target a club-length left of the center line so the pattern plays to the fairway.`,
     });
   } else if (missLeft >= 3 && missLeft >= missRight + 2) {
     out.push({
       id: 'driver_left',
       kind: 'driver',
       severity: 3 + missLeft * 0.3,
-      text: `${missLeft} tee shots went left. Usually a steep path or a flip through impact. Move the ball up half an inch, make a fuller turn away from the target.`,
+      text: `${missLeft} tee shots pulled left. Could be the face, the path, or the tee box lining you up that way. Pick an intermediate spot in front of the ball and aim that, then set your feet. Play for the pattern and aim a touch right of center until it settles.`,
     });
   } else if (missRight >= 2 && missLeft >= 2) {
     out.push({
       id: 'driver_two_way',
       kind: 'driver',
       severity: 4,
-      text: `You missed ${missRight} right and ${missLeft} left off the tee. Two-way miss means setup inconsistency. Pick one swing thought next round, rhythm or path, not both.`,
+      text: `${missRight} right and ${missLeft} left off the tee. A two-way miss is hard to plan around. Pre-shot: same alignment routine every time. On course: swing to 80 percent and aim at the widest part of the fairway until the pattern tightens.`,
     });
   } else if (firPct >= 65 && firAttempts.length >= 8) {
     out.push({
       id: 'driver_hot',
       kind: 'driver',
       severity: 1,
-      text: `${hits} fairways on ${firAttempts.length} drives. Driver was doing work. Note the setup you had today and bring it back next round.`,
+      text: `${hits} fairways on ${firAttempts.length} drives. Tee game was in a good place. Notice what you were looking at before each shot and keep that routine next round.`,
     });
   } else if (firPct < 30) {
     out.push({
       id: 'driver_cold',
       kind: 'driver',
       severity: 4,
-      text: `Only ${hits} of ${firAttempts.length} fairways. Driver was unreliable. Consider 3-wood off the tee next round on the tight holes until the driver comes back.`,
+      text: `Only ${hits} of ${firAttempts.length} fairways. Driver was not cooperating. Think about 3-wood or a long iron off the tee on the tight holes until you trust the big stick again.`,
     });
   }
 
@@ -127,28 +133,28 @@ function approachNotes(round: SavedRound): CaddieNote[] {
       id: 'approach_short',
       kind: 'approach',
       severity: 5,
-      text: `${missShort} approaches came up short. You're under-clubbing. Take one more club next round. Your stock 7-iron is probably further than you think.`,
+      text: `${missShort} approaches finished short. Could be club selection, a soft strike, wind you underestimated, or uphill lies. Easiest fix on course: play one more club and swing smooth. If you flushed a few shorts too, check your carry yardages on the range.`,
     });
   } else if (missLong >= 3 && missLong > missShort) {
     out.push({
       id: 'approach_long',
       kind: 'approach',
       severity: 4,
-      text: `${missLong} approaches ran long. Ego-clubbing or hot strike. Swing smoother at 75 percent effort and let the loft do the work.`,
+      text: `${missLong} approaches ran long. Could be extra adrenaline, a hot strike, wind help, or hitting more club than the yardage called for. Next round, pick the number you actually carry the club, not the longest you have hit it.`,
     });
   } else if (missRight >= 3 && missRight >= missLeft + 2) {
     out.push({
       id: 'approach_right',
       kind: 'approach',
       severity: 3,
-      text: `Approach misses went right ${missRight} times. Iron face open. Ball position back half an inch, hit down on it and let the divot go past the ball.`,
+      text: `Approach misses went right ${missRight} times. Could be setup, path, or aim. Bias your target a few yards left of the pin and aim at the fat side of the green. Play the pattern until it closes.`,
     });
   } else if (missLeft >= 3 && missLeft >= missRight + 2) {
     out.push({
       id: 'approach_left',
       kind: 'approach',
       severity: 3,
-      text: `${missLeft} approaches pulled left. Usually an early release. Slow down the transition, let the arms drop before the turn fires.`,
+      text: `${missLeft} approaches pulled left. Same idea in reverse. Bias your target a few yards right of the pin and aim at the fat side of the green until the pattern tightens.`,
     });
   }
 
@@ -157,14 +163,14 @@ function approachNotes(round: SavedRound): CaddieNote[] {
       id: 'approach_hot',
       kind: 'approach',
       severity: 1,
-      text: `${hits} greens hit on ${girAttempts.length}. Ball-striking was dialed. Keep the swing you had today.`,
+      text: `${hits} greens hit on ${girAttempts.length}. Irons were flush. Keep the tempo and pre-shot routine you had today.`,
     });
   } else if (girPct < 25 && girAttempts.length >= 10) {
     out.push({
       id: 'approach_cold',
       kind: 'approach',
       severity: 5,
-      text: `Only ${hits} greens. Mid-irons weren't there today. Next range session, pick one club and log carry distances for ten balls.`,
+      text: `Only ${hits} greens. Irons were not clicking. On course, aim for the middle of the green and take one extra club. On the range, pick two clubs you lean on and log ten carries of each.`,
     });
   }
 
@@ -260,7 +266,7 @@ function par3Notes(round: SavedRound): CaddieNote[] {
       id: 'par3_cold',
       kind: 'par3',
       severity: 3,
-      text: `Over par on every par-3 today. Tee height and commit to one target. Aim at the middle of the green, not the pin.`,
+      text: `Over par on every par-3 today. Aim at the middle of the green, not the pin. A 30-footer for birdie is a better outcome than short-siding into a bunker.`,
     }];
   }
   if (avgVsPar <= -0.2 && par3s.length >= 3) {
