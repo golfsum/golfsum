@@ -596,7 +596,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cellPutts: {
-    flex: 1,
+    // Fixed width to match the other stat columns. Was flex:1 which absorbed
+    // all remaining row space and left visible gaps between SCORE/PUTTS and
+    // PUTTS/FIR.
+    width: CELL_PUTTS_WIDTH,
     alignItems: 'center',
   },
   cellFir: {

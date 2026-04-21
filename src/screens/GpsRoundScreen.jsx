@@ -1612,12 +1612,38 @@ export function GpsRoundScreen({
         properties: { kind: 'shot-track-live' },
       });
     }
+    // Dashed connector from the last logged shot to the green center. Gives the
+    // user a visual "you still need to reach here" line when they've hit their
+    // approach but haven't yet logged a putt. Hidden once a putt shot exists
+    // (ball is already on the green) or when we don't know where the green is.
+    const lastShot = currentHoleShots[currentHoleShots.length - 1];
+    const hasPutt = currentHoleShots.some((shot) => shot.shotKind === 'putt' || shot.lie === 'Green');
+    if (!hasPutt && lastShot && greenCenter) {
+      // Prefer the shot's landing spot (`to`) when it's been set; fall back to
+      // `from` (pre-approach position) so we still draw something informative
+      // before the next shot closes the previous one out.
+      const anchor = (lastShot.to && Number.isFinite(lastShot.to.lng) && Number.isFinite(lastShot.to.lat))
+        ? [lastShot.to.lng, lastShot.to.lat]
+        : (lastShot.from && Number.isFinite(lastShot.from.lng) && Number.isFinite(lastShot.from.lat))
+          ? [lastShot.from.lng, lastShot.from.lat]
+          : null;
+      if (anchor) {
+        features.push({
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: [anchor, [Number(greenCenter.Longitude), Number(greenCenter.Latitude)]],
+          },
+          properties: { kind: 'shot-track-to-green' },
+        });
+      }
+    }
     if (!features.length) return null;
     return {
       type: 'FeatureCollection',
       features,
     };
-  }, [currentHoleShots, showLiveShotPreviewLine, userPos]);
+  }, [currentHoleShots, greenCenter, showLiveShotPreviewLine, userPos]);
   const currentShotDisplay = useMemo(() => {
     const lastShot = currentHoleShots[currentHoleShots.length - 1] || null;
     const lastCompletedShot = [...currentHoleShots]
@@ -3485,7 +3511,18 @@ export function GpsRoundScreen({
           ) : null}
           {shotPathGeo && (
             <MapboxGL.ShapeSource id="shot-track" shape={shotPathGeo}>
-              <MapboxGL.LineLayer id="shot-track-line" style={stylesMap.shotTrack} />
+              {/* Completed shots and live preview share the white-dash style. */}
+              <MapboxGL.LineLayer
+                id="shot-track-line"
+                style={stylesMap.shotTrack}
+                filter={['in', ['get', 'kind'], ['literal', ['shot-track', 'shot-track-live']]]}
+              />
+              {/* Green-connector line: dashed green, "you still need to reach here". */}
+              <MapboxGL.LineLayer
+                id="shot-track-to-green-line"
+                style={stylesMap.shotTrackToGreen}
+                filter={['==', ['get', 'kind'], 'shot-track-to-green']}
+              />
             </MapboxGL.ShapeSource>
           )}
           {strategyGeo && (
@@ -4145,8 +4182,12 @@ export function GpsRoundScreen({
               + (overlayState.shotFlow === 'mark' || overlayState.shotFlow === 'edit' ? GPS_BAR.PLACEMENT_YARDAGE_BAND : 0)
               + (manualMode ? 44 : 0),
           },
+          // Hide the Green/Aim/GPS/Off-Course pills while the user is placing
+          // a shot — they overlap the "Tap the map where this shot started"
+          // banner and aren't actionable mid-placement.
+          (overlayState.shotFlow === 'mark' || overlayState.shotFlow === 'edit') && styles.rightMapStackHidden,
         ]}
-        pointerEvents="box-none"
+        pointerEvents={(overlayState.shotFlow === 'mark' || overlayState.shotFlow === 'edit') ? 'none' : 'box-none'}
       >
         {holeDispersion?.length >= 2 ? (
           <TouchableOpacity
@@ -4759,6 +4800,11 @@ const stylesMap = {
     lineWidth: 2,
     lineDasharray: [1.2, 1.2],
   },
+  shotTrackToGreen: {
+    lineColor: 'rgba(52,211,153,0.85)',
+    lineWidth: 2,
+    lineDasharray: [2.2, 2.2],
+  },
   strategyLine: {
     lineColor: 'rgba(52,211,153,0.9)',
     lineWidth: 2.6,
@@ -5249,6 +5295,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: GPS_RIGHT_STACK.GAP,
     zIndex: GPS_Z.RIGHT_MAP_STACK,
+  },
+  rightMapStackHidden: {
+    opacity: 0,
   },
   mapBtnRow: {
     flexDirection: 'row',
